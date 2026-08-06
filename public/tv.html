@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📺 체육관 실시간 현황 전광판</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0a0c10; color: #ffffff; padding: 15px; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        .header { text-align: center; margin-bottom: 10px; border-bottom: 2px solid #1f293d; padding-bottom: 5px; }
+        .header h1 { color: #66fcf1; font-size: 28px; letter-spacing: 2px; }
+
+        /* 상단 8개 코트 그리드 */
+        .court-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; flex-grow: 1; }
+        
+        .court-card { background: #141824; border: 2px solid #232d42; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
+        
+        .court-card.game { border-color: #3498db; }
+        .court-card.nanta { border-color: #ffa500; }
+        .court-card.lesson { border-color: #9b59b6; }
+
+        .court-title { font-size: 18px; font-weight: bold; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+        
+        /* 🏸 색상별 셔틀콕 배지 스타일 */
+        .type-badge { font-size: 13px; padding: 3px 8px; border-radius: 6px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
+        .badge-game { background: rgba(52, 152, 219, 0.15); color: #3498db; border: 1px solid #3498db; }
+        .badge-nanta { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid #ffa500; }
+        .badge-lesson { background: rgba(155, 89, 182, 0.15); color: #9b59b6; border: 1px solid #9b59b6; }
+
+        .team-list { flex-grow: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+        .team-row { background: #1f2538; padding: 6px 10px; border-radius: 6px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .empty-text { text-align: center; color: #52607d; font-size: 16px; font-weight: bold; }
+
+        .timer-text { font-size: 13px; color: #00ff66; font-weight: bold; }
+
+        /* 하단 대기 현황판 영역 */
+        .waiting-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; height: 180px; margin-top: 10px; }
+        .waiting-box { background: #141824; border: 1px solid #232d42; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; }
+        .waiting-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #66fcf1; border-bottom: 1px solid #1f293d; padding-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+        .waiting-list { flex-grow: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+        .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🏸 체육관 실시간 종합 현황판</h1>
+    </div>
+
+    <!-- 1. 코트 현황 (1~8번 고정) -->
+    <div class="court-grid" id="tv-court-grid"></div>
+
+    <!-- 2. 대기 현황 (게임 / 난타 대기열) -->
+    <div class="waiting-container">
+        <div class="waiting-box">
+            <div class="waiting-title"><span style="color:#3498db;">🏸</span> 게임 대기팀 <span id="game-queue-count" style="color:#3498db;">(0팀)</span></div>
+            <div class="waiting-list" id="game-waiting-list"></div>
+        </div>
+        <div class="waiting-box">
+            <div class="waiting-title"><span style="color:#ffa500;">🏸</span> 난타 대기팀 <span id="nanta-queue-count" style="color:#ffa500;">(0팀)</span></div>
+            <div class="waiting-list" id="nanta-waiting-list"></div>
+        </div>
+    </div>
+
+<script>
+    const socket = io();
+
+    socket.on('stateUpdate', (state) => {
+        renderTVCourts(state.courts);
+        renderTVQueues(state.queues);
+    });
+
+    // 코트 현황 출력
+    function renderTVCourts(courts) {
+        const container = document.getElementById('tv-court-grid');
+        if (!container) return;
+
+        const sortedCourts = [...courts].sort((a, b) => a.id - b.id);
+        let html = "";
+
+        sortedCourts.forEach(court => {
+            let typeClass = court.type;
+            
+            // 색상별 셔틀콕 아이콘 적용
+            let typeBadge = court.type === 'game' ? '<span class="type-badge badge-game">🏸 게임</span>' :
+                            court.type === 'nanta' ? '<span class="type-badge badge-nanta">🏸 난타</span>' :
+                            '<span class="type-badge badge-lesson">🏸 레슨</span>';
+
+            let teamsHtml = "";
+            if (!court.currentTeams || court.currentTeams.length === 0) {
+                teamsHtml = `<div class="empty-text">비어있음</div>`;
+            } else {
+                court.currentTeams.forEach(team => {
+                    let timeHtml = court.type === 'nanta' ? `<span class="timer-text">⏱️ 사용중</span>` : '';
+                    teamsHtml += `
+                        <div class="team-row">
+                            <span><b>${team.id}팀</b> (${team.players.join(', ')})</span>
+                            ${timeHtml}
+                        </div>
+                    `;
+                });
+            }
+
+            html += `
+                <div class="court-card ${typeClass}">
+                    <div class="court-title">
+                        <span>${court.id}번 코트</span>
+                        ${typeBadge}
+                    </div>
+                    <div class="team-list">
+                        ${teamsHtml}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    // 대기 현황 출력
+    function renderTVQueues(queues) {
+        const gameContainer = document.getElementById('game-waiting-list');
+        const nantaContainer = document.getElementById('nanta-waiting-list');
+        
+        if (!gameContainer || !nantaContainer) return;
+
+        const gameQueues = queues.filter(q => q.type === 'game');
+        const nantaQueues = queues.filter(q => q.type === 'nanta');
+
+        document.getElementById('game-queue-count').innerText = `(${gameQueues.length}팀)`;
+        document.getElementById('nanta-queue-count').innerText = `(${nantaQueues.length}팀)`;
+
+        // 게임 대기열
+        if (gameQueues.length === 0) {
+            gameContainer.innerHTML = `<div style="color:#52607d; font-size:13px;">대기 중인 팀이 없습니다.</div>`;
+        } else {
+            gameContainer.innerHTML = gameQueues.map((q, idx) => `
+                <div class="waiting-card">
+                    <b>[${idx + 1}대기] ${q.id}팀</b> (${q.players.join(', ')})
+                </div>
+            `).join('');
+        }
+
+        // 난타 대기열
+        if (nantaQueues.length === 0) {
+            nantaContainer.innerHTML = `<div style="color:#52607d; font-size:13px;">대기 중인 팀이 없습니다.</div>`;
+        } else {
+            nantaContainer.innerHTML = nantaQueues.map((q, idx) => `
+                <div class="waiting-card">
+                    <b>[${idx + 1}대기] ${q.id}팀</b> (${q.players.join(', ')})
+                </div>
+            `).join('');
+        }
+    }
+</script>
+</body>
+</html>
