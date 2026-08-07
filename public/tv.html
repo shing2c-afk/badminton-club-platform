@@ -12,7 +12,7 @@
         .header { text-align: center; margin-bottom: 10px; border-bottom: 2px solid #1f293d; padding-bottom: 5px; }
         .header h1 { color: #66fcf1; font-size: 28px; letter-spacing: 2px; }
 
-        /* 상단 8개 코트 그리드 */
+        /* 상단 코트 그리드 */
         .court-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; flex-grow: 1; }
         
         .court-card { background: #141824; border: 2px solid #232d42; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
@@ -30,8 +30,9 @@
         .badge-lesson { background: rgba(155, 89, 182, 0.15); color: #9b59b6; border: 1px solid #9b59b6; }
 
         .team-list { flex-grow: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
-        .team-row { background: #1f2538; padding: 6px 10px; border-radius: 6px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .team-row { background: #1f2538; padding: 8px 10px; border-radius: 6px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
         .empty-text { text-align: center; color: #52607d; font-size: 16px; font-weight: bold; }
+        .lesson-text { text-align: center; color: #d8b4fe; font-size: 15px; font-weight: bold; line-height: 1.4; }
 
         .timer-text { font-size: 13px; color: #00ff66; font-weight: bold; }
 
@@ -49,7 +50,7 @@
         <h1>🏸 체육관 실시간 종합 현황판</h1>
     </div>
 
-    <!-- 1. 코트 현황 (1~8번 고정) -->
+    <!-- 1. 코트 현황 그리드 -->
     <div class="court-grid" id="tv-court-grid"></div>
 
     <!-- 2. 대기 현황 (게임 / 난타 대기열) -->
@@ -67,9 +68,46 @@
 <script>
     const socket = io();
 
-    socket.on('stateUpdate', (state) => {
-        renderTVCourts(state.courts);
-        renderTVQueues(state.queues);
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    // 💡 회원 이름을 2명씩 나누어 2줄(<br>)로 변환하는 함수
+    function formatPlayersHtml(players) {
+        let arr = [];
+        if (Array.isArray(players)) {
+            arr = players.filter(Boolean).map(p => escapeHtml(p.trim()));
+        } else if (typeof players === 'string') {
+            arr = players.split(',').map(p => escapeHtml(p.trim())).filter(Boolean);
+        }
+
+        if (arr.length === 0) return '';
+        
+        // 2명 이하인 경우 1줄로 출력
+        if (arr.length <= 2) {
+            return arr.join(', ');
+        }
+        
+        // 3명 이상(4명)인 경우 2명 단위로 줄바꿈(<br>) 처리
+        const row1 = arr.slice(0, 2).join(', ');
+        const row2 = arr.slice(2, 4).join(', ');
+        return `${row1}<br>${row2}`;
+    }
+
+    // 서버 표준 수신 이벤트명: stateUpdated
+    socket.on('stateUpdated', (state) => {
+        const courts = state.courtsData || state.courts || [];
+        const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
+        const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
+
+        renderTVCourts(courts);
+        renderTVQueues(gameQueue, nantaQueue);
     });
 
     // 코트 현황 출력
@@ -77,36 +115,68 @@
         const container = document.getElementById('tv-court-grid');
         if (!container) return;
 
-        const sortedCourts = [...courts].sort((a, b) => a.id - b.id);
         let html = "";
 
-        sortedCourts.forEach(court => {
-            let typeClass = court.type;
+        courts.forEach((court, idx) => {
+            const courtNum = court.id || (idx + 1);
+            const courtType = court.type || 'game';
             
-            // 색상별 셔틀콕 아이콘 적용
-            let typeBadge = court.type === 'game' ? '<span class="type-badge badge-game">🏸 게임</span>' :
-                            court.type === 'nanta' ? '<span class="type-badge badge-nanta">🏸 난타</span>' :
+            // 타입별 배지 설정
+            let typeBadge = courtType === 'game' ? '<span class="type-badge badge-game">🏸 게임</span>' :
+                            courtType === 'nanta' ? '<span class="type-badge badge-nanta">🏸 난타</span>' :
                             '<span class="type-badge badge-lesson">🏸 레슨</span>';
 
             let teamsHtml = "";
-            if (!court.currentTeams || court.currentTeams.length === 0) {
-                teamsHtml = `<div class="empty-text">비어있음</div>`;
+
+            if (courtType === 'lesson') {
+                const noteText = escapeHtml(court.players || court.note || '레슨 코트 운영 중');
+                teamsHtml = `<div class="lesson-text">📢 ${noteText}</div>`;
+            } else if (courtType === 'nanta') {
+                // 난타 코트 (A, B 두 영역)
+                const sideAEmpty = !court.sideA || court.sideA.isEmpty;
+                const sideBEmpty = !court.sideB || court.sideB.isEmpty;
+
+                if (sideAEmpty && sideBEmpty) {
+                    teamsHtml = `<div class="empty-text">비어있음</div>`;
+                } else {
+                    if (!sideAEmpty) {
+                        const formattedA = formatPlayersHtml(court.sideA.players);
+                        teamsHtml += `
+                            <div class="team-row" style="align-items: flex-start;">
+                                <div><b>A:</b> ${formattedA}</div>
+                                <span class="timer-text">⏱️ 사용중</span>
+                            </div>
+                        `;
+                    }
+                    if (!sideBEmpty) {
+                        const formattedB = formatPlayersHtml(court.sideB.players);
+                        teamsHtml += `
+                            <div class="team-row" style="align-items: flex-start;">
+                                <div><b>B:</b> ${formattedB}</div>
+                                <span class="timer-text">⏱️ 사용중</span>
+                            </div>
+                        `;
+                    }
+                }
             } else {
-                court.currentTeams.forEach(team => {
-                    let timeHtml = court.type === 'nanta' ? `<span class="timer-text">⏱️ 사용중</span>` : '';
-                    teamsHtml += `
-                        <div class="team-row">
-                            <span><b>${team.id}팀</b> (${team.players.join(', ')})</span>
-                            ${timeHtml}
+                // 게임 코트
+                if (court.isEmpty || !court.players) {
+                    teamsHtml = `<div class="empty-text">비어있음</div>`;
+                } else {
+                    const formattedGame = formatPlayersHtml(court.players);
+                    teamsHtml = `
+                        <div class="team-row" style="align-items: flex-start;">
+                            <div>${formattedGame}</div>
+                            <span class="timer-text">⏱️ 사용중</span>
                         </div>
                     `;
-                });
+                }
             }
 
             html += `
-                <div class="court-card ${typeClass}">
+                <div class="court-card ${courtType}">
                     <div class="court-title">
-                        <span>${court.id}번 코트</span>
+                        <span>${courtNum}번 코트</span>
                         ${typeBadge}
                     </div>
                     <div class="team-list">
@@ -119,39 +189,42 @@
         container.innerHTML = html;
     }
 
-    // 대기 현황 출력
-    function renderTVQueues(queues) {
+    // 대기 현황 출력 (게임 및 난타 대기열)
+    function renderTVQueues(gameQueue, nantaQueue) {
         const gameContainer = document.getElementById('game-waiting-list');
         const nantaContainer = document.getElementById('nanta-waiting-list');
         
         if (!gameContainer || !nantaContainer) return;
 
-        const gameQueues = queues.filter(q => q.type === 'game');
-        const nantaQueues = queues.filter(q => q.type === 'nanta');
+        document.getElementById('game-queue-count').innerText = `(${gameQueue.length}팀)`;
+        document.getElementById('nanta-queue-count').innerText = `(${nantaQueue.length}팀)`;
 
-        document.getElementById('game-queue-count').innerText = `(${gameQueues.length}팀)`;
-        document.getElementById('nanta-queue-count').innerText = `(${nantaQueues.length}팀)`;
-
-        // 게임 대기열
-        if (gameQueues.length === 0) {
-            gameContainer.innerHTML = `<div style="color:#52607d; font-size:13px;">대기 중인 팀이 없습니다.</div>`;
+        // 게임 대기열 출력
+        if (gameQueue.length === 0) {
+            gameContainer.innerHTML = `<div style="color:#52607d; font-size:13px; padding: 4px;">대기 중인 팀이 없습니다.</div>`;
         } else {
-            gameContainer.innerHTML = gameQueues.map((q, idx) => `
-                <div class="waiting-card">
-                    <b>[${idx + 1}대기] ${q.id}팀</b> (${q.players.join(', ')})
-                </div>
-            `).join('');
+            gameContainer.innerHTML = gameQueue.map((q, idx) => {
+                const formattedPlayers = formatPlayersHtml(q.players);
+                return `
+                    <div class="waiting-card">
+                        <b>[${idx + 1}대기]</b> ${formattedPlayers}
+                    </div>
+                `;
+            }).join('');
         }
 
-        // 난타 대기열
-        if (nantaQueues.length === 0) {
-            nantaContainer.innerHTML = `<div style="color:#52607d; font-size:13px;">대기 중인 팀이 없습니다.</div>`;
+        // 난타 대기열 출력
+        if (nantaQueue.length === 0) {
+            nantaContainer.innerHTML = `<div style="color:#52607d; font-size:13px; padding: 4px;">대기 중인 팀이 없습니다.</div>`;
         } else {
-            nantaContainer.innerHTML = nantaQueues.map((q, idx) => `
-                <div class="waiting-card">
-                    <b>[${idx + 1}대기] ${q.id}팀</b> (${q.players.join(', ')})
-                </div>
-            `).join('');
+            nantaContainer.innerHTML = nantaQueue.map((q, idx) => {
+                const formattedPlayers = formatPlayersHtml(q.players);
+                return `
+                    <div class="waiting-card">
+                        <b>[${idx + 1}대기]</b> ${formattedPlayers}
+                    </div>
+                `;
+            }).join('');
         }
     }
 </script>

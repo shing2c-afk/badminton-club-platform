@@ -16,7 +16,8 @@
 
         .form-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
         .form-group label { font-size: 13px; color: #d1d5db; }
-        .form-group input { background: #1f2937; border: 1px solid #374151; color: white; padding: 8px 10px; border-radius: 6px; width: 120px; text-align: right; font-size: 15px; }
+        .form-group input { background: #1f2937; border: 1px solid #374151; color: white; padding: 8px 10px; border-radius: 6px; width: 120px; text-align: right; font-size: 15px; outline: none; }
+        .form-group input:focus { border-color: #3b82f6; }
 
         .court-item { display: flex; align-items: center; gap: 8px; background: #1f2937; border: 1px solid #374151; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
         .court-num { font-size: 15px; font-weight: bold; width: 65px; color: #f9fafb; flex-shrink: 0; }
@@ -40,7 +41,9 @@
             padding: 10px;
         }
 
-        .court-note { background: #111827; border: 1px solid #4b5563; color: white; padding: 8px 10px; border-radius: 6px; flex: 1; font-size: 13px; height: 44px; }
+        .court-note { background: #111827; border: 1px solid #4b5563; color: white; padding: 8px 10px; border-radius: 6px; flex: 1; font-size: 13px; height: 44px; outline: none; }
+        .court-note:focus { border-color: #3b82f6; }
+        
         .btn-del { background: #ef4444; color: white; border: none; padding: 10px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; flex-shrink: 0; }
 
         .btn-primary { background: #2563eb; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
@@ -87,8 +90,18 @@
     let localCourts = [];
     let isInitialized = false; // 최초 1회만 서버 데이터로 채우기 위한 플래그
 
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     socket.on('stateUpdated', (data) => {
-        // 이미 관리자가 접속하여 초기화된 이후에는 서버의 실시간 통신으로 인한 화면 덮어쓰기를 방지합니다.
+        // 관리자 수정 작업 중 서버의 실시간 통신으로 인한 화면 덮어쓰기를 방지합니다.
         if (isInitialized) return;
 
         if (data.config) {
@@ -113,7 +126,8 @@
 
         localCourts.forEach((court, idx) => {
             const courtType = court.type || 'game';
-            const noteVal = court.type === 'lesson' ? (court.players || court.note || '') : '';
+            const rawNote = (court.type === 'lesson' ? (court.players || court.note || '') : (court.note || ''));
+            const noteVal = escapeHtml(rawNote);
 
             const html = `
                 <div class="court-item" id="court-row-${idx}">
@@ -135,7 +149,6 @@
     }
 
     function onSelectChange(idx, val) {
-        // 선택 즉시 로컬 데이터 업데이트
         localCourts[idx].type = val;
         const noteInput = document.getElementById(`note-${idx}`);
         if (noteInput) {
