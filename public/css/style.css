@@ -1,0 +1,106 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #ffffff; padding-bottom: 80px; user-select: none; }
+
+/* 인트로 및 로그인 스크린 스타일 */
+.intro-screen, .login-screen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0b0f19; z-index: 5000; display: flex; justify-content: center; align-items: center; padding: 20px; text-align: center; }
+.intro-logo { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.logo-mark { background: #2563eb; color: white; font-size: 32px; font-weight: 900; width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4); }
+.logo-text .title { font-size: 24px; font-weight: 800; color: #f9fafb; }
+.logo-text .sub { font-size: 13px; color: #9ca3af; margin-top: 2px; }
+.login-card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 24px; width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+.login-card h2 { color: #f59e0b; font-size: 20px; font-weight: 800; }
+.login-desc { font-size: 12px; color: #9ca3af; line-height: 1.4; }
+.login-card input { background: #1f2937; border: 1px solid #374151; color: white; padding: 12px; border-radius: 8px; font-size: 14px; outline: none; }
+.login-card input:focus { border-color: #3b82f6; }
+.login-card button { padding: 12px; border-radius: 8px; font-size: 14px; font-weight: bold; border: none; cursor: pointer; }
+#btn-login { background: #2563eb; color: white; }
+#btn-guest { background: #374151; color: #d1d5db; }
+.login-card hr { border: 0; border-top: 1px solid #1f2937; margin: 4px 0; }
+
+.header { position: fixed; top: 0; left: 0; right: 0; height: 50px; background: #111827; border-bottom: 2px solid #1f2937; display: flex; justify-content: space-between; align-items: center; padding: 0 12px; z-index: 1000; }
+.header-btn { background: #1f2937; color: #38bdf8; border: 1px solid #374151; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; text-decoration: none; display: flex; align-items: center; gap: 4px; }
+.header-title { color: #f59e0b; font-size: 17px; font-weight: 800; letter-spacing: 0.5px; }
+
+.noti-badge { background: #ef4444; color: white; font-size: 10px; font-weight: bold; border-radius: 10px; padding: 1px 5px; margin-left: 2px; }
+
+#toast-container { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; width: 90%; max-width: 400px; pointer-events: none; }
+.toast-msg { background: rgba(30, 41, 59, 0.95); border: 1px solid #38bdf8; color: #ffffff; padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: bold; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); text-align: center; animation: fadeInOut 3.5s forwards; }
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translateY(-10px); }
+    15% { opacity: 1; transform: translateY(0); }
+    85% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-10px); }
+}
+
+/* 알림 모달 창 */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 3000; display: none; justify-content: center; align-items: center; padding: 20px; }
+.modal-card { background: #111827; border: 1px solid #374151; border-radius: 12px; width: 100%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.modal-header { padding: 14px; background: #1f2937; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 15px; border-bottom: 1px solid #374151; }
+.modal-body { padding: 12px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.noti-item { background: #1f2937; border-left: 3px solid #38bdf8; padding: 10px; border-radius: 4px; font-size: 12px; line-height: 1.4; }
+.noti-time { font-size: 10px; color: #9ca3af; margin-top: 4px; text-align: right; }
+.btn-modal-close { background: none; border: none; color: #9ca3af; font-size: 18px; font-weight: bold; cursor: pointer; }
+
+.container { margin-top: 55px; padding: 10px; }
+
+.notice-bar { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; overflow: hidden; height: 38px; display: flex; align-items: center; cursor: pointer; }
+.notice-text { font-size: 13px; color: #f3f4f6; animation: marquee 12s linear infinite; white-space: nowrap; }
+@keyframes marquee { 0% { transform: translateY(100%); } 15% { transform: translateY(0); } 85% { transform: translateY(0); } 100% { transform: translateY(-100%); } }
+
+.tab-menu { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab-btn { flex: 1; padding: 11px; background: #1f2937; color: #9ca3af; border: 1px solid #374151; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; text-align: center; }
+.tab-btn.active { background: #2563eb; color: #ffffff; border-color: #3b82f6; }
+
+.top-ctrl { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+.btn-create-room { flex: 1; background: #e11d48; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; }
+.court-count-box { background: #111827; border: 1px solid #374151; padding: 8px 12px; border-radius: 8px; text-align: center; font-size: 12px; font-weight: bold; color: #9ca3af; }
+.court-count-num { color: #10b981; font-size: 18px; font-weight: 800; margin-left: 4px; }
+
+.slot-card { background: #111827; border: 2px solid #1f2937; border-radius: 12px; padding: 10px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.slot-card.game-slot { border-color: #2563eb; }
+.slot-card.nanta-slot { border-color: #ea580c; }
+
+.slot-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1f2937; padding-bottom: 6px; }
+.rank-badge { font-size: 14px; font-weight: 800; color: #38bdf8; }
+.timer-badge { background: #dc2626; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+.timer-badge.idle { background: #374151; color: #9ca3af; }
+
+.players-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.player-cell { background: #1f2937; border: 1px solid #374151; border-radius: 6px; padding: 8px; display: flex; justify-content: space-between; align-items: center; min-height: 44px; }
+.player-info { font-size: 12px; font-weight: 600; color: #f9fafb; }
+.btn-exit { background: #ef4444; color: white; border: none; padding: 4px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; }
+.empty-cell { color: #6b7280; font-size: 12px; text-align: center; width: 100%; cursor: pointer; font-weight: bold; }
+
+.slot-footer { display: flex; gap: 6px; margin-top: 4px; }
+.btn-action { flex: 1; padding: 10px; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; color: white; cursor: pointer; text-align: center; }
+.btn-enter { background: #10b981; }
+.btn-merge { background: #8b5cf6; }
+
+.court-row { background: #111827; border: 1px solid #1f2937; border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.court-head-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.court-num { font-size: 16px; font-weight: 800; color: #f9fafb; }
+.type-badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+.badge-game { background: rgba(37, 99, 235, 0.2); color: #60a5fa; border: 1px solid #2563eb; }
+.badge-nanta { background: rgba(234, 88, 12, 0.2); color: #fb923c; border: 1px solid #ea580c; }
+.badge-lesson { background: rgba(147, 51, 234, 0.2); color: #c084fc; border: 1px solid #9333ea; }
+
+.court-body-game { display: grid; grid-template-columns: 2fr 1fr 1.2fr; gap: 6px; align-items: center; background: #1f2937; padding: 10px; border-radius: 6px; }
+.court-players { font-size: 11px; line-height: 1.5; color: #e5e7eb; }
+.court-timer-off { font-size: 12px; font-weight: bold; color: #6b7280; text-align: center; }
+
+.nanta-sub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.nanta-card { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; min-height: 90px; }
+.nanta-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.nanta-label { font-size: 11px; font-weight: 800; color: #f97316; }
+.nanta-timer-badge { font-size: 12px; font-weight: 800; color: #ef4444; background: rgba(239, 68, 68, 0.15); padding: 2px 6px; border-radius: 4px; }
+.nanta-empty-text { color: #10b981; font-size: 11px; font-weight: bold; text-align: center; margin: auto 0; }
+
+.btn-court-ctrl { padding: 8px 4px; border: none; border-radius: 6px; font-size: 11px; font-weight: bold; color: white; cursor: pointer; width: 100%; }
+.btn-again { background: #0284c7; margin-bottom: 4px; }
+.btn-end { background: #dc2626; }
+
+.empty-court-box { background: #182032; border: 1px dashed #374151; padding: 14px; text-align: center; color: #10b981; font-weight: bold; font-size: 13px; border-radius: 6px; }
+.empty-queue-msg { text-align: center; color: #6b7280; font-size: 13px; padding: 30px 0; font-weight: bold; }
+
+.footer { margin-top: 30px; text-align: center; padding: 15px; border-top: 1px solid #1f2937; }
+.btn-admin-access { background: none; border: none; color: #4b5563; font-size: 12px; font-weight: bold; cursor: pointer; text-decoration: underline; }
