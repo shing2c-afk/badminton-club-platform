@@ -348,7 +348,7 @@ io.on('connection', (socket) => {
         const targetCourt = emptyCourts[0];
 
         targetCourt.isEmpty = false;
-        targetCourt.players = `${valid[0]}, ${valid[1]}<br>${valid[2]}, ${valid[3]}`;
+        targetCourt.players =`${valid[0]}, ${valid[1]}, ${valid[2]}, ${valid[3]}`;
 
         const targetIndex = gameQueue.findIndex(s => s.id === slotId);
         if (targetIndex !== -1) {
