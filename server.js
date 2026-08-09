@@ -93,32 +93,20 @@ setInterval(() => {
     const now = Date.now();
     let isUpdated = false;
 
-    // A. 게임 대기 방 입장 제한 타이머 체크
-    gameQueue.forEach(slot => {
-        const validCount = getValidPlayers(slot.players).length;
-        if (validCount === 4) {
-            if (!slot.fullAt) {
-                slot.fullAt = now;
-            }
-            const elapsed = Math.floor((now - slot.fullAt) / 1000);
-            slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
+   // A. 게임 대기 방 입장 제한 타이머 체크
+    // 1. 현재 사용 가능한 빈 게임 코트의 개수 파악
+    const emptyGameCourtsCount = courtsData.filter(c => c.type === 'game' && c.isEmpty).length;
+    
+    // 2. 인원이 4명 꽉 찬 슬롯들 중에서 앞에서부터 빈 코트 개수만큼만 타이머를 돌리기 위한 카운터
+    let activeTimerCount = 0;
 
-            // 시간 초과 시 대기 취소 처리
-            if (slot.remainingSeconds === 0) {
-                gameQueue = gameQueue.filter(s => s.id !== slot.id);
-                addNotification(`⏰ [게임대기] ${slot.players.join(', ')} 팀이 입장 시간 초과로 취소되었습니다.`);
-                isUpdated = true;
-            }
-        } else {
-            slot.fullAt = null;
-            slot.remainingSeconds = null;
-        }
-    });
-
-    // B. 난타 대기 방 입장 제한 타이머 체크
-    nantaQueue.forEach(slot => {
+    gameQueue.forEach((slot) => {
         const validCount = getValidPlayers(slot.players).length;
-        if (validCount === 2) {
+        
+        // 인원이 4명이 채워져 있고, 아직 빈 코트 허용 개수만큼 타이머가 할당되지 않았다면!
+        if (validCount === 4 && activeTimerCount < emptyGameCourtsCount) {
+            activeTimerCount++; // 타이머 할당 개수 증가
+            
             if (!slot.fullAt) {
                 slot.fullAt = now;
             }
@@ -126,34 +114,117 @@ setInterval(() => {
             slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
 
             if (slot.remainingSeconds === 0) {
-                nantaQueue = nantaQueue.filter(s => s.id !== slot.id);
-                addNotification(`⏰ [난타대기] ${slot.players.join(', ')} 팀이 입장 시간 초과로 취소되었습니다.`);
-                isUpdated = true;
+                const targetIdx = gameQueue.findIndex(s => s.id === slot.id);
+                if (targetIdx !== -1) {
+                    const expiredTeam = gameQueue.splice(targetIdx, 1)[0];
+                    
+                    // 시간 초기화 후 맨 뒤로 배치
+                    expiredTeam.fullAt = null;
+                    expiredTeam.remainingSeconds = null;
+                    gameQueue.push(expiredTeam);
+
+                    addNotification(`⏰ [게임대기] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열 맨 뒤로 이동되었습니다.`);
+                    isUpdated = true;
+                }
             }
         } else {
+            // 4명이 아니거나, 이미 빈 코트 수만큼 앞서서 타이머가 다 차서 밀려난 4인 팀은 타이머 초기화 (대기 유지)
             slot.fullAt = null;
             slot.remainingSeconds = null;
         }
     });
 
-    // C. 난타 코트 잔여시간 (A/B 반코트) 체크
+   // B. 난타 대기 방 입장 제한 타이머 체크
+    // 1. 현재 사용 가능한 빈 난타 코트(또는 반코트)의 총 개수 파악
+    // (프로젝트의 난타 코트 구조에 맞춰 빈 코트 또는 빈 면의 개수를 세는 로직을 사용합니다)
+    // 예시: type이 'nanta'이면서 isEmpty이거나, 혹은 A/B 반코트가 비어있는 총 개수를 계산
+    let emptyNantaSlotsCount = 0;
     courtsData.forEach(court => {
         if (court.type === 'nanta') {
-            ['sideA', 'sideB'].forEach(side => {
-                if (court[side] && !court[side].isEmpty && court[side].startTime) {
-                    const elapsed = Math.floor((now - court[side].startTime) / 1000);
-                    court[side].remainingSeconds = Math.max(0, config.NANTA_COURT_LIMIT_SEC - elapsed);
-
-                    if (court[side].remainingSeconds === 0) {
-                        const exitedPlayers = court[side].players;
-                        court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
-                        addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`);
-                        isUpdated = true;
-                    }
-                }
-            });
+            if (court.isEmpty) {
+                emptyNantaSlotsCount += 2; // 난타 코트 통째로 비어있으면 반코트 2개 분량
+            } else {
+                if (court.sideA && court.sideA.isEmpty) emptyNantaSlotsCount++;
+                if (court.sideB && court.sideB.isEmpty) emptyNantaSlotsCount++;
+            }
         }
     });
+
+    // 2. 앞에서부터 빈 난타 코트(면) 개수까지만 타이머를 돌리기 위한 카운터
+    let activeNantaTimerCount = 0;
+
+    nantaQueue.forEach(slot => {
+        const validCount = getValidPlayers(slot.players).length;
+        
+        // 인원이 2명이 채워져 있고, 아직 빈 난타 코트(면) 허용 개수만큼 타이머가 할당되지 않았다면!
+        if (validCount === 2 && activeNantaTimerCount < emptyNantaSlotsCount) {
+            activeNantaTimerCount++; // 타이머 할당 개수 증가
+            
+            if (!slot.fullAt) {
+                slot.fullAt = now;
+            }
+            const elapsed = Math.floor((now - slot.fullAt) / 1000);
+            slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
+
+            if (slot.remainingSeconds === 0) {
+                const index = nantaQueue.findIndex(s => s.id === slot.id);
+                if (index !== -1) {
+                    const expiredTeam = nantaQueue.splice(index, 1)[0];
+                    
+                    // 시간 초기화 후 맨 뒤로 배치
+                    expiredTeam.fullAt = null;
+                    expiredTeam.remainingSeconds = null;
+                    nantaQueue.push(expiredTeam);
+
+                    addNotification(`⏰ [난타대기] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열 맨 뒤로 이동되었습니다.`);
+                    isUpdated = true;
+                }
+            }
+        } else {
+            // 인원이 부족하거나, 빈 난타 코트 수보다 순위가 밀려서 타이머 허용치를 초과한 팀은 초기화
+            slot.fullAt = null;
+            slot.remainingSeconds = null;
+        }
+    });
+    
+   // C. 난타 코트 잔여시간 (A/B 반코트) 체크
+courtsData.forEach(court => {
+    if (court.type === 'nanta') {
+        ['sideA', 'sideB'].forEach(side => {
+            if (court[side] && !court[side].isEmpty && court[side].startTime) {
+                const elapsed = Math.floor((now - court[side].startTime) / 1000);
+                court[side].remainingSeconds = Math.max(0, config.NANTA_COURT_LIMIT_SEC - elapsed);
+
+                if (court[side].remainingSeconds === 0) {
+                    const exitedPlayers = court[side].players;
+                    court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+                    addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`);
+                    isUpdated = true;
+
+                    // [추가] 양쪽 다 비었는지 확인 후 nextType으로 자동 전환
+                    const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
+                    if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
+                        const applyType = court.nextType;
+                        court.type = applyType;
+
+                        if (applyType === 'lesson') {
+                            court.isEmpty = false;
+                            court.players = court.note || '레슨 코트';
+                            delete court.sideA;
+                            delete court.sideB;
+                        } else {
+                            court.isEmpty = true;
+                            court.players = '';
+                            delete court.sideA;
+                            delete court.sideB;
+                        }
+                        court.nextType = applyType;
+                    }
+                }
+            }
+        });
+    }
+});
 
     // 초 단위 실시간 전송 (타이머 동기화)
     broadcastState();
@@ -183,47 +254,112 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 관리자 - 환경 설정 변경
+  // 환경 설정 변경 저장
     socket.on('updateConfig', (newConfig) => {
-        if (newConfig) {
-            config.ENTRY_TIMEOUT_SEC = Number(newConfig.ENTRY_TIMEOUT_SEC) || 180;
-            config.NANTA_COURT_LIMIT_SEC = Number(newConfig.NANTA_COURT_LIMIT_SEC) || 900;
-            if (newConfig.ADMIN_PASSWORD) config.ADMIN_PASSWORD = String(newConfig.ADMIN_PASSWORD);
+        try {
+            if (newConfig) {
+                if (newConfig.ENTRY_TIMEOUT_SEC !== undefined) config.ENTRY_TIMEOUT_SEC = newConfig.ENTRY_TIMEOUT_SEC;
+                if (newConfig.NANTA_COURT_LIMIT_SEC !== undefined) config.NANTA_COURT_LIMIT_SEC = newConfig.NANTA_COURT_LIMIT_SEC;
+                if (newConfig.ADMIN_PASSWORD !== undefined && newConfig.ADMIN_PASSWORD.trim() !== '') {
+                    config.ADMIN_PASSWORD = newConfig.ADMIN_PASSWORD;
+                }
+            }
             broadcastState();
+        } catch (err) {
+            console.error('환경 설정 변경 에러:', err);
         }
     });
 
-    // 관리자 - 코트 구성 변경
+    // 관리자 비밀번호 변경
+    socket.on('updatePassword', (newPassword) => {
+        try {
+            if (newPassword) {
+                config.ADMIN_PASSWORD = newPassword; 
+            }
+            broadcastState();
+        } catch (err) {
+            console.error('비밀번호 변경 에러:', err);
+        }
+    });
+
+ // 관리자 - 코트 구성 변경
     socket.on('updateCourtsConfig', (newCourtsConfig) => {
-        if (Array.isArray(newCourtsConfig)) {
+        try {
+            if (!Array.isArray(newCourtsConfig)) return;
+
             courtsData = newCourtsConfig.map((court, idx) => {
                 const id = idx + 1;
-                const type = court.type || 'game';
-                if (type === 'nanta') {
-                    return {
-                        id, type, note: court.note || '',
-                        sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
-                        sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 }
-                    };
-                } else if (type === 'lesson') {
-                    return { id, type, isEmpty: false, players: court.note || '레슨 코트', note: court.note || '' };
-                } else {
-                    return { id, type: 'game', isEmpty: true, players: '', note: court.note || '' };
+                const targetType = court ? (court.type || 'game') : 'game';
+                const targetNote = court ? (court.note || '') : '';
+                
+                const existingCourt = courtsData.find(c => c.id === id);
+
+                // 1. 일반 게임 코트가 사용 중인지 확인
+                const isGameActive = existingCourt && 
+                    existingCourt.type === 'game' && 
+                    !existingCourt.isEmpty && 
+                    existingCourt.players && 
+                    existingCourt.players.trim() !== '';
+
+                // 2. 난타 코트의 A면 또는 B면에 플레이어가 있는지 확인
+                const isNantaActive = existingCourt && 
+                    existingCourt.type === 'nanta' && 
+                    ((existingCourt.sideA && !existingCourt.sideA.isEmpty) || 
+                     (existingCourt.sideB && !existingCourt.sideB.isEmpty));
+
+                // 둘 중 하나라도 사용 중이라면 즉시 변경하면 안 됨!
+                const isInUse = isGameActive || isNantaActive;
+
+                // 사용 중이 아니라면 (레슨 코트, 빈 게임 코트, 빈 난타 코트 등) 즉시 변경 적용
+                if (!isInUse) {
+                    if (targetType === 'nanta') {
+                        return { 
+                            id, 
+                            type: 'nanta', 
+                            nextType: 'nanta', 
+                            note: targetNote,
+                            sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+                            sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 } 
+                        };
+                    } else if (targetType === 'lesson') {
+                        return { 
+                            id, 
+                            type: 'lesson', 
+                            nextType: 'lesson', 
+                            isEmpty: false, 
+                            players: targetNote || '레슨 코트', 
+                            note: targetNote 
+                        };
+                    } else {
+                        return { 
+                            id, 
+                            type: 'game', 
+                            nextType: 'game', 
+                            isEmpty: true, 
+                            players: '', 
+                            note: targetNote 
+                        };
+                    }
                 }
+
+                // 현재 플레이어가 게임/난타 중인 코트라면 다음 종료 시점에 바뀌도록 nextType에 예약
+                return {
+                    ...existingCourt,
+                    nextType: targetType,
+                    note: targetNote
+                };
             });
             broadcastState();
+        } catch (err) {
+            console.error('코트 설정 변경 에러:', err);
         }
     });
-
-    // ------------------------------------------
-    // 사용자 앱 (`index.html`) 요청 처리
-    // ------------------------------------------
 
     // 방 개설 (게임 4명, 난타 2명)
     socket.on('createSlot', ({ type, user }) => {
         const newSlot = {
             id: 'slot_' + (slotIdCounter++),
-            type: type, // 'game' or 'nanta'
+            type: type,
             players: type === 'game' ? [user, '', '', ''] : [user, ''],
             createdAt: Date.now(),
             fullAt: null,
@@ -257,7 +393,6 @@ io.on('connection', (socket) => {
             const slot = queue[slotIdx];
             slot.players[index] = '';
             
-            // 방 전체가 비었으면 방 삭제
             if (getValidPlayers(slot.players).length === 0) {
                 queue.splice(slotIdx, 1);
             }
@@ -282,7 +417,6 @@ io.on('connection', (socket) => {
                     combined[2] || '',
                     combined[3] || ''
                 ];
-                // 기존 내 방은 삭제
                 gameQueue = gameQueue.filter(s => s.id !== mySlotId);
                 addNotification(`🤝 [방 통합] 대기 팀이 하나로 통합되었습니다.`);
                 broadcastState();
@@ -301,7 +435,7 @@ io.on('connection', (socket) => {
         if (emptyCourt) {
             emptyCourt.isEmpty = false;
             emptyCourt.players = getValidPlayers(slot.players).join(', ');
-            gameQueue.splice(slotIdx, 1); // 대기목록 제거
+            gameQueue.splice(slotIdx, 1);
 
             addNotification(`🏸 [코트입장] ${emptyCourt.id}번 코트에 ${emptyCourt.players} 팀이 입장하셨습니다.`);
             broadcastState();
@@ -309,22 +443,40 @@ io.on('connection', (socket) => {
     });
 
     // 게임 코트 종료
-    socket.on('clickEnd', (courtId) => {
+    socket.on('endGameCourt', (courtId) => {
         const court = courtsData.find(c => c.id === courtId);
         if (court) {
             addNotification(`🏁 [게임종료] ${court.id}번 코트 경기가 종료되었습니다.`);
-            court.isEmpty = true;
-            court.players = '';
+            
+            const applyType = court.nextType || court.type || 'game';
+            court.type = applyType;
+
+            if (applyType === 'nanta') {
+                court.isEmpty = true;
+                court.players = '';
+                court.sideA = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+                court.sideB = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+            } else if (applyType === 'lesson') {
+                court.isEmpty = false;
+                court.players = court.note || '레슨 코트';
+                delete court.sideA;
+                delete court.sideB;
+            } else {
+                court.isEmpty = true;
+                court.players = '';
+                delete court.sideA;
+                delete court.sideB;
+            }
+            
             broadcastState();
         }
     });
 
     // 게임 코트 한 게임 더 (재입장)
-    socket.on('clickAgain', (courtId) => {
+    socket.on('againGameCourt', (courtId) => {
         const court = courtsData.find(c => c.id === courtId);
-        if (court && !court.isEmpty) {
-            // 해당 참가자들을 게임 대기열 최우선(1순위)으로 다시 등록
-            const playersArr = court.players.split(', ');
+        if (court && !court.isEmpty && court.type === 'game') {
+            const playersArr = court.players ? court.players.split(', ') : [];
             const newSlot = {
                 id: 'slot_' + (slotIdCounter++),
                 type: 'game',
@@ -333,10 +485,28 @@ io.on('connection', (socket) => {
                 fullAt: null,
                 remainingSeconds: null
             };
-            gameQueue.unshift(newSlot); // 최우선 배치
+            gameQueue.push(newSlot);
+            
+            const applyType = court.nextType || court.type || 'game';
+            court.type = applyType;
 
-            court.isEmpty = true;
-            court.players = '';
+            if (applyType === 'nanta') {
+                court.isEmpty = true;
+                court.players = '';
+                court.sideA = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+                court.sideB = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+            } else if (applyType === 'lesson') {
+                court.isEmpty = false;
+                court.players = court.note || '레슨 코트';
+                delete court.sideA;
+                delete court.sideB;
+            } else {
+                court.isEmpty = true;
+                court.players = '';
+                delete court.sideA;
+                delete court.sideB;
+            }
+            
             addNotification(`🔄 [한 게임 더] ${court.id}번 코트 팀이 연승/재대기를 신청하셨습니다.`);
             broadcastState();
         }
@@ -350,7 +520,6 @@ io.on('connection', (socket) => {
         const slot = nantaQueue[slotIdx];
         const validPlayers = getValidPlayers(slot.players).join(', ');
 
-        // 빈 난타 반코트(A면 또는 B면) 탐색
         for (let court of courtsData) {
             if (court.type === 'nanta') {
                 if (court.sideA && court.sideA.isEmpty) {
@@ -380,12 +549,37 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 난타 종료
-    socket.on('clickNantaEnd', ({ courtId, side }) => {
+    // 난타 코트 종료 (사이드별 또는 전체 종료)
+    socket.on('endNantaCourt', ({ courtId, side }) => {
         const court = courtsData.find(c => c.id === courtId);
-        if (court && court[side]) {
-            court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
-            addNotification(`🏁 [난타종료] ${courtId}번 코트 (${side === 'sideA' ? 'A' : 'B'}면) 퇴장 처리되었습니다.`);
+        if (court && court.type === 'nanta') {
+            const sideKey = side === 'A' || side === 'sideA' ? 'sideA' : 'sideB';
+            
+            if (court[sideKey]) {
+                court[sideKey] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+            }
+
+            addNotification(`🏁 [난타종료] ${court.id}번 코트 ${sideKey === 'sideA' ? 'A' : 'B'}사이드 난타가 종료되었습니다.`);
+
+            const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
+
+            if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
+                const applyType = court.nextType;
+                court.type = applyType;
+
+                if (applyType === 'lesson') {
+                    court.isEmpty = false;
+                    court.players = court.note || '레슨 코트';
+                    delete court.sideA;
+                    delete court.sideB;
+                } else {
+                    court.isEmpty = true;
+                    court.players = '';
+                    delete court.sideA;
+                    delete court.sideB;
+                }
+            }
+
             broadcastState();
         }
     });
@@ -395,12 +589,12 @@ io.on('connection', (socket) => {
     });
 });
 
-// ==========================================
+// ==========================
 // 4. 서버 실행
-// ==========================================
+// ==========================
 server.listen(PORT, () => {
     console.log(`🚀 운정배드민턴클럽 경기 운영 서버 실행 중: http://localhost:${PORT}`);
     console.log(`📱 사용자 화면: http://localhost:${PORT}`);
-    console.log(`🖥️  관리자 모드: http://localhost:${PORT}/admin`);
+    console.log(`🖥️ 관리자 모드: http://localhost:${PORT}/admin`);
     console.log(`📺 현장 전광판: http://localhost:${PORT}/tv`);
 });

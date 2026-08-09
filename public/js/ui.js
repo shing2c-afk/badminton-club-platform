@@ -185,7 +185,7 @@ function renderCourts() {
                     </div>
                 </div>`;
         } 
-        else {
+        else if(court.type === 'lesson') {
             html = `
                 <div class="court-row">
                     <div class="court-head-info">
@@ -200,7 +200,6 @@ function renderCourts() {
         courtList.insertAdjacentHTML('beforeend', html);
     });
 }
-
 function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
     container.innerHTML = '';
