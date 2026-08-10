@@ -4,6 +4,8 @@ const { Server } = require('socket.io');
 const path = require('path');
 
 const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 const server = http.createServer(app);
 const io = new Server(server);
 
@@ -587,6 +589,41 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`❌ 접속 해제: ${socket.id}`);
     });
+});
+
+// server.js 파일 하단에 추가
+
+// JSON 파싱 미들웨어가 없다면 상단 근처에 추가 확인: app.use(express.json());
+
+// 더미 회원 데이터 (badminton.db 연동 전 테스트용)
+const dummyUsers = [
+  { id: "user1", name: "김민턴", role: "member", club: "파주 클럽" },
+  { id: "user2", name: "이민턴", role: "member", club: "운정 클럽" },
+  { id: "admin", name: "관리자", role: "admin", club: "운영진" }
+];
+
+// 1. 더미 회원 목록 반환 API
+app.get('/api/users/dummy', (req, res) => {
+  res.json({ success: true, users: dummyUsers });
+});
+
+// server.js 하단 로그인 API
+app.post('/api/login', (req, res) => {
+  // body 데이터 유효성 검사
+  const username = req.body?.username;
+  const password = req.body?.password;
+
+  if (!username) {
+    return res.status(400).json({ success: false, message: "아이디를 입력해주세요." });
+  }
+
+  const user = dummyUsers.find(u => u.id === username);
+
+  if (user) {
+    res.json({ success: true, message: "로그인 성공", user });
+  } else {
+    res.status(401).json({ success: false, message: "존재하지 않는 회원 아이디입니다." });
+  }
 });
 
 // ==========================

@@ -4,19 +4,6 @@ let gameQueue = [];
 let nantaQueue = [];
 let notificationsList = [];
 
-// 인트로 스크린 자동 전환 제어
-window.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        document.getElementById('intro-screen').style.display = 'none';
-        document.getElementById('login-screen').style.display = 'flex';
-    }, 1200);
-});
-
-function proceedToMain() {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('main-app').style.display = 'block';
-}
-
 function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -480,3 +467,30 @@ function handleHome() {
     switchTab('game');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+// public/js/ui.js 맨 아래 추가
+
+// 저장된 로그인 사용자 정보를 헤더에 반영
+function applyUserProfile() {
+  const userJson = localStorage.getItem("currentUser");
+  const displayNameEl = document.getElementById("user-display-name");
+
+  if (userJson) {
+    const user = JSON.parse(userJson);
+    if (displayNameEl) {
+      displayNameEl.textContent = `${user.name}님 (${user.club})`;
+    }
+  }
+}
+
+// 로그아웃 처리
+function handleLogout() {
+  if (confirm("로그아웃 하시겠습니까?")) {
+    localStorage.removeItem("currentUser");
+    location.reload(); // 새로고침하여 다시 로그인 화면으로 이동
+  }
+}
+
+// 페이지 로드 완료 시 사용자 정보 적용
+document.addEventListener("DOMContentLoaded", () => {
+  applyUserProfile();
+});
