@@ -275,18 +275,39 @@ function updateAvailableCourtCounts() {
     document.getElementById('nanta-available-count').innerText = getAvailableNantaCourtsCount();
 }
 
+// 1. 게임 슬롯(방) 자동 생성 (로그인 정보 연동)
 function createNewGameSlot() {
-    const userInfo = prompt("방장의 [급수/연령/성별/이름]을 입력하세요:", "");
-    if (userInfo && userInfo.trim() !== '') {
-        socket.emit('createSlot', { type: 'game', user: userInfo.trim() });
+    // localStorage에 저장된 로그인 정보 가져오기
+    const savedUser = localStorage.getItem("currentUser");
+    
+    if (!savedUser) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        return;
     }
+
+    const user = JSON.parse(savedUser);
+
+    // 서버가 요구하는 슬롯 생성 포맷에 맞춰 데이터 조합
+    // (예: "A급/30대/남/이민턴" 형태)
+    const userInfo = `${user.grade || ''}급/${user.age || ''}/${user.gender || ''}/${user.name || ''}`;
+
+    // prompt 창 없이 즉시 서버로 전송
+    socket.emit('createSlot', { type: 'game', user: userInfo });
 }
 
+// 2. 난타 슬롯(방) 자동 생성 (로그인 정보 연동)
 function createNewNantaSlot() {
-    const userInfo = prompt("방장의 [급수/연령/성별/이름]을 입력하세요:", "");
-    if (userInfo && userInfo.trim() !== '') {
-        socket.emit('createSlot', { type: 'nanta', user: userInfo.trim() });
+    const savedUser = localStorage.getItem("currentUser");
+    
+    if (!savedUser) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        return;
     }
+
+    const user = JSON.parse(savedUser);
+    const userInfo = `${user.grade || ''}급/${user.age || ''}/${user.gender || ''}/${user.name || ''}`;
+
+    socket.emit('createSlot', { type: 'nanta', user: userInfo });
 }
 
 function joinGameCell(slotId, idx) {
