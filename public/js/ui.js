@@ -275,39 +275,42 @@ function updateAvailableCourtCounts() {
     document.getElementById('nanta-available-count').innerText = getAvailableNantaCourtsCount();
 }
 
-// 1. 게임 슬롯(방) 자동 생성 (로그인 정보 연동)
+// 1. 게임방 개설 버튼 클릭 시
 function createNewGameSlot() {
-    // localStorage에 저장된 로그인 정보 가져오기
     const savedUser = localStorage.getItem("currentUser");
-    
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
-
     const user = JSON.parse(savedUser);
+    const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
-    // 서버가 요구하는 슬롯 생성 포맷에 맞춰 데이터 조합
-    // (예: "A급/30대/남/이민턴" 형태)
-    const userInfo = `${user.grade || ''}급/${user.age || ''}/${user.gender || ''}/${user.name || ''}`;
+    const activeSocket = typeof socket !== 'undefined' ? socket : window.socket;
+    if (!activeSocket) {
+        alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
+        return;
+    }
 
-    // prompt 창 없이 즉시 서버로 전송
-    socket.emit('createSlot', { type: 'game', user: userInfo });
+    activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
-// 2. 난타 슬롯(방) 자동 생성 (로그인 정보 연동)
+// 2. 난타방 개설 버튼 클릭 시
 function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
-    
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
-
     const user = JSON.parse(savedUser);
-    const userInfo = `${user.grade || ''}급/${user.age || ''}/${user.gender || ''}/${user.name || ''}`;
+    const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
-    socket.emit('createSlot', { type: 'nanta', user: userInfo });
+    const activeSocket = typeof socket !== 'undefined' ? socket : window.socket;
+    if (!activeSocket) {
+        alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
+        return;
+    }
+
+    activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
 }
 
 function joinGameCell(slotId, idx) {
@@ -488,20 +491,29 @@ function handleHome() {
     switchTab('game');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-// public/js/ui.js 맨 아래 추가
 
-// 저장된 로그인 사용자 정보를 헤더에 반영
+// 헤더에 유저 정보를 안전하게 갱신해 주는 함수
 function applyUserProfile() {
-  const userJson = localStorage.getItem("currentUser");
-  const displayNameEl = document.getElementById("user-display-name");
+    const userStr = localStorage.getItem("currentUser");
+    
+    // 💡 HTML의 실제 헤더 ID인 'user-display-name'으로 정확하게 수정했습니다!
+    const headerUserEl = document.getElementById("user-display-name"); 
+    
+    if (!headerUserEl) return;
 
-  if (userJson) {
-    const user = JSON.parse(userJson);
-    if (displayNameEl) {
-      displayNameEl.textContent = `${user.name}님 (${user.club})`;
+    if (userStr) {
+        const user = JSON.parse(userStr);
+        // '로그인 중...' 문구를 지우고 올바른 회원 정보로 덮어씌움
+        headerUserEl.textContent = `${user.name}님 (${user.ageGroup} / ${user.grade})`;
+    } else {
+        headerUserEl.textContent = "로그인 필요";
     }
-  }
 }
+
+// 페이지가 로드될 때 무조건 실행되도록 보장
+document.addEventListener("DOMContentLoaded", () => {
+    applyUserProfile();
+});
 
 // 로그아웃 처리
 function handleLogout() {

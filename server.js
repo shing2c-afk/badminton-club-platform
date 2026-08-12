@@ -1,15 +1,117 @@
+// ==========================
+// 1. 필수 모듈 불러오기 (중복 없이 깔끔하게 통합)
+// ==========================
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
+// ==========================
+// 2. 서버 및 미들웨어 초기화
+// ==========================
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
+
+// ==========================
+// 3. 데이터베이스(SQLite) 파일 연결 및 초기화
+// ==========================
+const dbPath = path.resolve(__dirname, 'badminton.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('❌ 데이터베이스 연결 실패:', err.message);
+    } else {
+        console.log('✅ SQLite 데이터베이스(badminton.db) 연결 성공');
+        initDatabase(); // 테이블 생성 함수 호출
+        
+        // 💡 테이블이 만들어진 직후에 더미 데이터 자동 생성 함수 호출!
+        insertDefaultDummyData(); 
+    }
+});
+
+// 테이블 자동 생성 및 초기 더미 데이터 적재 함수
+function initDatabase() {
+    // 정회원 테이블 생성
+    db.run(`
+        CREATE TABLE IF NOT EXISTS regular_members (
+            id TEXT PRIMARY KEY,
+            type TEXT,
+            username TEXT UNIQUE,
+            password TEXT,
+            name TEXT,
+            gender TEXT,
+            birthDate TEXT,
+            ageGroup TEXT,
+            grade TEXT,
+            phone TEXT,
+            address TEXT,
+            joinedAt TEXT
+        )
+    `, (err) => {
+        if (!err) {
+            checkAndInsertDefaultData();
+        }
+    });
+
+    // 일일회원 테이블 생성
+    db.run(`
+        CREATE TABLE IF NOT EXISTS daily_guests (
+            id TEXT PRIMARY KEY,
+            type TEXT,
+            name TEXT,
+            phone TEXT,
+            address TEXT,
+            visitedAt TEXT
+        )
+    `);
+}
+
+// 기본 샘플 데이터 삽입 함수
+function checkAndInsertDefaultData() {
+    db.get(`SELECT COUNT(*) as count FROM regular_members`, (err, row) => {
+        if (row && row.count === 0) {
+            console.log('📦 정회원 데이터가 없어 기본 더미 데이터를 삽입합니다.');
+            
+            const stmt = db.prepare(`INSERT INTO regular_members VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            
+            const grades = ['초심', 'D조', 'C조', 'B조', 'A조', 'S조'];
+            const genders = ['남', '여'];
+            const ageGroups = ['20대', '30대', '40대', '50대'];
+            const addresses = ['경기도 파주시'];
+
+            // 1. 관리자 계정 먼저 수동으로 안전하게 추가
+            stmt.run("reg_admin", "regular", "admin", "admin123", "관리자", "남", "1975-01-01", "50대", "A조", "010-0000-0000", "경기도 파주시", "2023-01-01");
+
+            // 2. 정회원 50명 자동 생성 및 추가 (회원01 ~ 회원50)
+            for (let i = 1; i <= 50; i++) {
+                const padNum = String(i).padStart(2, '0');
+                stmt.run(
+                    `reg_${padNum}`,
+                    'regular',
+                    `user${i}`,
+                    '1234',
+                    `회원${padNum}`,
+                    genders[i % genders.length],
+                    '1985-05-15',
+                    ageGroups[i % ageGroups.length],
+                    grades[i % grades.length],
+                    `010-1111-${padNum}${padNum}`,
+                    addresses[0],
+                    '2026-01-01'
+                );
+            }
+            
+            stmt.finalize();
+            console.log('✨ 기본 정회원 더미 데이터 50명 + 관리자 적재 완료');
+        }
+    });
+}
 
 // 정적 파일 제공 (public 폴더 내 admin.html, tv.html, index.html 배치)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -357,51 +459,66 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 방 개설 (게임 4명, 난타 2명)
-    socket.on('createSlot', ({ type, user }) => {
-        const newSlot = {
-            id: 'slot_' + (slotIdCounter++),
-            type: type,
-            players: type === 'game' ? [user, '', '', ''] : [user, ''],
-            createdAt: Date.now(),
-            fullAt: null,
-            remainingSeconds: null
-        };
+// 1. 방 개설 요청 시 아무런 제약 없이 곧바로 생성하도록 원상복구
+socket.on('createSlot', ({ type, userId, user }) => {
+    createNewSlotDirectly(type, userId, user);
+});
 
-        if (type === 'game') gameQueue.push(newSlot);
-        else nantaQueue.push(newSlot);
+// 2. 강제 생성 요청도 일반 생성과 동일하게 처리
+socket.on('forceCreateSlot', ({ type, userId, user }) => {
+    createNewSlotDirectly(type, userId, user);
+});
 
-        addNotification(`📢 [방 개설] 새로운 ${type === 'game' ? '게임' : '난타'} 방이 개설되었습니다 (${user}).`);
+socket.on('joinPlayer', ({ type, slotId, index, name }) => {
+    const queue = type === 'game' ? gameQueue : nantaQueue;
+    const slot = queue.find(s => s.id === slotId);
+    
+    if (slot && index >= 0 && index < slot.players.length) {
+        slot.players[index] = name;
+        addNotification(`👤 [참가] ${name} 님이 대기 방에 입장하셨습니다.`);
         broadcastState();
-    });
+    }
+});
 
-    // 슬롯에 플레이어 참가
-    socket.on('joinPlayer', ({ type, slotId, index, name }) => {
-        const queue = type === 'game' ? gameQueue : nantaQueue;
-        const slot = queue.find(s => s.id === slotId);
-        if (slot && index >= 0 && index < slot.players.length) {
-            slot.players[index] = name;
-            addNotification(`👤 [참가] ${name} 님이 대기 방에 입장하셨습니다.`);
-            broadcastState();
+// 3. 순수 방 생성 헬퍼 함수
+function createNewSlotDirectly(type, userId, user) {
+    const myName = user.split(' / ')[0].trim();
+
+    const newSlot = {
+        id: 'slot_' + (slotIdCounter++),
+        type: type,
+        players: type === 'game' ? [user, '', '', ''] : [user, '', ''],
+        userIds: [userId], 
+        createdAt: Date.now(),
+        fullAt: null,
+        remainingSeconds: null
+    };
+
+    if (type === 'game') gameQueue.push(newSlot);
+    else nantaQueue.push(newSlot);
+
+    addNotification(`📢 [방 개설] 새로운 ${type === 'game' ? '게임' : '난타'} 방이 개설되었습니다 (${myName}).`);
+    broadcastState();
+}
+// 5. 플레이어 퇴장/제거 (누락되었던 코드 복구)
+socket.on('exitPlayer', ({ type, slotId, index }) => {
+    const queue = type === 'game' ? gameQueue : nantaQueue;
+    const slotIdx = queue.findIndex(s => s.id === slotId);
+
+    if (slotIdx !== -1) {
+        const slot = queue[slotIdx];
+        
+        // 해당 인덱스의 플레이어 정보를 비움
+        slot.players[index] = '';
+        
+        // 만약 방에 유효한 플레이어가 아예 남아있지 않다면 슬롯 자체를 삭제
+        if (getValidPlayers(slot.players).length === 0) {
+            queue.splice(slotIdx, 1);
         }
-    });
-
-    // 플레이어 퇴장/제거
-    socket.on('exitPlayer', ({ type, slotId, index }) => {
-        const queue = type === 'game' ? gameQueue : nantaQueue;
-        const slotIdx = queue.findIndex(s => s.id === slotId);
-
-        if (slotIdx !== -1) {
-            const slot = queue[slotIdx];
-            slot.players[index] = '';
-            
-            if (getValidPlayers(slot.players).length === 0) {
-                queue.splice(slotIdx, 1);
-            }
-            broadcastState();
-        }
-    });
-
+        
+        broadcastState(); // 전체 클라이언트에 상태 동기화
+    }
+});
     // 게임 방 통합
     socket.on('mergeSlot', ({ mySlotId, targetSlotId }) => {
         const mySlot = gameQueue.find(s => s.id === mySlotId);
@@ -591,41 +708,193 @@ io.on('connection', (socket) => {
     });
 });
 
-// server.js 파일 하단에 추가
-
-// JSON 파싱 미들웨어가 없다면 상단 근처에 추가 확인: app.use(express.json());
-
-// 더미 회원 데이터 (badminton.db 연동 전 테스트용)
+// 더미 회원 데이터 (실전 배드민턴 클럽 운영 스키마 반영)
 const dummyUsers = [
-  { id: "user1", name: "김민턴", role: "member", club: "파주 클럽" },
-  { id: "user2", name: "이민턴", role: "member", club: "운정 클럽" },
-  { id: "admin", name: "관리자", role: "admin", club: "운영진" }
+  { 
+    id: "user1", 
+    name: "김민턴", 
+    gender: "남", 
+    ageGroup: "40대", 
+    grade: "B조", 
+    address: "경기도 파주시",
+    role: "member" 
+  },
+  { 
+    id: "user2", 
+    name: "이민턴", 
+    gender: "여", 
+    ageGroup: "30대", 
+    grade: "C조", 
+    address: "경기도 파주시",
+    role: "member" 
+  },
+  { 
+    id: "admin", 
+    name: "관리자", 
+    gender: "남", 
+    ageGroup: "50대", 
+    grade: "A조", 
+    address: "경기도 파주시",
+    role: "admin" 
+  }
 ];
 
-// 1. 더미 회원 목록 반환 API
-app.get('/api/users/dummy', (req, res) => {
-  res.json({ success: true, users: dummyUsers });
+// ==========================================
+// 2. 전체 정회원 목록 조회 API (로그인 화면 드롭다운용)
+// ==========================================
+app.get('/api/users/list', (req, res) => {
+    const query = `SELECT id, username, name, gender, ageGroup, grade FROM regular_members`;
+    
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: "회원 목록을 불러오지 못했습니다." });
+        }
+        res.json({ success: true, users: rows });
+    });
 });
 
-// server.js 하단 로그인 API
+
+// ==========================================
+// 3. DB 기반 로그인 API (중복 없이 이것 하나만 유지)
+// ==========================================
 app.post('/api/login', (req, res) => {
-  // body 데이터 유효성 검사
-  const username = req.body?.username;
-  const password = req.body?.password;
+    const username = req.body?.username;
+    const password = req.body?.password;
 
-  if (!username) {
-    return res.status(400).json({ success: false, message: "아이디를 입력해주세요." });
-  }
+    if (!username) {
+        return res.status(400).json({ success: false, message: "아이디를 입력해주세요." });
+    }
 
-  const user = dummyUsers.find(u => u.id === username);
+    const query = `SELECT * FROM regular_members WHERE username = ?`;
+    
+    db.get(query, [username], (err, user) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: "서버 오류가 발생했습니다." });
+        }
 
-  if (user) {
-    res.json({ success: true, message: "로그인 성공", user });
-  } else {
-    res.status(401).json({ success: false, message: "존재하지 않는 회원 아이디입니다." });
-  }
+        if (!user) {
+            return res.status(401).json({ success: false, message: "존재하지 않는 회원 아이디입니다." });
+        }
+
+        if (user.password !== password) {
+            return res.status(401).json({ success: false, message: "비밀번호가 일치하지 않습니다." });
+        }
+
+        // 비밀번호를 제외한 유저 정보 전달
+        const { password: _, ...userInfo } = user;
+        
+        res.json({ 
+            success: true, 
+            message: "로그인 성공", 
+            user: userInfo 
+        });
+    });
 });
 
+
+// ==========================================
+// 4. 정회원 50명 + 관리자 자동 생성 함수 (파일 맨 하단 등에 위치)
+// ==========================================
+function checkAndInsertDefaultData() {
+    db.get(`SELECT COUNT(*) as count FROM regular_members`, (err, row) => {
+        if (row && row.count === 0) {
+            console.log('📦 정회원 데이터가 없어 기본 더미 데이터를 삽입합니다.');
+            
+            const stmt = db.prepare(`INSERT INTO regular_members VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            
+            const grades = ['초심', 'D조', 'C조', 'B조', 'A조', 'S조'];
+            const genders = ['남', '여'];
+            const ageGroups = ['20대', '30대', '40대', '50대'];
+            const addresses = ['경기도 파주시'];
+
+            // 1. 관리자 계정 추가
+            stmt.run("reg_admin", "regular", "admin", "1234", "관리자", "남", "1975-01-01", "50대", "A조", "010-0000-0000", "경기도 파주시", "2023-01-01");
+
+            // 2. 정회원 50명 자동 생성 (회원01 ~ 회원50)
+            for (let i = 1; i <= 50; i++) {
+                const padNum = String(i).padStart(2, '0');
+                stmt.run(
+                    `reg_${padNum}`,
+                    'regular',
+                    `user${i}`,
+                    '1234',
+                    `회원${padNum}`,
+                    genders[i % genders.length],
+                    '1985-05-15',
+                    ageGroups[i % ageGroups.length],
+                    grades[i % grades.length],
+                    `010-1111-${padNum}${padNum}`,
+                    addresses[0],
+                    '2026-01-01'
+                );
+            }
+            
+            stmt.finalize();
+            console.log('✨ 기본 정회원 더미 데이터 50명 + 관리자 적재 완료');
+        }
+    });
+}
+// ==========================================
+// 테스트용 정회원/일일회원 자동 생성 함수
+// ==========================================
+function insertDefaultDummyData() {
+    // 1. 정회원 50명 체크 및 삽입
+    db.get("SELECT COUNT(*) as count FROM regular_members", (err, row) => {
+        if (!err && row && row.count === 0) {
+            const grades = ['초심', 'D조', 'C조', 'B조', 'A조', 'S조'];
+            const genders = ['남', '여'];
+            const ageGroups = ['20대', '30대', '40대', '50대'];
+            
+            const stmt = db.prepare(`
+                INSERT INTO regular_members (type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+
+            for (let i = 1; i <= 50; i++) {
+                const padNum = String(i).padStart(2, '0');
+                stmt.run(
+                    'regular',
+                    `user${padNum}`,
+                    '1234', // 임시 비밀번호
+                    `회원${padNum}`,
+                    genders[i % genders.length],
+                    '1985-05-15',
+                    ageGroups[i % ageGroups.length],
+                    grades[i % grades.length],
+                    `010-1111-${padNum}${padNum}`,
+                    '경기도 파주시',
+                    '2026-01-01'
+                );
+            }
+            stmt.finalize();
+            console.log("✅ 정회원 테스트 더미 50명 생성 완료!");
+        }
+    });
+
+    // 2. 일일회원 20명 체크 및 삽입
+    db.get("SELECT COUNT(*) as count FROM daily_members", (err, row) => {
+        if (!err && row && row.count === 0) {
+            const addresses = ['경기도 파주시', '서울특별시 마포구', '경기도 고양시', '인천광역시 연수구'];
+            const stmt = db.prepare(`
+                INSERT INTO daily_members (type, name, phone, address, visitedAt) 
+                VALUES (?, ?, ?, ?, ?)
+            `);
+
+            for (let i = 1; i <= 20; i++) {
+                const padNum = String(i).padStart(2, '0');
+                stmt.run(
+                    'daily',
+                    `게스트${padNum}`,
+                    `010-2222-${padNum}${padNum}`,
+                    addresses[i % addresses.length],
+                    '2026-06-01'
+                );
+            }
+            stmt.finalize();
+            console.log("✅ 일일회원 테스트 더미 20명 생성 완료!");
+        }
+    });
+}
 // ==========================
 // 4. 서버 실행
 // ==========================
