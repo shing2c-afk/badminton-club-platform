@@ -12,22 +12,23 @@ document.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => {
     if (introOverlay) introOverlay.classList.add("hidden");
     if (loginOverlay) loginOverlay.classList.remove("hidden");
-    fetchRegularMembers(); // 💡 DB 기반 회원 목록 조회 함수 호출로 변경
+    fetchRegularMembers(); // DB 기반 회원 목록 조회 함수 호출
   }, 2000);
 
-  // 2. 서버 DB에서 정회원 목록 가져오기 (API 경로 수정 반영)
+  // 2. 서버 DB에서 정회원 목록 가져오기
   async function fetchRegularMembers() {
     try {
-      const res = await fetch("/api/users/list");
+      const res = await fetch('/api/members');
       const data = await res.json();
 
-      if (data.success && dummySelect) {
+      // 서버에서 전달된 데이터가 배열 형태이므로 안전하게 확인 후 순회
+      if (Array.isArray(data) && dummySelect) {
         dummySelect.innerHTML = '<option value="">-- 계정 선택 (선택사항) --</option>';
-        data.users.forEach(u => {
+        data.forEach(u => {
           const opt = document.createElement("option");
           
-          // 💡 핵심 수정: input창에 들어갈 값(username)을 명확히 지정
-          opt.value = u.username || u.id; 
+          // input창에 들어갈 값(username 또는 id)을 지정
+          opt.value = u.username; 
           
           // 화면에 보이는 텍스트
           opt.textContent = `${u.name} (${u.ageGroup} / ${u.grade})`;
