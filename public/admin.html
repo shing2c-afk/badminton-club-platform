@@ -16,8 +16,8 @@
 
         .form-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
         .form-group label { font-size: 13px; color: #d1d5db; }
-        .form-group input { background: #1f2937; border: 1px solid #374151; color: white; padding: 8px 10px; border-radius: 6px; width: 120px; text-align: right; font-size: 15px; outline: none; }
-        .form-group input:focus { border-color: #3b82f6; }
+        .form-group input, .form-group select { background: #1f2937; border: 1px solid #374151; color: white; padding: 8px 10px; border-radius: 6px; width: 150px; text-align: right; font-size: 15px; outline: none; }
+        .form-group input:focus, .form-group select:focus { border-color: #3b82f6; }
 
         .court-item { display: flex; align-items: center; gap: 8px; background: #1f2937; border: 1px solid #374151; padding: 12px; border-radius: 8px; margin-bottom: 10px; }
         .court-num { font-size: 15px; font-weight: bold; width: 65px; color: #f9fafb; flex-shrink: 0; }
@@ -47,15 +47,20 @@
         .btn-del { background: #ef4444; color: white; border: none; padding: 10px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; flex-shrink: 0; }
 
         .btn-primary { background: #2563eb; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
+        .btn-danger { background: #ef4444; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
         .btn-add { background: #10b981; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; }
         .btn-link { background: #374151; color: white; text-decoration: none; display: block; text-align: center; padding: 12px; border-radius: 8px; font-size: 14px; margin-top: 20px; font-weight: bold; }
+
+        .list-container { max-height: 150px; overflow-y: auto; background: #1f2937; border-radius: 6px; padding: 8px; margin-bottom: 10px; }
+        .list-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #374151; font-size: 14px; }
+        .list-item:last-child { border-bottom: none; }
+        .btn-sm-del { background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; }
     </style>
 </head>
 <body>
 
     <h1>⚙️ 배드민턴 클럽 관리자 시스템</h1>
 
-    <!-- 1. 타임아웃 및 비밀번호 설정 -->
     <div class="card">
         <div class="card-title">⏰ 타이머 및 관리자 보안 설정</div>
         <div class="form-group">
@@ -73,7 +78,6 @@
         <button class="btn-primary" onclick="saveConfig()">환경 설정 저장</button>
     </div>
 
-    <!-- 2. 코트 운영 현황 설정 -->
     <div class="card">
         <div class="card-title">
             <span>🏸 코트 운영 현황 설정</span>
@@ -83,12 +87,48 @@
         <button class="btn-primary" style="background:#10b981;" onclick="saveCourtsConfig()">코트 구성 저장 및 현장에 적용</button>
     </div>
 
+    <div class="card" style="border-color: #b91c1c;">
+        <div class="card-title" style="color: #ef4444;">🚨 회원 강제 퇴장 (대기열/참여 일괄 정리)</div>
+        <div class="form-group">
+            <label>퇴장시킬 회원 선택:</label>
+            <select id="kick-user-select">
+                <option value="">-- 회원을 선택하세요 --</option>
+            </select>
+        </div>
+        <button class="btn-danger" onclick="executeKickUser()">선택 회원 강제 퇴장 조치</button>
+    </div>
+
+    <div class="card" style="border-color: #b91c1c;">
+        <div class="card-title" style="color: #ef4444;">💥 게임방 / 난타방 강제 종료 (폭파)</div>
+        <div class="form-group">
+            <label>종료할 방 선택:</label>
+            <select id="delete-room-select">
+                <option value="">-- 활성화된 방을 선택하세요 --</option>
+            </select>
+        </div>
+        <button class="btn-danger" onclick="executeDeleteRoom()">선택한 방 강제 종료</button>
+    </div>
+
+   <div class="card" style="border-color: #b91c1c;">
+        <div class="card-title" style="color: #ef4444;">🏸 코트 강제 비우기 (게임 / 난타 / 레슨)</div>
+        <div class="form-group">
+            <p style="margin-bottom: 10px; color: #cbd5e1; font-size: 14px;">현재 진행 중이거나 점유된 코트를 강제 초기화하여 빈 코트로 만듭니다.</p>
+            <label>비울 코트 선택:</label>
+            <select id="clear-court-select">
+                <option value="">-- 비울 코트를 선택하세요 --</option>
+            </select>
+        </div>
+        <button class="btn-danger" onclick="handleClearCourt()">선택한 코트 강제 비우기</button>
+    </div>
+
     <a href="/" class="btn-link">📱 사용자 메인 화면으로 돌아가기</a>
 
 <script>
     const socket = io();
     let localCourts = [];
-    let isInitialized = false; // 최초 1회만 서버 데이터로 채우기 위한 플래그
+    let isInitialized = false; 
+    let activeUsersList = []; // 실시간 대기/참여 중인 회원 목록 저장용
+    let activeRoomsList = []; // 실시간 활성 방 목록 저장용
 
     function escapeHtml(str) {
         if (!str) return '';
@@ -101,24 +141,238 @@
     }
 
     socket.on('stateUpdated', (data) => {
-        // 관리자 수정 작업 중 서버의 실시간 통신으로 인한 화면 덮어쓰기를 방지합니다.
-        if (isInitialized) return;
-
         if (data.config) {
             const entrySec = data.config.ENTRY_TIMEOUT_SEC || 180;
             const nantaSec = data.config.NANTA_COURT_LIMIT_SEC || 900;
             
-            document.getElementById('entry-timeout').value = entrySec / 60;
-            document.getElementById('nanta-timeout').value = nantaSec / 60;
-            document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
+            // 최초 1회만 기본 설정값 채우기
+            if (!isInitialized) {
+                document.getElementById('entry-timeout').value = entrySec / 60;
+                document.getElementById('nanta-timeout').value = nantaSec / 60;
+                document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
+            }
         }
-        if (data.courtsData) {
+        if (data.courtsData && !isInitialized) {
             localCourts = JSON.parse(JSON.stringify(data.courtsData));
             renderCourtConfig();
         }
 
-        isInitialized = true; // 최초 동기화 완료
+        // 실시간 대기/참여자 및 활성 방 데이터 수집 및 드롭다운 갱신
+        updateAdminDropdowns(data);
+
+        isInitialized = true; 
     });
+
+    // =================================================================
+// 1. 관리자 제어용 드롭다운 목록 실시간 갱신 함수 (회원, 방, 코트 통합)
+// =================================================================
+function updateAdminDropdowns(data) {
+    const userSelect = document.getElementById('kick-user-select');
+    const roomSelect = document.getElementById('delete-room-select');
+    const courtSelect = document.getElementById('clear-court-select'); // 💡 신규 추가된 코트 비우기 셀렉트
+    
+    const selectedUser = userSelect ? userSelect.value : '';
+    const selectedRoom = roomSelect ? roomSelect.value : '';
+    const selectedCourt = courtSelect ? courtSelect.value : '';
+
+    if (userSelect) userSelect.innerHTML = '<option value="">-- 회원을 선택하세요 --</option>';
+    if (roomSelect) roomSelect.innerHTML = '<option value="">-- 활성화된 방을 선택하세요 --</option>';
+    if (courtSelect) courtSelect.innerHTML = '<option value="">-- 비울 코트를 선택하세요 --</option>';
+
+    let uniqueUsersMap = new Map();
+    let rooms = [];
+
+    const collectUser = (id, name, gender, grade) => {
+        if (!id) return;
+        if (!uniqueUsersMap.has(id)) {
+            uniqueUsersMap.set(id, {
+                username: id,
+                displayName: (name && name !== id) ? name : id
+            });
+        }
+    };
+
+    // 1. 게임 큐(gameQueue) 스캔
+    if (data.gameQueue && Array.isArray(data.gameQueue)) {
+        data.gameQueue.forEach((slot, index) => {
+            const roomId = slot.id !== undefined ? slot.id : index;
+            const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
+            const roomTitle = `게임 코트방 #${index + 1} (참여자: ${participants})`;
+            
+            rooms.push({ type: 'game', id: roomId, label: roomTitle });
+
+            if (slot.userIds && Array.isArray(slot.userIds)) {
+                slot.userIds.forEach((id, idx) => {
+                    const name = slot.players ? slot.players[idx] : '';
+                    collectUser(id, name);
+                });
+            } else if (slot.players && Array.isArray(slot.players)) {
+                slot.players.forEach(p => { if (p) collectUser(p, p); });
+            }
+        });
+    }
+
+    // 2. 난타 큐(nantaQueue) 스캔
+    if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
+        data.nantaQueue.forEach((slot, index) => {
+            const roomId = slot.id !== undefined ? slot.id : index;
+            const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
+            const roomTitle = `난타 코트방 #${index + 1} (참여자: ${participants})`;
+            
+            rooms.push({ type: 'nanta', id: roomId, label: roomTitle });
+
+            if (slot.userIds && Array.isArray(slot.userIds)) {
+                slot.userIds.forEach((id, idx) => {
+                    const name = slot.players ? slot.players[idx] : '';
+                    collectUser(id, name);
+                });
+            } else if (slot.players && Array.isArray(slot.players)) {
+                slot.players.forEach(p => { if (p) collectUser(p, p); });
+            }
+        });
+    }
+
+    // 3. 코트 데이터(courtsData) 스캔 및 드롭다운 채우기 (💡 신규 병합된 부분)
+    if (data.courtsData && Array.isArray(data.courtsData) && courtSelect) {
+        data.courtsData.forEach(court => {
+            let infoText = '';
+            
+            if (court.type === 'game') {
+                infoText = `[게임 코트 #${court.id}] ${court.isEmpty ? '빈 코트' : '참여: ' + court.players}`;
+            } else if (court.type === 'nanta') {
+                const aInfo = court.sideA && !court.sideA.isEmpty ? `A구역(${court.sideA.players})` : 'A구역(비어있음)';
+                const bInfo = court.sideB && !court.sideB.isEmpty ? `B구역(${court.sideB.players})` : 'B구역(비어있음)';
+                infoText = `[난타 코트 #${court.id}] ${aInfo} / ${bInfo}`;
+            } else if (court.type === 'lesson') {
+                infoText = `[레슨 코트 #${court.id}] ${court.players || '레슨 중'}`;
+            }
+
+            const opt = document.createElement('option');
+            opt.value = court.id;
+            opt.textContent = infoText;
+            if (String(court.id) === selectedCourt) opt.selected = true;
+            courtSelect.appendChild(opt);
+        });
+    }
+
+    // 회원 드롭다운 채우기
+    if (userSelect) {
+        uniqueUsersMap.forEach((user) => {
+            const opt = document.createElement('option');
+            opt.value = user.username;
+            opt.textContent = user.displayName;
+            if (user.username === selectedUser) opt.selected = true;
+            userSelect.appendChild(opt);
+        });
+    }
+
+    // 방 드롭다운 채우기
+    if (roomSelect) {
+        rooms.forEach(room => {
+            const opt = document.createElement('option');
+            opt.value = `${room.type}:${room.id}`;
+            opt.textContent = room.label;
+            if (opt.value === selectedRoom) opt.selected = true;
+            roomSelect.appendChild(opt);
+        });
+    }
+}
+
+
+// =================================================================
+// 2. 관리자 기능 실행 함수들 (강제 퇴장, 방 강제 종료, 코트 비우기)
+// =================================================================
+
+// 🚨 선택 회원 강제 퇴장 실행
+async function executeKickUser() {
+    const targetUsername = document.getElementById('kick-user-select').value;
+    if (!targetUsername) {
+        alert('강제 퇴장시킬 회원을 선택해주세요.');
+        return;
+    }
+
+    if (!confirm(`[${targetUsername}]님을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`)) return;
+
+    try {
+        const response = await fetch('/api/admin/kick-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetUsername })
+        });
+        const result = await response.json();
+        if (result.success) {
+            alert(result.message);
+        } else {
+            alert('퇴장 처리 실패: ' + result.message);
+        }
+    } catch (err) {
+        console.error('강제 퇴장 에러:', err);
+        alert('서버 통신 중 오류가 발생했습니다.');
+    }
+}
+
+// 💥 선택 방 강제 종료 실행
+async function executeDeleteRoom() {
+    const roomVal = document.getElementById('delete-room-select').value;
+    if (!roomVal) {
+        alert('강제 종료할 방을 선택해주세요.');
+        return;
+    }
+
+    const [roomType, roomIdStr] = roomVal.split(':');
+    const roomId = isNaN(roomIdStr) ? roomIdStr : Number(roomIdStr);
+
+    if (!confirm(`선택한 ${roomType === 'game' ? '게임방' : '난타방'}을 즉시 강제 종료(폭파)하시겠습니까?`)) return;
+
+    try {
+        const response = await fetch('/api/admin/delete-room', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roomType, roomId })
+        });
+        const result = await response.json();
+        if (result.success) {
+            alert(result.message);
+        } else {
+            alert('방 강제 종료 실패: ' + result.message);
+        }
+    } catch (err) {
+        console.error('방 강제 종료 에러:', err);
+        alert('서버 통신 중 오류가 발생했습니다.');
+    }
+}
+
+// 🏸 선택 코트 강제 비우기 실행 (💡 신규 추가된 함수)
+async function handleClearCourt() {
+    const courtSelect = document.getElementById('clear-court-select');
+    const courtId = courtSelect.value;
+
+    if (!courtId) {
+        alert('⚠️ 강제로 비울 코트를 선택해 주세요.');
+        return;
+    }
+
+    if (confirm(`정말 ${courtId}번 코트를 강제 초기화(비우기) 하시겠습니까?`)) {
+        try {
+            const response = await fetch('/api/admin/clear-court', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ courtId: Number(courtId) })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                alert(`✅ ${result.message}`);
+                courtSelect.value = '';
+            } else {
+                alert(`❌ 실패: ${result.message}`);
+            }
+        } catch (err) {
+            console.error('코트 강제 비우기 통신 에러:', err);
+            alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
+        }
+    }
+}
 
     function renderCourtConfig() {
         const container = document.getElementById('court-config-list');

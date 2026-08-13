@@ -162,6 +162,242 @@ app.post('/api/login', (req, res) => {
         }
     });
 });
+// ==========================
+// 로그인 처리 API (누락되었던 핵심 기능)
+// ==========================
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+
+    // 데이터베이스에서 아이디(username)로 회원 조회
+    db.get(`SELECT * FROM regular_members WHERE username = ?`, [username], (err, user) => {
+        if (err) {
+            console.error('❌ 로그인 DB 조회 에러:', err.message);
+            return res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
+        }
+
+        if (!user) {
+            return res.json({ success: false, message: '존재하지 않는 회원 아이디입니다.' });
+        }
+
+        // 입력한 비밀번호와 DB에 저장된 비밀번호 비교
+        if (user.password === password) {
+            // 보안을 위해 비밀번호 필드는 제외하고 유저 정보 전송
+            const { password: _, ...userInfo } = user;
+            res.json({ success: true, user: userInfo });
+        } else {
+            res.json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
+        }
+    });
+});
+
+// 🧹 [수정된 공통 청소 함수] 잔여 대기 및 방 정리 (빈 방 폭파 로직 강화)
+function cleanupUser(username) {
+    if (!username) return;
+
+    // 1. 게임 대기열(gameQueue) 정리 및 빈 방 폭파
+    if (typeof gameQueue !== 'undefined') {
+        gameQueue.forEach(slot => {
+            if (slot.userIds) slot.userIds = slot.userIds.filter(id => id !== username);
+            if (slot.players) slot.players = slot.players.map(p => (p === username ? '' : p));
+        });
+        
+        // 플레이어와 유저 아이디가 모두 비어버린 빈 방은 완전히 삭제
+        gameQueue = gameQueue.filter(slot => {
+            const hasPlayers = slot.players && slot.players.some(p => p && p !== '');
+            const hasIds = slot.userIds && slot.userIds.length > 0;
+            return hasPlayers || hasIds;
+        });
+    }
+
+    // 2. 난타 대기열/코트(nantaQueue) 정리 및 빈 방 폭파
+    if (typeof nantaQueue !== 'undefined') {
+        nantaQueue = nantaQueue.filter(slot => {
+            // 이 슬롯에 해당 유저가 포함되어 있는지 확인 (아이디 또는 플레이어 이름 매칭)
+            const isUserInSlot = (slot.userIds && slot.userIds.includes(username)) || 
+                                 (slot.players && slot.players.includes(username));
+            
+            if (!isUserInSlot) return true; // 유저가 없으면 이 방은 유지
+
+            // 이 방이 '코트 입장(진행 중)' 상태인지 판별
+            const isPlaying = slot.status === 'playing' || slot.courtAssigned; 
+
+            if (isPlaying) {
+                console.log(`💥 [난타 코트 강제 종료] ${username}님이 이탈하여 진행 중이던 난타 방이 함께 종료됩니다.`);
+                return false; // 방 전체 폭파
+            } else {
+                // 대기 상태라면 -> 본인만 쏙 빠짐
+                if (slot.userIds) slot.userIds = slot.userIds.filter(id => id !== username);
+                if (slot.players) slot.players = slot.players.map(p => (p === username ? '' : p));
+                
+                // 💡 [핵심 추가] 본인이 빠져나간 후, 이 방에 남은 사람이 단 한 명도 없다면 방을 폭파(false 리턴)합니다!
+                const hasRemainingPlayers = slot.players && slot.players.some(p => p && p !== '');
+                const hasRemainingIds = slot.userIds && slot.userIds.length > 0;
+                
+                if (!hasRemainingPlayers && !hasRemainingIds) {
+                    console.log(`💥 [빈 난타방 폭파] 인원이 모두 떠나 빈 방이 된 난타방이 자동 삭제됩니다.`);
+                    return false; // 방 폭파
+                }
+                
+                return true; // 사람이 남아있다면 방 유지
+            }
+        });
+    }
+
+    console.log(`🧹 [청소 완료] ${username}님의 상태가 현장 규칙에 맞게 완벽히 정리되었습니다.`);
+}
+
+// =================================================================
+// 🚪 [1단계 추가] 로그아웃 API (로그아웃 시 모든 대기/참여 상태 정리)
+// =================================================================
+app.post('/api/logout', (req, res) => {
+    const { username } = req.body;
+    
+    if (username) {
+        // 방금 만든 공통 청소 함수를 실행하여 대기열 및 방에서 깔끔하게 퇴장 조치
+        cleanupUser(username);
+        
+        // 만약 실시간 웹소켓 동기화 함수(예: broadcastState)가 있다면 이 아래에 추가 가능
+        // broadcastState();
+    }
+    
+    res.json({ success: true });
+});
+// =================================================================
+// 🛡️ [2단계 추가] 관리자 모드: 강제 퇴장 및 방 강제 종료 API
+// =================================================================
+
+// 1. 관리자 회원 강제 퇴장 (지정한 유저의 모든 대기 및 코트 상태 강제 정리)
+app.post('/api/admin/kick-user', (req, res) => {
+    const { targetUsername, adminUsername } = req.body; // 필요시 관리자 권한 체크도 가능
+
+    if (!targetUsername) {
+        return res.status(400).json({ success: false, message: '퇴장시킬 회원 아이디가 없습니다.' });
+    }
+
+    // 우리가 만든 공통 청소 함수 재사용!
+    cleanupUser(targetUsername);
+
+    console.log(`🚨 [관리자 강제 퇴장] 관리자에 의해 회원 [${targetUsername}]님이 강제 퇴장 및 정리되었습니다.`);
+
+    // 실시간 화면 동기화 함수가 있다면 여기서 호출 (예: broadcastState())
+    // broadcastState();
+
+    res.json({ success: true, message: `${targetUsername}님을 강제 퇴장시켰습니다.` });
+});
+
+
+// 2. 관리자 게임방/난타방 강제 종료 (폭파)
+app.post('/api/admin/delete-room', (req, res) => {
+    const { roomType, roomId } = req.body; // roomType: 'game' 또는 'nanta', roomId: 방 식별자
+
+    if (!roomType || roomId === undefined) {
+        return res.status(400).json({ success: false, message: '잘못된 요청입니다.' });
+    }
+
+    if (roomType === 'game' && typeof gameQueue !== 'undefined') {
+        // 해당 roomId를 가진 게임방 제거 (index나 id 비교 방식에 맞게 조정)
+        gameQueue = gameQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
+        console.log(`💥 [관리자 게임방 강제 종료] 게임방(${roomId})이 관리자에 의해 강제 삭제되었습니다.`);
+    } else if (roomType === 'nanta' && typeof nantaQueue !== 'undefined') {
+        // 해당 roomId를 가진 난타방 제거
+        nantaQueue = nantaQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
+        console.log(`💥 [관리자 난타방 강제 종료] 난타방(${roomId})이 관리자에 의해 강제 삭제되었습니다.`);
+    } else {
+        return res.json({ success: false, message: '존재하지 않는 방이거나 타입 오류입니다.' });
+    }
+
+    // 실시간 화면 동기화
+    // broadcastState();
+
+    res.json({ success: true, message: '해당 방이 강제 종료되었습니다.' });
+});
+// =================================================================
+// 🏸 [완성] 관리자 모드: 진행 중인 코트 강제 비우기/종료 API
+// =================================================================
+app.post('/api/admin/clear-court', (req, res) => {
+    // 클라이언트로부터 어떤 코트 번호(id 또는 배열 인덱스)인지 전달받습니다.
+    const { courtId } = req.body; // 예: 1, 2, ... 8
+
+    if (courtId === undefined) {
+        return res.status(400).json({ success: false, message: '코트 번호가 지정되지 않았습니다.' });
+    }
+
+    // courtsData 배열에서 해당 id를 가진 코트를 찾습니다.
+    const targetCourt = courtsData.find(c => c.id === Number(courtId));
+
+    if (!targetCourt) {
+        return res.status(404).json({ success: false, message: '해당 코트를 찾을 수 없습니다.' });
+    }
+
+    // 코트 타입에 따른 맞춤형 강제 초기화 로직
+    if (targetCourt.type === 'game') {
+        // 게임 코트 초기화
+        targetCourt.isEmpty = true;
+        targetCourt.players = '';
+        targetCourt.note = '';
+        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 게임 코트가 강제 초기화되었습니다.`);
+
+    } else if (targetCourt.type === 'nanta') {
+        // 난타 코트 초기화 (sideA와 sideB 모두 깔끔하게 비우기)
+        if (targetCourt.sideA) {
+            targetCourt.sideA.isEmpty = true;
+            targetCourt.sideA.players = '';
+            targetCourt.sideA.startTime = null;
+            targetCourt.sideA.remainingSeconds = 0;
+        }
+        if (targetCourt.sideB) {
+            targetCourt.sideB.isEmpty = true;
+            targetCourt.sideB.players = '';
+            targetCourt.sideB.startTime = null;
+            targetCourt.sideB.remainingSeconds = 0;
+        }
+        targetCourt.note = '';
+        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 난타 코트(A/B구역 포함)가 강제 초기화되었습니다.`);
+
+    } else if (targetCourt.type === 'lesson') {
+        // 레슨 코트 초기화 (필요시 기본 문구 유지 또는 초기화)
+        targetCourt.isEmpty = true;
+        targetCourt.players = '';
+        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 레슨 코트가 강제 초기화되었습니다.`);
+    }
+
+    // 실시간 화면 동기화 함수가 있다면 여기서 호출 (예: broadcastState())
+    // if (typeof broadcastState === 'function') broadcastState();
+
+    res.json({ success: true, message: `${targetCourt.id}번 코트가 성공적으로 강제 비워졌습니다.` });
+});
+// =================================================================
+// 🏸 [신규 추가] 관리자 모드: 진행 중인 코트 강제 비우기/종료 API
+// =================================================================
+app.post('/api/admin/clear-court', (req, res) => {
+    const { courtIndex, courtType } = req.body; // courtIndex: 코트 순번 (0부터 시작 등), courtType: 'game', 'nanta', 'lesson' 등
+
+    if (courtIndex === undefined) {
+        return res.status(400).json({ success: false, message: '코트 번호가 지정되지 않았습니다.' });
+    }
+
+    // 프로젝트에서 코트 현황을 관리하는 전역 변수나 배열 이름에 맞게 조정 (예: courts 또는 activeCourts 등)
+    // 일반적으로 courts 배열이 코트 구성 및 현재 점유 상태를 들고 있다고 가정합니다.
+    if (typeof courts !== 'undefined' && courts[courtIndex]) {
+        const targetCourt = courts[courtIndex];
+
+        // 난타 코트의 경우 A/B 구분이 있으므로 이를 고려하여 초기화
+        console.log(`🧹 [관리자 코트 강제 비우기] ${courtIndex + 1}번 코트(${targetCourt.type || courtType})가 관리자에 의해 강제 초기화되었습니다.`);
+
+        // 코트 상태를 초기화 (예: 점유 중이던 선수 목록 비우기, 빈 코트로 전환)
+        targetCourt.players = [];
+        targetCourt.status = 'available';
+        targetCourt.note = ''; // 레슨 코트 문구 등 초기화 필요시 적용
+
+        // 실시간 화면 동기화 함수가 있다면 호출
+        // if (typeof broadcastState === 'function') broadcastState();
+
+        res.json({ success: true, message: `${courtIndex + 1}번 코트가 강제 초기화되었습니다.` });
+    } else {
+        // 만약 코트 배열이 아니라 별도의 코트 점유 관리 로직을 쓴다면 그에 맞추어 조정할 수 있습니다.
+        res.status(404).json({ success: false, message: '해당 코트를 찾을 수 없습니다.' });
+    }
+});
 // ==========================================
 // 4. 인메모리 데이터 상태 관리
 // ==========================================

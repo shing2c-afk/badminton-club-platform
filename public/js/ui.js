@@ -516,8 +516,24 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // 로그아웃 처리
-function handleLogout() {
+async function handleLogout() {
   if (confirm("로그아웃 하시겠습니까?")) {
+    const currentUser = localStorage.getItem("currentUser");
+
+    if (currentUser) {
+      try {
+        // 💡 서버에 로그아웃 요청을 보내어 대기열 및 참여 상태를 깔끔하게 청소(Cleanup)합니다.
+        await fetch('/api/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: currentUser })
+        });
+      } catch (err) {
+        console.error("❌ 로그아웃 서버 통신 에러:", err);
+      }
+    }
+
+    // 로컬 저장소 비우기 및 새로고침
     localStorage.removeItem("currentUser");
     location.reload(); // 새로고침하여 다시 로그인 화면으로 이동
   }
