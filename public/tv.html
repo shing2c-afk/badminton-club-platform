@@ -45,15 +45,16 @@
     </style>
 </head>
 <body>
+<div id="court-alert-banner" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 15px 30px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; text-align: center; transition: background-color 0.3s;">
+    <span id="court-alert-text">알림 내용</span>
+</div>
 
     <div class="header">
         <h1>🏸 체육관 실시간 종합 현황판</h1>
     </div>
 
-    <!-- 1. 코트 현황 그리드 -->
     <div class="court-grid" id="tv-court-grid"></div>
 
-    <!-- 2. 대기 현황 (게임 / 난타 대기열) -->
     <div class="waiting-container">
         <div class="waiting-box">
             <div class="waiting-title"><span style="color:#3498db;">🏸</span> 게임 대기팀 <span id="game-queue-count" style="color:#3498db;">(0팀)</span></div>
@@ -109,6 +110,39 @@
         renderTVCourts(courts);
         renderTVQueues(gameQueue, nantaQueue);
     });
+
+   // 💡 관리자가 코트를 강제 종료했을 때 TV 화면에 맞춤형 색상/문구 팝업 띄우기
+let alertTimer = null;
+socket.on('courtClearedNotice', (data) => {
+    const banner = document.getElementById('court-alert-banner');
+    const alertText = document.getElementById('court-alert-text');
+
+    if (banner && alertText) {
+        alertText.textContent = data.message;
+
+        // 🎨 팝업 색상 카테고리별 분기 처리
+        if (data.category === 'game') {
+            banner.style.backgroundColor = '#2980b9'; // 게임코트 삭제 시: 진한 파란색
+        } else if (data.category === 'nanta') {
+            banner.style.backgroundColor = '#e67e22'; // 난타코트 삭제 시: 진한 주황색
+        } else if (data.category === 'lesson') {
+            banner.style.backgroundColor = '#8e44ad'; // 레슨코트 삭제 시: 진한 보라색
+        } else {
+            banner.style.backgroundColor = '#c0392b'; // 기본 빨간색
+        }
+
+        banner.style.display = 'block';
+
+        if (alertTimer) {
+            clearTimeout(alertTimer);
+        }
+
+        // 4초 뒤 자동 숨김
+        alertTimer = setTimeout(() => {
+            banner.style.display = 'none';
+        }, 4000);
+    }
+});
 
     // 코트 현황 출력
     function renderTVCourts(courts) {

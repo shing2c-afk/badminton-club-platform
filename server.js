@@ -311,92 +311,84 @@ app.post('/api/admin/delete-room', (req, res) => {
 
     res.json({ success: true, message: '해당 방이 강제 종료되었습니다.' });
 });
+
 // =================================================================
-// 🏸 [완성] 관리자 모드: 진행 중인 코트 강제 비우기/종료 API
+// 🏸 [완성] 관리자 모드: 코트 강제 비우기/종료 API (맞춤형 문구 + 카테고리)
 // =================================================================
 app.post('/api/admin/clear-court', (req, res) => {
-    // 클라이언트로부터 어떤 코트 번호(id 또는 배열 인덱스)인지 전달받습니다.
-    const { courtId } = req.body; // 예: 1, 2, ... 8
+    const { courtId, side } = req.body; // side: 'A', 'B' 또는 undefined
 
     if (courtId === undefined) {
         return res.status(400).json({ success: false, message: '코트 번호가 지정되지 않았습니다.' });
     }
 
-    // courtsData 배열에서 해당 id를 가진 코트를 찾습니다.
     const targetCourt = courtsData.find(c => c.id === Number(courtId));
 
     if (!targetCourt) {
         return res.status(404).json({ success: false, message: '해당 코트를 찾을 수 없습니다.' });
     }
 
-    // 코트 타입에 따른 맞춤형 강제 초기화 로직
+    let noticeMessage = '';
+    let courtCategory = 'game'; // 색상 구분을 위한 카테고리
+
     if (targetCourt.type === 'game') {
-        // 게임 코트 초기화
         targetCourt.isEmpty = true;
         targetCourt.players = '';
         targetCourt.note = '';
+        courtCategory = 'game';
+        noticeMessage = `[관리자 알림] ${targetCourt.id}번 게임코트는 관리자에 의해 종료되었습니다.`;
         console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 게임 코트가 강제 초기화되었습니다.`);
 
     } else if (targetCourt.type === 'nanta') {
-        // 난타 코트 초기화 (sideA와 sideB 모두 깔끔하게 비우기)
-        if (targetCourt.sideA) {
+        courtCategory = 'nanta';
+        if (side === 'A' && targetCourt.sideA) {
             targetCourt.sideA.isEmpty = true;
             targetCourt.sideA.players = '';
             targetCourt.sideA.startTime = null;
             targetCourt.sideA.remainingSeconds = 0;
-        }
-        if (targetCourt.sideB) {
+            noticeMessage = `[관리자 알림] ${targetCourt.id}번 난타코트 A구역은 관리자에 의해 종료되었습니다.`;
+        } else if (side === 'B' && targetCourt.sideB) {
             targetCourt.sideB.isEmpty = true;
             targetCourt.sideB.players = '';
             targetCourt.sideB.startTime = null;
             targetCourt.sideB.remainingSeconds = 0;
+            noticeMessage = `[관리자 알림] ${targetCourt.id}번 난타코트 B구역은 관리자에 의해 종료되었습니다.`;
+        } else {
+            if (targetCourt.sideA) {
+                targetCourt.sideA.isEmpty = true;
+                targetCourt.sideA.players = '';
+                targetCourt.sideA.startTime = null;
+                targetCourt.sideA.remainingSeconds = 0;
+            }
+            if (targetCourt.sideB) {
+                targetCourt.sideB.isEmpty = true;
+                targetCourt.sideB.players = '';
+                targetCourt.sideB.startTime = null;
+                targetCourt.sideB.remainingSeconds = 0;
+            }
+            noticeMessage = `[관리자 알림] ${targetCourt.id}번 난타코트 전체는 관리자에 의해 종료되었습니다.`;
         }
         targetCourt.note = '';
-        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 난타 코트(A/B구역 포함)가 강제 초기화되었습니다.`);
+        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 난타 코트(${side || '전체'})가 강제 초기화되었습니다.`);
 
     } else if (targetCourt.type === 'lesson') {
-        // 레슨 코트 초기화 (필요시 기본 문구 유지 또는 초기화)
         targetCourt.isEmpty = true;
         targetCourt.players = '';
+        courtCategory = 'lesson';
+        noticeMessage = `[관리자 알림] ${targetCourt.id}번 레슨코트는 관리자에 의해 종료되었습니다.`;
         console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 레슨 코트가 강제 초기화되었습니다.`);
     }
 
-    // 실시간 화면 동기화 함수가 있다면 여기서 호출 (예: broadcastState())
-    // if (typeof broadcastState === 'function') broadcastState();
+    // 💡 실시간 소켓으로 카테고리와 맞춤형 문구 함께 전송
+    if (typeof io !== 'undefined') {
+        io.emit('courtClearedNotice', {
+            courtId: targetCourt.id,
+            category: courtCategory, // 'game', 'nanta', 'lesson'
+            message: noticeMessage
+        });
+    }
 
     res.json({ success: true, message: `${targetCourt.id}번 코트가 성공적으로 강제 비워졌습니다.` });
-});
-// =================================================================
-// 🏸 [신규 추가] 관리자 모드: 진행 중인 코트 강제 비우기/종료 API
-// =================================================================
-app.post('/api/admin/clear-court', (req, res) => {
-    const { courtIndex, courtType } = req.body; // courtIndex: 코트 순번 (0부터 시작 등), courtType: 'game', 'nanta', 'lesson' 등
-
-    if (courtIndex === undefined) {
-        return res.status(400).json({ success: false, message: '코트 번호가 지정되지 않았습니다.' });
-    }
-
-    // 프로젝트에서 코트 현황을 관리하는 전역 변수나 배열 이름에 맞게 조정 (예: courts 또는 activeCourts 등)
-    // 일반적으로 courts 배열이 코트 구성 및 현재 점유 상태를 들고 있다고 가정합니다.
-    if (typeof courts !== 'undefined' && courts[courtIndex]) {
-        const targetCourt = courts[courtIndex];
-
-        // 난타 코트의 경우 A/B 구분이 있으므로 이를 고려하여 초기화
-        console.log(`🧹 [관리자 코트 강제 비우기] ${courtIndex + 1}번 코트(${targetCourt.type || courtType})가 관리자에 의해 강제 초기화되었습니다.`);
-
-        // 코트 상태를 초기화 (예: 점유 중이던 선수 목록 비우기, 빈 코트로 전환)
-        targetCourt.players = [];
-        targetCourt.status = 'available';
-        targetCourt.note = ''; // 레슨 코트 문구 등 초기화 필요시 적용
-
-        // 실시간 화면 동기화 함수가 있다면 호출
-        // if (typeof broadcastState === 'function') broadcastState();
-
-        res.json({ success: true, message: `${courtIndex + 1}번 코트가 강제 초기화되었습니다.` });
-    } else {
-        // 만약 코트 배열이 아니라 별도의 코트 점유 관리 로직을 쓴다면 그에 맞추어 조정할 수 있습니다.
-        res.status(404).json({ success: false, message: '해당 코트를 찾을 수 없습니다.' });
-    }
 });
 // ==========================================
 // 4. 인메모리 데이터 상태 관리

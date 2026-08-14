@@ -45,3 +45,43 @@ socket.on('confirmCrossSlot', ({ type, userId, user }) => {
         socket.emit('forceCreateSlot', { type, userId, user });
     }
 });
+// =================================================================
+// 💡 관리자가 코트를 강제 종료했을 때 브라우저(메인/TV)에 색상별 맞춤 팝업 띄우기
+// =================================================================
+if (typeof socket !== 'undefined') {
+    let alertTimer = null;
+
+    socket.on('courtClearedNotice', (data) => {
+        const banner = document.getElementById('court-alert-banner');
+        const alertText = document.getElementById('court-alert-text');
+
+        if (banner && alertText) {
+            // 서버에서 보낸 정확한 문구 세팅 (예: "[관리자 알림] 1번 게임코트는...")
+            alertText.textContent = data.message;
+
+            // 🎨 게임코트와 난타코트 팝업 배경 색상 다르게 분기 처리
+            if (data.category === 'game') {
+                banner.style.backgroundColor = '#2980b9'; // 🟦 게임코트 삭제 시: 진한 파란색 계열
+            } else if (data.category === 'nanta') {
+                banner.style.backgroundColor = '#e67e22'; // 🟧 난타코트 삭제 시: 진한 주황색 계열
+            } else if (data.category === 'lesson') {
+                banner.style.backgroundColor = '#8e44ad'; // 🟪 레슨코트 삭제 시: 진한 보라색 계열
+            } else {
+                banner.style.backgroundColor = '#c0392b'; // 기본 빨간색
+            }
+
+            // 팝업 화면에 표시
+            banner.style.display = 'block';
+
+            // 연속으로 뜰 때 타이머 초기화
+            if (alertTimer) {
+                clearTimeout(alertTimer);
+            }
+
+            // 4초 뒤에 팝업 자동으로 숨김
+            alertTimer = setTimeout(() => {
+                banner.style.display = 'none';
+            }, 4000);
+        }
+    });
+}

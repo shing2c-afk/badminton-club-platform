@@ -164,218 +164,250 @@
     });
 
     // =================================================================
-// 1. 관리자 제어용 드롭다운 목록 실시간 갱신 함수 (회원, 방, 코트 통합)
-// =================================================================
-function updateAdminDropdowns(data) {
-    const userSelect = document.getElementById('kick-user-select');
-    const roomSelect = document.getElementById('delete-room-select');
-    const courtSelect = document.getElementById('clear-court-select'); // 💡 신규 추가된 코트 비우기 셀렉트
-    
-    const selectedUser = userSelect ? userSelect.value : '';
-    const selectedRoom = roomSelect ? roomSelect.value : '';
-    const selectedCourt = courtSelect ? courtSelect.value : '';
+    // 1. 관리자 제어용 드롭다운 목록 실시간 갱신 함수 (회원, 방, 코트 통합)
+    // =================================================================
+    function updateAdminDropdowns(data) {
+        const userSelect = document.getElementById('kick-user-select');
+        const roomSelect = document.getElementById('delete-room-select');
+        const courtSelect = document.getElementById('clear-court-select'); // 코트 비우기 셀렉트
+        
+        const selectedUser = userSelect ? userSelect.value : '';
+        const selectedRoom = roomSelect ? roomSelect.value : '';
+        const selectedCourt = courtSelect ? courtSelect.value : '';
 
-    if (userSelect) userSelect.innerHTML = '<option value="">-- 회원을 선택하세요 --</option>';
-    if (roomSelect) roomSelect.innerHTML = '<option value="">-- 활성화된 방을 선택하세요 --</option>';
-    if (courtSelect) courtSelect.innerHTML = '<option value="">-- 비울 코트를 선택하세요 --</option>';
+        if (userSelect) userSelect.innerHTML = '<option value="">-- 회원을 선택하세요 --</option>';
+        if (roomSelect) roomSelect.innerHTML = '<option value="">-- 활성화된 방을 선택하세요 --</option>';
+        if (courtSelect) courtSelect.innerHTML = '<option value="">-- 비울 코트를 선택하세요 --</option>';
 
-    let uniqueUsersMap = new Map();
-    let rooms = [];
+        let uniqueUsersMap = new Map();
+        let rooms = [];
 
-    const collectUser = (id, name, gender, grade) => {
-        if (!id) return;
-        if (!uniqueUsersMap.has(id)) {
-            uniqueUsersMap.set(id, {
-                username: id,
-                displayName: (name && name !== id) ? name : id
+        const collectUser = (id, name, gender, grade) => {
+            if (!id) return;
+            if (!uniqueUsersMap.has(id)) {
+                uniqueUsersMap.set(id, {
+                    username: id,
+                    displayName: (name && name !== id) ? name : id
+                });
+            }
+        };
+
+        // 1. 게임 큐(gameQueue) 스캔
+        if (data.gameQueue && Array.isArray(data.gameQueue)) {
+            data.gameQueue.forEach((slot, index) => {
+                const roomId = slot.id !== undefined ? slot.id : index;
+                const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
+                const roomTitle = `게임 코트방 #${index + 1} (참여자: ${participants})`;
+                
+                rooms.push({ type: 'game', id: roomId, label: roomTitle });
+
+                if (slot.userIds && Array.isArray(slot.userIds)) {
+                    slot.userIds.forEach((id, idx) => {
+                        const name = slot.players ? slot.players[idx] : '';
+                        collectUser(id, name);
+                    });
+                } else if (slot.players && Array.isArray(slot.players)) {
+                    slot.players.forEach(p => { if (p) collectUser(p, p); });
+                }
             });
         }
-    };
 
-    // 1. 게임 큐(gameQueue) 스캔
-    if (data.gameQueue && Array.isArray(data.gameQueue)) {
-        data.gameQueue.forEach((slot, index) => {
-            const roomId = slot.id !== undefined ? slot.id : index;
-            const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
-            const roomTitle = `게임 코트방 #${index + 1} (참여자: ${participants})`;
-            
-            rooms.push({ type: 'game', id: roomId, label: roomTitle });
+        // 2. 난타 큐(nantaQueue) 스캔
+        if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
+            data.nantaQueue.forEach((slot, index) => {
+                const roomId = slot.id !== undefined ? slot.id : index;
+                const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
+                const roomTitle = `난타 코트방 #${index + 1} (참여자: ${participants})`;
+                
+                rooms.push({ type: 'nanta', id: roomId, label: roomTitle });
 
-            if (slot.userIds && Array.isArray(slot.userIds)) {
-                slot.userIds.forEach((id, idx) => {
-                    const name = slot.players ? slot.players[idx] : '';
-                    collectUser(id, name);
-                });
-            } else if (slot.players && Array.isArray(slot.players)) {
-                slot.players.forEach(p => { if (p) collectUser(p, p); });
-            }
-        });
-    }
-
-    // 2. 난타 큐(nantaQueue) 스캔
-    if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
-        data.nantaQueue.forEach((slot, index) => {
-            const roomId = slot.id !== undefined ? slot.id : index;
-            const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
-            const roomTitle = `난타 코트방 #${index + 1} (참여자: ${participants})`;
-            
-            rooms.push({ type: 'nanta', id: roomId, label: roomTitle });
-
-            if (slot.userIds && Array.isArray(slot.userIds)) {
-                slot.userIds.forEach((id, idx) => {
-                    const name = slot.players ? slot.players[idx] : '';
-                    collectUser(id, name);
-                });
-            } else if (slot.players && Array.isArray(slot.players)) {
-                slot.players.forEach(p => { if (p) collectUser(p, p); });
-            }
-        });
-    }
-
-    // 3. 코트 데이터(courtsData) 스캔 및 드롭다운 채우기 (💡 신규 병합된 부분)
-    if (data.courtsData && Array.isArray(data.courtsData) && courtSelect) {
-        data.courtsData.forEach(court => {
-            let infoText = '';
-            
-            if (court.type === 'game') {
-                infoText = `[게임 코트 #${court.id}] ${court.isEmpty ? '빈 코트' : '참여: ' + court.players}`;
-            } else if (court.type === 'nanta') {
-                const aInfo = court.sideA && !court.sideA.isEmpty ? `A구역(${court.sideA.players})` : 'A구역(비어있음)';
-                const bInfo = court.sideB && !court.sideB.isEmpty ? `B구역(${court.sideB.players})` : 'B구역(비어있음)';
-                infoText = `[난타 코트 #${court.id}] ${aInfo} / ${bInfo}`;
-            } else if (court.type === 'lesson') {
-                infoText = `[레슨 코트 #${court.id}] ${court.players || '레슨 중'}`;
-            }
-
-            const opt = document.createElement('option');
-            opt.value = court.id;
-            opt.textContent = infoText;
-            if (String(court.id) === selectedCourt) opt.selected = true;
-            courtSelect.appendChild(opt);
-        });
-    }
-
-    // 회원 드롭다운 채우기
-    if (userSelect) {
-        uniqueUsersMap.forEach((user) => {
-            const opt = document.createElement('option');
-            opt.value = user.username;
-            opt.textContent = user.displayName;
-            if (user.username === selectedUser) opt.selected = true;
-            userSelect.appendChild(opt);
-        });
-    }
-
-    // 방 드롭다운 채우기
-    if (roomSelect) {
-        rooms.forEach(room => {
-            const opt = document.createElement('option');
-            opt.value = `${room.type}:${room.id}`;
-            opt.textContent = room.label;
-            if (opt.value === selectedRoom) opt.selected = true;
-            roomSelect.appendChild(opt);
-        });
-    }
-}
-
-
-// =================================================================
-// 2. 관리자 기능 실행 함수들 (강제 퇴장, 방 강제 종료, 코트 비우기)
-// =================================================================
-
-// 🚨 선택 회원 강제 퇴장 실행
-async function executeKickUser() {
-    const targetUsername = document.getElementById('kick-user-select').value;
-    if (!targetUsername) {
-        alert('강제 퇴장시킬 회원을 선택해주세요.');
-        return;
-    }
-
-    if (!confirm(`[${targetUsername}]님을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`)) return;
-
-    try {
-        const response = await fetch('/api/admin/kick-user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetUsername })
-        });
-        const result = await response.json();
-        if (result.success) {
-            alert(result.message);
-        } else {
-            alert('퇴장 처리 실패: ' + result.message);
+                if (slot.userIds && Array.isArray(slot.userIds)) {
+                    slot.userIds.forEach((id, idx) => {
+                        const name = slot.players ? slot.players[idx] : '';
+                        collectUser(id, name);
+                    });
+                } else if (slot.players && Array.isArray(slot.players)) {
+                    slot.players.forEach(p => { if (p) collectUser(p, p); });
+                }
+            });
         }
-    } catch (err) {
-        console.error('강제 퇴장 에러:', err);
-        alert('서버 통신 중 오류가 발생했습니다.');
-    }
-}
 
-// 💥 선택 방 강제 종료 실행
-async function executeDeleteRoom() {
-    const roomVal = document.getElementById('delete-room-select').value;
-    if (!roomVal) {
-        alert('강제 종료할 방을 선택해주세요.');
-        return;
-    }
-
-    const [roomType, roomIdStr] = roomVal.split(':');
-    const roomId = isNaN(roomIdStr) ? roomIdStr : Number(roomIdStr);
-
-    if (!confirm(`선택한 ${roomType === 'game' ? '게임방' : '난타방'}을 즉시 강제 종료(폭파)하시겠습니까?`)) return;
-
-    try {
-        const response = await fetch('/api/admin/delete-room', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ roomType, roomId })
-        });
-        const result = await response.json();
-        if (result.success) {
-            alert(result.message);
-        } else {
-            alert('방 강제 종료 실패: ' + result.message);
+        // 3. 코트 데이터(courtsData) 스캔 및 드롭다운 채우기 (💡 난타 A/B구역 분할 적용 완료)
+        if (data.courtsData && Array.isArray(data.courtsData) && courtSelect) {
+            data.courtsData.forEach(court => {
+                if (court.type === 'game') {
+                    if (!court.isEmpty && court.players) {
+                        const opt = document.createElement('option');
+                        opt.value = court.id;
+                        opt.textContent = `[게임코트 #${court.id}] ${court.players}`;
+                        if (String(court.id) === selectedCourt) opt.selected = true;
+                        courtSelect.appendChild(opt);
+                    }
+                } else if (court.type === 'nanta') {
+                    // A구역이 사용 중이면 옵션 추가
+                    if (court.sideA && !court.sideA.isEmpty && court.sideA.players) {
+                        const optA = document.createElement('option');
+                        optA.value = `${court.id}:A`; // 예: "6:A"
+                        optA.textContent = `[난타코트 #${court.id} A구역] ${court.sideA.players}`;
+                        if (`${court.id}:A` === selectedCourt) optA.selected = true;
+                        courtSelect.appendChild(optA);
+                    }
+                    // B구역이 사용 중이면 옵션 추가
+                    if (court.sideB && !court.sideB.isEmpty && court.sideB.players) {
+                        const optB = document.createElement('option');
+                        optB.value = `${court.id}:B`; // 예: "6:B"
+                        optB.textContent = `[난타코트 #${court.id} B구역] ${court.sideB.players}`;
+                        if (`${court.id}:B` === selectedCourt) optB.selected = true;
+                        courtSelect.appendChild(optB);
+                    }
+                } else if (court.type === 'lesson') {
+                    if (!court.isEmpty) {
+                        const opt = document.createElement('option');
+                        opt.value = court.id;
+                        opt.textContent = `[레슨코트 #${court.id}] ${court.players || '레슨 중'}`;
+                        if (String(court.id) === selectedCourt) opt.selected = true;
+                        courtSelect.appendChild(opt);
+                    }
+                }
+            });
         }
-    } catch (err) {
-        console.error('방 강제 종료 에러:', err);
-        alert('서버 통신 중 오류가 발생했습니다.');
+
+        // 회원 드롭다운 채우기
+        if (userSelect) {
+            uniqueUsersMap.forEach((user) => {
+                const opt = document.createElement('option');
+                opt.value = user.username;
+                opt.textContent = user.displayName;
+                if (user.username === selectedUser) opt.selected = true;
+                userSelect.appendChild(opt);
+            });
+        }
+
+        // 방 드롭다운 채우기
+        if (roomSelect) {
+            rooms.forEach(room => {
+                const opt = document.createElement('option');
+                opt.value = `${room.type}:${room.id}`;
+                opt.textContent = room.label;
+                if (opt.value === selectedRoom) opt.selected = true;
+                roomSelect.appendChild(opt);
+            });
+        }
     }
-}
 
-// 🏸 선택 코트 강제 비우기 실행 (💡 신규 추가된 함수)
-async function handleClearCourt() {
-    const courtSelect = document.getElementById('clear-court-select');
-    const courtId = courtSelect.value;
 
-    if (!courtId) {
-        alert('⚠️ 강제로 비울 코트를 선택해 주세요.');
-        return;
-    }
+    // =================================================================
+    // 2. 관리자 기능 실행 함수들 (강제 퇴장, 방 강제 종료, 코트 비우기)
+    // =================================================================
 
-    if (confirm(`정말 ${courtId}번 코트를 강제 초기화(비우기) 하시겠습니까?`)) {
+    // 🚨 선택 회원 강제 퇴장 실행
+    async function executeKickUser() {
+        const targetUsername = document.getElementById('kick-user-select').value;
+        if (!targetUsername) {
+            alert('강제 퇴장시킬 회원을 선택해주세요.');
+            return;
+        }
+
+        if (!confirm(`[${targetUsername}]님을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`)) return;
+
         try {
-            const response = await fetch('/api/admin/clear-court', {
+            const response = await fetch('/api/admin/kick-user', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ courtId: Number(courtId) })
+                body: JSON.stringify({ targetUsername })
             });
-
             const result = await response.json();
             if (result.success) {
-                alert(`✅ ${result.message}`);
-                courtSelect.value = '';
+                alert(result.message);
             } else {
-                alert(`❌ 실패: ${result.message}`);
+                alert('퇴장 처리 실패: ' + result.message);
             }
         } catch (err) {
-            console.error('코트 강제 비우기 통신 에러:', err);
-            alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
+            console.error('강제 퇴장 에러:', err);
+            alert('서버 통신 중 오류가 발생했습니다.');
         }
     }
-}
+
+    // 💥 선택 방 강제 종료 실행
+    async function executeDeleteRoom() {
+        const roomVal = document.getElementById('delete-room-select').value;
+        if (!roomVal) {
+            alert('강제 종료할 방을 선택해주세요.');
+            return;
+        }
+
+        const [roomType, roomIdStr] = roomVal.split(':');
+        const roomId = isNaN(roomIdStr) ? roomIdStr : Number(roomIdStr);
+
+        if (!confirm(`선택한 ${roomType === 'game' ? '게임방' : '난타방'}을 즉시 강제 종료(폭파)하시겠습니까?`)) return;
+
+        try {
+            const response = await fetch('/api/admin/delete-room', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomType, roomId })
+            });
+            const result = await response.json();
+            if (result.success) {
+                alert(result.message);
+            } else {
+                alert('방 강제 종료 실패: ' + result.message);
+            }
+        } catch (err) {
+            console.error('방 강제 종료 에러:', err);
+            alert('서버 통신 중 오류가 발생했습니다.');
+        }
+    }
+
+    // =================================================================
+    // 🏸 선택 코트(구역) 강제 비우기 실행 (난타 A/B구역 분할 반영)
+    // =================================================================
+    async function handleClearCourt() {
+        const courtSelect = document.getElementById('clear-court-select');
+        const val = courtSelect.value;
+
+        if (!val) {
+            alert('⚠️ 강제로 비울 코트를 선택해 주세요.');
+            return;
+        }
+
+        let courtId, side = null;
+        // '6:A' 또는 '6:B' 형식인 경우 파싱, 일반 코트 번호인 경우 그대로 처리
+        if (val.includes(':')) {
+            const parts = val.split(':');
+            courtId = Number(parts[0]);
+            side = parts[1]; // 'A' 또는 'B'
+        } else {
+            courtId = Number(val);
+        }
+
+        let confirmMsg = side ? `정말 ${courtId}번 난타 코트 ${side}구역을 강제 초기화(비우기) 하시겠습니까?` : `정말 ${courtId}번 코트를 강제 초기화(비우기) 하시겠습니까?`;
+
+        if (confirm(confirmMsg)) {
+            try {
+                const response = await fetch('/api/admin/clear-court', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ courtId: Number(courtId), side: side })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert(`✅ ${result.message}`);
+                    courtSelect.value = '';
+                } else {
+                    alert(`❌ 실패: ${result.message}`);
+                }
+            } catch (err) {
+                console.error('코트 강제 비우기 통신 에러:', err);
+                alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
+            }
+        }
+    }
 
     function renderCourtConfig() {
         const container = document.getElementById('court-config-list');
+        if (!container) return;
         container.innerHTML = '';
 
         localCourts.forEach((court, idx) => {
