@@ -725,6 +725,8 @@ io.on('connection', (socket) => {
         if (slot && index >= 0 && index < slot.players.length) {
             slot.players[index] = name;
             addNotification(`👤 [참가] ${name} 님이 대기 방에 입장하셨습니다.`);
+            
+            // 만약 게임방 4명 또는 난타방 2명이 모두 차면 타이머 정지 등 필요한 후속 조치 처리 가능
             broadcastState();
         }
     });
@@ -761,6 +763,78 @@ io.on('connection', (socket) => {
                 queue.splice(slotIdx, 1);
             }
             broadcastState();
+        }
+    });
+
+    // 🏟️ [신규 추가] 대기 방에서 정원이 다 찬 후 [코트 입장] 버튼을 눌렀을 때 실제 코트로 배정하는 핸들러
+    socket.on('enterCourtFromSlot', ({ type, slotId }) => {
+        try {
+            if (type === 'game') {
+                const slotIdx = gameQueue.findIndex(s => s.id === slotId);
+                if (slotIdx === -1) return;
+                const slot = gameQueue[slotIdx];
+                const validPlayers = getValidPlayers(slot.players);
+
+                if (validPlayers.length < 4) return;
+
+                // 빈 게임 코트 찾기
+                const emptyCourt = courtsData.find(c => c.type === 'game' && c.isEmpty);
+                if (!emptyCourt) return;
+
+                // 코트에 플레이어 배정 및 상태 변경
+                emptyCourt.isEmpty = false;
+                emptyCourt.players = validPlayers.join(', ');
+                emptyCourt.startTime = Date.now();
+                emptyCourt.remainingSeconds = 0;
+
+                // 대기열에서 제거
+                gameQueue.splice(slotIdx, 1);
+                addNotification(`🏟️ [코트 입장] 게임 코트 (${emptyCourt.id}번)에 팀이 입장했습니다.`);
+                broadcastState();
+
+            } else if (type === 'nanta') {
+                const slotIdx = nantaQueue.findIndex(s => s.id === slotId);
+                if (slotIdx === -1) return;
+                const slot = nantaQueue[slotIdx];
+                const validPlayers = getValidPlayers(slot.players);
+
+                if (validPlayers.length < 2) return;
+
+                // 빈 난타 반코트(sideA 또는 sideB) 찾기
+                let targetCourt = null;
+                let targetSide = null;
+
+                for (let court of courtsData) {
+                    if (court.type === 'nanta') {
+                        if (court.sideA && court.sideA.isEmpty) {
+                            targetCourt = court;
+                            targetSide = 'sideA';
+                            break;
+                        } else if (court.sideB && court.sideB.isEmpty) {
+                            targetCourt = court;
+                            targetSide = 'sideB';
+                            break;
+                        }
+                    }
+                }
+
+                if (!targetCourt) return;
+
+                // 반코트에 플레이어 배정
+                targetCourt[targetSide] = {
+                    isEmpty: false,
+                    players: validPlayers.join(', '),
+                    startTime: Date.now(),
+                    remainingSeconds: config.NANTA_COURT_LIMIT_SEC || 900
+                };
+
+                // 대기열에서 제거
+                nantaQueue.splice(slotIdx, 1);
+                addNotification(`🏟️ [코트 입장] 난타 코트 (${targetCourt.id}번 - ${targetSide === 'sideA' ? 'A반' : 'B반'})에 팀이 입장했습니다.`);
+                broadcastState();
+            }
+        } catch (err) {
+            console.error('코트 입장 처리 에러:', err);
         }
     });
 

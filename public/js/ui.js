@@ -16,6 +16,7 @@ function escapeHtml(str) {
 
 function showToast(msg) {
     const container = document.getElementById('toast-container');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast-msg';
     toast.innerText = msg;
@@ -35,8 +36,11 @@ function renderAll() {
 }
 
 function renderNotifications() {
-    document.getElementById('noti-count').innerText = notificationsList.length;
+    const notiCountEl = document.getElementById('noti-count');
+    if (notiCountEl) notiCountEl.innerText = notificationsList.length;
+    
     const container = document.getElementById('noti-list');
+    if (!container) return;
     
     if (notificationsList.length === 0) {
         container.innerHTML = `<div style="text-align:center; color:#6b7280; font-size:12px; padding:20px 0;">새로운 알림이 없습니다.</div>`;
@@ -55,8 +59,14 @@ function renderNotifications() {
     });
 }
 
-function openNotiModal() { document.getElementById('noti-modal').style.display = 'flex'; }
-function closeNotiModal() { document.getElementById('noti-modal').style.display = 'none'; }
+function openNotiModal() { 
+    const modal = document.getElementById('noti-modal');
+    if (modal) modal.style.display = 'flex'; 
+}
+function closeNotiModal() { 
+    const modal = document.getElementById('noti-modal');
+    if (modal) modal.style.display = 'none'; 
+}
 
 function accessAdmin() {
     const inputPw = prompt('🔐 관리자 비밀번호를 입력해 주세요:');
@@ -97,7 +107,6 @@ function getAvailableNantaCourtsCount() {
     return count;
 }
 
-// ✨ [요청사항 반영] 코트 현황의 4명 입장을 2명 / 2명 두 줄 포맷팅 처리 함수
 function formatCourtPlayers(playersStr) {
     if (!playersStr) return '';
     const plist = playersStr.split(',').map(p => p.trim());
@@ -109,6 +118,7 @@ function formatCourtPlayers(playersStr) {
 
 function renderCourts() {
     const courtList = document.getElementById('court-status-list');
+    if (!courtList) return;
     courtList.innerHTML = '';
 
     courtsData.forEach(court => {
@@ -187,8 +197,10 @@ function renderCourts() {
         courtList.insertAdjacentHTML('beforeend', html);
     });
 }
+
 function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
+    if (!container) return;
     container.innerHTML = '';
 
     if (gameQueue.length === 0) {
@@ -231,6 +243,7 @@ function renderGameQueue() {
 
 function renderNantaQueue() {
     const container = document.getElementById('nanta-slot-list');
+    if (!container) return;
     container.innerHTML = '';
 
     if (nantaQueue.length === 0) {
@@ -271,11 +284,12 @@ function renderNantaQueue() {
 }
 
 function updateAvailableCourtCounts() {
-    document.getElementById('game-available-count').innerText = getAvailableGameCourtsCount();
-    document.getElementById('nanta-available-count').innerText = getAvailableNantaCourtsCount();
+    const gameAvail = document.getElementById('game-available-count');
+    const nantaAvail = document.getElementById('nanta-available-count');
+    if (gameAvail) gameAvail.innerText = getAvailableGameCourtsCount();
+    if (nantaAvail) nantaAvail.innerText = getAvailableNantaCourtsCount();
 }
 
-// 1. 게임방 개설 버튼 클릭 시
 function createNewGameSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
@@ -294,7 +308,6 @@ function createNewGameSlot() {
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
-// 2. 난타방 개설 버튼 클릭 시
 function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
@@ -385,6 +398,7 @@ function mergeGameSlot(slotId) {
     }
 }
 
+// 🏟️ [수정 완료] 코트 입장 버튼 클릭 시 서버로 자동 배정 요청을 보냄
 function enterGameCourt(slotId) {
     const slot = gameQueue.find(s => s.id === slotId);
     if (!slot) return;
@@ -411,11 +425,13 @@ function enterGameCourt(slotId) {
     }
 
     if (confirm('코트로 입장하시겠습니까?')) {
-        socket.emit('enterGameCourt', slotId);
+        // 서버의 코트 자동 배정 핸들러 호출
+        socket.emit('enterCourtFromSlot', { type: 'game', slotId });
         switchTab('court');
     }
 }
 
+// 🏟️ [수정 완료] 난타 코트 입장 버튼 클릭 시 서버로 자동 배정 요청을 보냄
 function enterNantaCourt(slotId) {
     const slot = nantaQueue.find(s => s.id === slotId);
     if (!slot) return;
@@ -442,7 +458,8 @@ function enterNantaCourt(slotId) {
     }
 
     if (confirm('난타 코트로 입장하시겠습니까?')) {
-        socket.emit('enterNantaCourt', slotId);
+        // 서버의 코트 자동 배정 핸들러 호출
+        socket.emit('enterCourtFromSlot', { type: 'nanta', slotId });
         switchTab('court');
     }
 }
@@ -467,23 +484,31 @@ function clickNantaEnd(courtId, side) {
 }
 
 function switchTab(tabName) {
-    document.getElementById('tab-game').classList.remove('active');
-    document.getElementById('tab-nanta').classList.remove('active');
-    document.getElementById('tab-court').classList.remove('active');
+    const tabGame = document.getElementById('tab-game');
+    const tabNanta = document.getElementById('tab-nanta');
+    const tabCourt = document.getElementById('tab-court');
 
-    document.getElementById('section-game').style.display = 'none';
-    document.getElementById('section-nanta').style.display = 'none';
-    document.getElementById('section-court').style.display = 'none';
+    const secGame = document.getElementById('section-game');
+    const secNanta = document.getElementById('section-nanta');
+    const secCourt = document.getElementById('section-court');
+
+    if (tabGame) tabGame.classList.remove('active');
+    if (tabNanta) tabNanta.classList.remove('active');
+    if (tabCourt) tabCourt.classList.remove('active');
+
+    if (secGame) secGame.style.display = 'none';
+    if (secNanta) secNanta.style.display = 'none';
+    if (secCourt) secCourt.style.display = 'none';
 
     if (tabName === 'game') {
-        document.getElementById('tab-game').classList.add('active');
-        document.getElementById('section-game').style.display = 'block';
+        if (tabGame) tabGame.classList.add('active');
+        if (secGame) secGame.style.display = 'block';
     } else if (tabName === 'nanta') {
-        document.getElementById('tab-nanta').classList.add('active');
-        document.getElementById('section-nanta').style.display = 'block';
+        if (tabNanta) tabNanta.classList.add('active');
+        if (secNanta) secNanta.style.display = 'block';
     } else if (tabName === 'court') {
-        document.getElementById('tab-court').classList.add('active');
-        document.getElementById('section-court').style.display = 'block';
+        if (tabCourt) tabCourt.classList.add('active');
+        if (secCourt) secCourt.style.display = 'block';
     }
 }
 
@@ -492,71 +517,51 @@ function handleHome() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// 헤더에 유저 정보를 안전하게 갱신해 주는 함수
 function applyUserProfile() {
     const userStr = localStorage.getItem("currentUser");
-    
-    // 💡 HTML의 실제 헤더 ID인 'user-display-name'으로 정확하게 수정했습니다!
     const headerUserEl = document.getElementById("user-display-name"); 
     
     if (!headerUserEl) return;
 
     if (userStr) {
         const user = JSON.parse(userStr);
-        // '로그인 중...' 문구를 지우고 올바른 회원 정보로 덮어씌움
         headerUserEl.textContent = `${user.name}님 (${user.ageGroup} / ${user.grade})`;
     } else {
         headerUserEl.textContent = "로그인 필요";
     }
 }
 
-// 페이지가 로드될 때 무조건 실행되도록 보장
-document.addEventListener("DOMContentLoaded", () => {
-    applyUserProfile();
-});
-
-// 로그아웃 처리
 async function handleLogout() {
-    console.log("🚨 [확인] 로그아웃 버튼이 눌렸습니다!");
-  if (confirm("로그아웃 하시겠습니까?")) {
-    const rawUser = localStorage.getItem("currentUser");
+    if (confirm("로그아웃 하시겠습니까?")) {
+        const rawUser = localStorage.getItem("currentUser");
 
-    // 👇 이 줄을 추가합니다! (서버로 보내는 '진짜 유저 이름'을 화면에 보여줍니다)
-    console.log("👀 [확인] 서버로 보내기 직전의 rawUser 데이터:", rawUser);
+        if (rawUser) {
+            try {
+                let username = rawUser;
+                try {
+                    const parsed = JSON.parse(rawUser);
+                    if (parsed && parsed.username) username = parsed.username;
+                } catch (e) {}
 
-    if (rawUser) {
-      try {
-        let username = rawUser;
-        // 객체 형태일 경우 대비하여 파싱 시도
-        try {
-          const parsed = JSON.parse(rawUser);
-          if (parsed && parsed.username) username = parsed.username;
-        } catch (e) {
-          // 단순 문자열인 경우 그대로 사용
+                await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+            } catch (err) {
+                console.error("❌ 로그아웃 서버 통신 에러:", err);
+            }
         }
 
-        // 서버에 퇴장 및 로그아웃 처리 요청
-        await fetch('/api/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username })
-        });
-      } catch (err) {
-        console.error("❌ 로그아웃 서버 통신 에러:", err);
-      }
-    }
+        if (typeof socket !== 'undefined' && socket) {
+            socket.disconnect();
+        }
 
-    // 웹소켓 연결 강제 종료
-    if (typeof socket !== 'undefined' && socket) {
-      socket.disconnect();
+        localStorage.removeItem("currentUser");
+        location.reload(); 
     }
-
-    // 로컬 저장소 비우기 및 새로고침
-    localStorage.removeItem("currentUser");
-    location.reload(); 
-  }
 }
-// 페이지 로드 완료 시 사용자 정보 적용
+
 document.addEventListener("DOMContentLoaded", () => {
-  applyUserProfile();
+    applyUserProfile();
 });
