@@ -103,7 +103,6 @@ function checkAndInsertDefaultData() {
     });
 }
 
-// 더미 데이터 삽입용 함수 더미 정의 (에러 방지용)
 function insertDefaultDummyData() {}
 
 // 정적 파일 및 라우팅 설정
@@ -120,11 +119,9 @@ app.get('/tv', (req, res) => {
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-// ==========================
-// 정회원 목록 조회 API (로그인 화면 드롭다운용)
-// ==========================
+
+// 정회원 목록 조회 API
 app.get('/api/members', (req, res) => {
-    // 💡 핵심 수정: SELECT 문에 username을 추가하여 함께 가져옵니다.
     db.all(`SELECT id, username, name, gender, ageGroup, grade, address FROM regular_members`, (err, rows) => {
         if (err) {
             console.error('❌ 회원 목록 조회 실패:', err.message);
@@ -135,13 +132,10 @@ app.get('/api/members', (req, res) => {
     });
 });
 
-// ==========================
-// 로그인 처리 API (누락되었던 핵심 기능)
-// ==========================
+// 로그인 처리 API
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
 
-    // 데이터베이스에서 아이디(username)로 회원 조회
     db.get(`SELECT * FROM regular_members WHERE username = ?`, [username], (err, user) => {
         if (err) {
             console.error('❌ 로그인 DB 조회 에러:', err.message);
@@ -152,36 +146,7 @@ app.post('/api/login', (req, res) => {
             return res.json({ success: false, message: '존재하지 않는 회원 아이디입니다.' });
         }
 
-        // 입력한 비밀번호와 DB에 저장된 비밀번호 비교
         if (user.password === password) {
-            // 보안을 위해 비밀번호 필드는 제외하고 유저 정보 전송
-            const { password: _, ...userInfo } = user;
-            res.json({ success: true, user: userInfo });
-        } else {
-            res.json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
-        }
-    });
-});
-// ==========================
-// 로그인 처리 API (누락되었던 핵심 기능)
-// ==========================
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-
-    // 데이터베이스에서 아이디(username)로 회원 조회
-    db.get(`SELECT * FROM regular_members WHERE username = ?`, [username], (err, user) => {
-        if (err) {
-            console.error('❌ 로그인 DB 조회 에러:', err.message);
-            return res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
-        }
-
-        if (!user) {
-            return res.json({ success: false, message: '존재하지 않는 회원 아이디입니다.' });
-        }
-
-        // 입력한 비밀번호와 DB에 저장된 비밀번호 비교
-        if (user.password === password) {
-            // 보안을 위해 비밀번호 필드는 제외하고 유저 정보 전송
             const { password: _, ...userInfo } = user;
             res.json({ success: true, user: userInfo });
         } else {
@@ -190,133 +155,186 @@ app.post('/api/login', (req, res) => {
     });
 });
 
-// 🧹 [수정된 공통 청소 함수] 잔여 대기 및 방 정리 (빈 방 폭파 로직 강화)
-function cleanupUser(username) {
-    if (!username) return;
+// 🧹 [궁극의 완벽 청소 및 방 폭파 함수] 유저명, 고유ID, 별칭 모두 검사하여 찌꺼기 방을 흔적없이 폭파
+function cleanupUser(usernameOrObj) {
+    if (!usernameOrObj) return;
 
-    // 1. 게임 대기열(gameQueue) 정리 및 빈 방 폭파
-    if (typeof gameQueue !== 'undefined') {
-        gameQueue.forEach(slot => {
-            if (slot.userIds) slot.userIds = slot.userIds.filter(id => id !== username);
-            if (slot.players) slot.players = slot.players.map(p => (p === username ? '' : p));
-        });
-        
-        // 플레이어와 유저 아이디가 모두 비어버린 빈 방은 완전히 삭제
-        gameQueue = gameQueue.filter(slot => {
-            const hasPlayers = slot.players && slot.players.some(p => p && p !== '');
-            const hasIds = slot.userIds && slot.userIds.length > 0;
-            return hasPlayers || hasIds;
-        });
+    let targetKeyword = '';
+    if (typeof usernameOrObj === 'string') {
+        targetKeyword = usernameOrObj.split('/')[0].trim();
+    } else if (typeof usernameOrObj === 'object' && usernameOrObj.username) {
+        targetKeyword = usernameOrObj.username;
     }
 
-    // 2. 난타 대기열/코트(nantaQueue) 정리 및 빈 방 폭파
-    if (typeof nantaQueue !== 'undefined') {
-        nantaQueue = nantaQueue.filter(slot => {
-            // 이 슬롯에 해당 유저가 포함되어 있는지 확인 (아이디 또는 플레이어 이름 매칭)
-            const isUserInSlot = (slot.userIds && slot.userIds.includes(username)) || 
-                                 (slot.players && slot.players.includes(username));
-            
-            if (!isUserInSlot) return true; // 유저가 없으면 이 방은 유지
+    if (!targetKeyword) return;
 
-            // 이 방이 '코트 입장(진행 중)' 상태인지 판별
-            const isPlaying = slot.status === 'playing' || slot.courtAssigned; 
+    let altKeyword = targetKeyword;
+    if (targetKeyword.startsWith('user')) {
+        const num = targetKeyword.replace('user', '');
+        altKeyword = `회원${num.padStart(2, '0')}`;
+    }
+    
+    // DB에서 해당 유저의 고유 ID(reg_01 등)도 미리 찾아내어 완벽 차단
+    db.get(`SELECT id FROM regular_members WHERE username = ?`, [targetKeyword], (err, row) => {
+        const uniqueRegId = row ? row.id : null;
 
-            if (isPlaying) {
-                console.log(`💥 [난타 코트 강제 종료] ${username}님이 이탈하여 진행 중이던 난타 방이 함께 종료됩니다.`);
-                return false; // 방 전체 폭파
-            } else {
-                // 대기 상태라면 -> 본인만 쏙 빠짐
-                if (slot.userIds) slot.userIds = slot.userIds.filter(id => id !== username);
-                if (slot.players) slot.players = slot.players.map(p => (p === username ? '' : p));
-                
-                // 💡 [핵심 추가] 본인이 빠져나간 후, 이 방에 남은 사람이 단 한 명도 없다면 방을 폭파(false 리턴)합니다!
-                const hasRemainingPlayers = slot.players && slot.players.some(p => p && p !== '');
-                const hasRemainingIds = slot.userIds && slot.userIds.length > 0;
-                
-                if (!hasRemainingPlayers && !hasRemainingIds) {
-                    console.log(`💥 [빈 난타방 폭파] 인원이 모두 떠나 빈 방이 된 난타방이 자동 삭제됩니다.`);
-                    return false; // 방 폭파
+        // 1. 게임 대기열(gameQueue) 정리 및 빈 방 폭파
+        if (typeof gameQueue !== 'undefined') {
+            const validGameQueue = gameQueue.filter(slot => {
+                // userIds 배열에서 매칭되는 아이디/고유ID 전면 제거
+                if (slot.userIds) {
+                    slot.userIds = slot.userIds.filter(id => {
+                        return id !== targetKeyword && 
+                               id !== altKeyword && 
+                               id !== uniqueRegId && 
+                               !id.includes(targetKeyword) && 
+                               !id.includes(altKeyword);
+                    });
                 }
                 
-                return true; // 사람이 남아있다면 방 유지
-            }
-        });
-    }
+                // players 배열에서 플레이어 이름 제거
+                if (slot.players) {
+                    slot.players = slot.players.map(p => {
+                        if (!p) return '';
+                        if (p.includes(targetKeyword) || (altKeyword && p.includes(altKeyword))) {
+                            return '';
+                        }
+                        return p;
+                    });
+                }
+                
+                // 남은 유효 인원 및 유효 ID 재확인
+                const hasValidPlayers = slot.players && slot.players.some(p => {
+                    if (!p) return false;
+                    const trimmed = String(p).trim();
+                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
+                });
+                
+                const hasValidIds = slot.userIds && slot.userIds.some(id => {
+                    if (!id) return false;
+                    const trimmed = String(id).trim();
+                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
+                });
 
-    console.log(`🧹 [청소 완료] ${username}님의 상태가 현장 규칙에 맞게 완벽히 정리되었습니다.`);
+                // 💥 플레이어도 없고 개설자 ID도 비어있으면 게임방 완전 폭파!
+                if (!hasValidPlayers && !hasValidIds) {
+                    console.log(`💥 [빈 게임방 폭파 완료] 남은 인원/ID가 없어 게임방이 삭제됩니다.`);
+                    return false; 
+                }
+
+                return true;
+            });
+
+            gameQueue.length = 0;
+            gameQueue.push(...validGameQueue);
+        }
+
+        // 2. 난타 대기열(nantaQueue) 정리 및 빈 방 폭파
+        if (typeof nantaQueue !== 'undefined') {
+            const validNantaQueue = nantaQueue.filter(slot => {
+                if (slot.userIds) {
+                    slot.userIds = slot.userIds.filter(id => {
+                        return id !== targetKeyword && 
+                               id !== altKeyword && 
+                               id !== uniqueRegId && 
+                               !id.includes(targetKeyword) && 
+                               !id.includes(altKeyword);
+                    });
+                }
+                
+                if (slot.players) {
+                    slot.players = slot.players.map(p => {
+                        if (!p) return '';
+                        if (p.includes(targetKeyword) || (altKeyword && p.includes(altKeyword))) {
+                            return '';
+                        }
+                        return p;
+                    });
+                }
+
+                const hasRemainingPlayers = slot.players && slot.players.some(p => {
+                    if (!p) return false;
+                    const trimmed = String(p).trim();
+                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
+                });
+                
+                const hasRemainingIds = slot.userIds && slot.userIds.some(id => {
+                    if (!id) return false;
+                    const trimmed = String(id).trim();
+                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
+                });
+                
+                // 💥 플레이어도 없고 개설자 ID도 비어있으면 난타방 완전 폭파!
+                if (!hasRemainingPlayers && !hasRemainingIds) {
+                    console.log(`💥 [빈 난타방 폭파 완료] 남은 인원/ID가 없어 난타방이 삭제됩니다.`);
+                    return false; 
+                }
+                
+                return true;
+            });
+
+            nantaQueue.length = 0;
+            nantaQueue.push(...validNantaQueue);
+        }
+
+        console.log(`✨ [청소 완료] 키워드 "${targetKeyword}" 관련 모든 슬롯 데이터 및 찌꺼기 방이 정리되었습니다.`);
+        
+        if (typeof broadcastState === 'function') {
+            broadcastState();
+        }
+    });
 }
 
-// =================================================================
-// 🚪 [1단계 추가] 로그아웃 API (로그아웃 시 모든 대기/참여 상태 정리)
-// =================================================================
+// 로그아웃 API
 app.post('/api/logout', (req, res) => {
     const { username } = req.body;
-    
+    console.log(`🧹 [로그아웃 요청 수신] 유저: ${username}의 대기/방 참여 상태 정리 중...`);
     if (username) {
-        // 방금 만든 공통 청소 함수를 실행하여 대기열 및 방에서 깔끔하게 퇴장 조치
         cleanupUser(username);
-        
-        // 만약 실시간 웹소켓 동기화 함수(예: broadcastState)가 있다면 이 아래에 추가 가능
-        // broadcastState();
     }
-    
     res.json({ success: true });
 });
-// =================================================================
-// 🛡️ [2단계 추가] 관리자 모드: 강제 퇴장 및 방 강제 종료 API
-// =================================================================
 
-// 1. 관리자 회원 강제 퇴장 (지정한 유저의 모든 대기 및 코트 상태 강제 정리)
+// 관리자 모드: 강제 퇴장 및 방 강제 종료 API
 app.post('/api/admin/kick-user', (req, res) => {
-    const { targetUsername, adminUsername } = req.body; // 필요시 관리자 권한 체크도 가능
+    const { targetUsername } = req.body;
 
     if (!targetUsername) {
         return res.status(400).json({ success: false, message: '퇴장시킬 회원 아이디가 없습니다.' });
     }
 
-    // 우리가 만든 공통 청소 함수 재사용!
     cleanupUser(targetUsername);
 
-    console.log(`🚨 [관리자 강제 퇴장] 관리자에 의해 회원 [${targetUsername}]님이 강제 퇴장 및 정리되었습니다.`);
-
-    // 실시간 화면 동기화 함수가 있다면 여기서 호출 (예: broadcastState())
-    // broadcastState();
-
+    console.log(`🚨 [관리자 강제 퇴장] 회원 [${targetUsername}]님이 강제 퇴장 및 정리되었습니다.`);
     res.json({ success: true, message: `${targetUsername}님을 강제 퇴장시켰습니다.` });
 });
 
-
-// 2. 관리자 게임방/난타방 강제 종료 (폭파)
 app.post('/api/admin/delete-room', (req, res) => {
-    const { roomType, roomId } = req.body; // roomType: 'game' 또는 'nanta', roomId: 방 식별자
+    const { roomType, roomId } = req.body;
 
     if (!roomType || roomId === undefined) {
         return res.status(400).json({ success: false, message: '잘못된 요청입니다.' });
     }
 
     if (roomType === 'game' && typeof gameQueue !== 'undefined') {
-        // 해당 roomId를 가진 게임방 제거 (index나 id 비교 방식에 맞게 조정)
         gameQueue = gameQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
-        console.log(`💥 [관리자 게임방 강제 종료] 게임방(${roomId})이 관리자에 의해 강제 삭제되었습니다.`);
+        console.log(`💥 [관리자 게임방 강제 종료] 게임방(${roomId})이 삭제되었습니다.`);
     } else if (roomType === 'nanta' && typeof nantaQueue !== 'undefined') {
-        // 해당 roomId를 가진 난타방 제거
         nantaQueue = nantaQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
-        console.log(`💥 [관리자 난타방 강제 종료] 난타방(${roomId})이 관리자에 의해 강제 삭제되었습니다.`);
+        console.log(`💥 [관리자 난타방 강제 종료] 난타방(${roomId})이 삭제되었습니다.`);
     } else {
         return res.json({ success: false, message: '존재하지 않는 방이거나 타입 오류입니다.' });
     }
 
-    // 실시간 화면 동기화
-    // broadcastState();
+    if (typeof broadcastState === 'function') {
+        broadcastState();
+    }
 
     res.json({ success: true, message: '해당 방이 강제 종료되었습니다.' });
 });
 
-// =================================================================
-// 🏸 [완성] 관리자 모드: 코트 강제 비우기/종료 API (맞춤형 문구 + 카테고리)
-// =================================================================
 app.post('/api/admin/clear-court', (req, res) => {
-    const { courtId, side } = req.body; // side: 'A', 'B' 또는 undefined
+    const { courtId, side } = req.body;
 
     if (courtId === undefined) {
         return res.status(400).json({ success: false, message: '코트 번호가 지정되지 않았습니다.' });
@@ -329,7 +347,7 @@ app.post('/api/admin/clear-court', (req, res) => {
     }
 
     let noticeMessage = '';
-    let courtCategory = 'game'; // 색상 구분을 위한 카테고리
+    let courtCategory = 'game';
 
     if (targetCourt.type === 'game') {
         targetCourt.isEmpty = true;
@@ -337,8 +355,6 @@ app.post('/api/admin/clear-court', (req, res) => {
         targetCourt.note = '';
         courtCategory = 'game';
         noticeMessage = `[관리자 알림] ${targetCourt.id}번 게임코트는 관리자에 의해 종료되었습니다.`;
-        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 게임 코트가 강제 초기화되었습니다.`);
-
     } else if (targetCourt.type === 'nanta') {
         courtCategory = 'nanta';
         if (side === 'A' && targetCourt.sideA) {
@@ -369,34 +385,31 @@ app.post('/api/admin/clear-court', (req, res) => {
             noticeMessage = `[관리자 알림] ${targetCourt.id}번 난타코트 전체는 관리자에 의해 종료되었습니다.`;
         }
         targetCourt.note = '';
-        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 난타 코트(${side || '전체'})가 강제 초기화되었습니다.`);
-
     } else if (targetCourt.type === 'lesson') {
         targetCourt.isEmpty = true;
         targetCourt.players = '';
         courtCategory = 'lesson';
         noticeMessage = `[관리자 알림] ${targetCourt.id}번 레슨코트는 관리자에 의해 종료되었습니다.`;
-        console.log(`🧹 [관리자 코트 비우기] ${targetCourt.id}번 레슨 코트가 강제 초기화되었습니다.`);
     }
 
-    // 💡 실시간 소켓으로 카테고리와 맞춤형 문구 함께 전송
     if (typeof io !== 'undefined') {
         io.emit('courtClearedNotice', {
             courtId: targetCourt.id,
-            category: courtCategory, // 'game', 'nanta', 'lesson'
+            category: courtCategory,
             message: noticeMessage
         });
     }
 
     res.json({ success: true, message: `${targetCourt.id}번 코트가 성공적으로 강제 비워졌습니다.` });
 });
+
 // ==========================================
 // 4. 인메모리 데이터 상태 관리
 // ==========================================
 let config = {
-    ENTRY_TIMEOUT_SEC: 180,       // 입장 대기 제한시간 (3분)
-    NANTA_COURT_LIMIT_SEC: 900,   // 난타 코트 제한시간 (15분)
-    ADMIN_PASSWORD: '1234'        // 관리자 비밀번호
+    ENTRY_TIMEOUT_SEC: 180, 
+    NANTA_COURT_LIMIT_SEC: 900, 
+    ADMIN_PASSWORD: '1234' 
 };
 
 let courtsData = [
@@ -450,11 +463,9 @@ function getValidPlayers(playersArr) {
     return (playersArr || []).filter(p => p && p.trim() !== '');
 }
 
-// 1초마다 타이머 및 제한시간 체크
 setInterval(() => {
     const now = Date.now();
 
-    // A. 게임 대기 방 입장 제한 타이머 체크
     const emptyGameCourtsCount = courtsData.filter(c => c.type === 'game' && c.isEmpty).length;
     let activeTimerCount = 0;
 
@@ -487,7 +498,6 @@ setInterval(() => {
         }
     });
 
-    // B. 난타 대기 방 입장 제한 타이머 체크
     let emptyNantaSlotsCount = 0;
     courtsData.forEach(court => {
         if (court.type === 'nanta') {
@@ -530,7 +540,6 @@ setInterval(() => {
         }
     });
     
-    // C. 난타 코트 잔여시간 체크
     courtsData.forEach(court => {
         if (court.type === 'nanta') {
             ['sideA', 'sideB'].forEach(side => {
@@ -562,7 +571,7 @@ setInterval(() => {
 }, 1000);
 
 // ==========================================
-// 6. Socket.IO 이벤트 핸들링 (통합 및 괄호 구조 정상화)
+// 6. Socket.IO 이벤트 핸들링
 // ==========================================
 io.on('connection', (socket) => {
     socket.lastActiveTime = Date.now();
@@ -577,6 +586,20 @@ io.on('connection', (socket) => {
         gameQueue: gameQueue,
         nantaQueue: nantaQueue,
         notifications: notifications
+    });
+
+    socket.on('registerUserSession', (username) => {
+        if (username) {
+            socket.username = username;
+            console.log(`👤 [소켓 등록] 유저 ${username}의 소켓(ID: ${socket.id})이 매핑되었습니다.`);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        if (socket.username) {
+            console.log(`🔌 [연결 끊김] 소켓 ID: ${socket.id} (유저: ${socket.username}) 연결 해제됨`);
+            cleanupUser(socket.username);
+        }
     });
 
     socket.on('verifyAdminPassword', (inputPw, callback) => {
@@ -661,7 +684,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 방 개설 검사 요청
     socket.on('createSlot', ({ type, userId, user }) => {
         const existingGameSlot = gameQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
         const existingNantaSlot = nantaQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
@@ -785,7 +807,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 게임 방 통합
     socket.on('mergeSlot', ({ mySlotId, targetSlotId }) => {
         const mySlot = gameQueue.find(s => s.id === mySlotId);
         const targetSlot = gameQueue.find(s => s.id === targetSlotId);
@@ -807,135 +828,6 @@ io.on('connection', (socket) => {
                 broadcastState();
             }
         }
-    });
-
-    // 게임 코트 입장
-    socket.on('enterGameCourt', (slotId) => {
-        const slotIdx = gameQueue.findIndex(s => s.id === slotId);
-        if (slotIdx === -1) return;
-
-        const slot = gameQueue[slotIdx];
-        const emptyCourt = courtsData.find(c => c.type === 'game' && c.isEmpty);
-
-        if (emptyCourt) {
-            emptyCourt.isEmpty = false;
-            emptyCourt.players = getValidPlayers(slot.players).join(', ');
-            gameQueue.splice(slotIdx, 1);
-
-            addNotification(`🏸 [코트입장] ${emptyCourt.id}번 코트에 ${emptyCourt.players} 팀이 입장하셨습니다.`);
-            broadcastState();
-        }
-    });
-
-    // 게임 코트 종료
-    socket.on('endGameCourt', (courtId) => {
-        const court = courtsData.find(c => c.id === courtId);
-        if (court) {
-            addNotification(`🏁 [게임종료] ${court.id}번 코트 경기가 종료되었습니다.`);
-            
-            const applyType = court.nextType || court.type || 'game';
-            court.type = applyType;
-            court.isEmpty = (applyType !== 'lesson');
-            court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
-            delete court.sideA;
-            delete court.sideB;
-            
-            broadcastState();
-        }
-    });
-
-    // 게임 코트 한 게임 더
-    socket.on('againGameCourt', (courtId) => {
-        const court = courtsData.find(c => c.id === courtId);
-        if (court && !court.isEmpty && court.type === 'game') {
-            const playersArr = court.players ? court.players.split(', ') : [];
-            const newSlot = {
-                id: 'slot_' + (slotIdCounter++),
-                type: 'game',
-                players: [playersArr[0] || '', playersArr[1] || '', playersArr[2] || '', playersArr[3] || ''],
-                createdAt: Date.now(),
-                fullAt: null,
-                remainingSeconds: null
-            };
-            gameQueue.push(newSlot);
-            
-            const applyType = court.nextType || court.type || 'game';
-            court.type = applyType;
-            court.isEmpty = (applyType !== 'lesson');
-            court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
-            delete court.sideA;
-            delete court.sideB;
-            
-            addNotification(`🔄 [한 게임 더] ${court.id}번 코트 팀이 연승/재대기를 신청하셨습니다.`);
-            broadcastState();
-        }
-    });
-
-    // 난타 코트 입장
-    socket.on('enterNantaCourt', (slotId) => {
-        const slotIdx = nantaQueue.findIndex(s => s.id === slotId);
-        if (slotIdx === -1) return;
-
-        const slot = nantaQueue[slotIdx];
-        const validPlayers = getValidPlayers(slot.players).join(', ');
-
-        for (let court of courtsData) {
-            if (court.type === 'nanta') {
-                if (court.sideA && court.sideA.isEmpty) {
-                    court.sideA = {
-                        isEmpty: false,
-                        players: validPlayers,
-                        startTime: Date.now(),
-                        remainingSeconds: config.NANTA_COURT_LIMIT_SEC
-                    };
-                    nantaQueue.splice(slotIdx, 1);
-                    addNotification(`🏸 [난타입장] ${court.id}번 코트 (A면)에 ${validPlayers} 입장!`);
-                    broadcastState();
-                    return;
-                } else if (court.sideB && court.sideB.isEmpty) {
-                    court.sideB = {
-                        isEmpty: false,
-                        players: validPlayers,
-                        startTime: Date.now(),
-                        remainingSeconds: config.NANTA_COURT_LIMIT_SEC
-                    };
-                    nantaQueue.splice(slotIdx, 1);
-                    addNotification(`🏸 [난타입장] ${court.id}번 코트 (B면)에 ${validPlayers} 입장!`);
-                    broadcastState();
-                    return;
-                }
-            }
-        }
-    });
-
-    // 난타 코트 종료
-    socket.on('endNantaCourt', ({ courtId, side }) => {
-        const court = courtsData.find(c => c.id === courtId);
-        if (court && court.type === 'nanta') {
-            const sideKey = side === 'A' || side === 'sideA' ? 'sideA' : 'sideB';
-            
-            if (court[sideKey]) {
-                court[sideKey] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
-            }
-
-            addNotification(`🏁 [난타종료] ${court.id}번 코트 ${sideKey === 'sideA' ? 'A' : 'B'}사이드 난타가 종료되었습니다.`);
-
-            const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
-            if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
-                const applyType = court.nextType;
-                court.type = applyType;
-                court.isEmpty = (applyType !== 'lesson');
-                court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
-                delete court.sideA;
-                delete court.sideB;
-            }
-
-            broadcastState();
-        }
-    });
-
-    socket.on('disconnect', () => {
-        console.log(`❌ 접속 해제: ${socket.id}`);
     });
 });
 

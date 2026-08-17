@@ -20,6 +20,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (introOverlay) introOverlay.classList.add("hidden");
     if (loginOverlay) loginOverlay.classList.add("hidden");
 
+    // 💡 [추가] 자동 로그인(새로고침) 시점에도 서버 소켓에 유저 아이디 등록
+    try {
+      const parsedUser = JSON.parse(savedUser);
+      if (typeof socket !== 'undefined' && parsedUser.username) {
+        socket.emit('registerUser', parsedUser.username);
+      }
+    } catch (e) {
+      console.error("소켓 유저 등록 에러:", e);
+    }
+
     if (typeof applyUserProfile === 'function') {
       applyUserProfile();
     }
@@ -86,6 +96,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (result.success) {
           // 세션 정보 저장
           localStorage.setItem("currentUser", JSON.stringify(result.user));
+          
+          // 💡 [추가] 일반 로그인 성공 시점에도 서버 소켓에 유저 아이디 등록
+          if (typeof socket !== 'undefined' && result.user.username) {
+            socket.emit('registerUser', result.user.username);
+          }
+
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
           // 로그인 레이어 닫고, 메인 앱 화면 열기

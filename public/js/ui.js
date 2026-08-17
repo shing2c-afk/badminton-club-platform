@@ -517,28 +517,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // 로그아웃 처리
 async function handleLogout() {
+    console.log("🚨 [확인] 로그아웃 버튼이 눌렸습니다!");
   if (confirm("로그아웃 하시겠습니까?")) {
-    const currentUser = localStorage.getItem("currentUser");
+    const rawUser = localStorage.getItem("currentUser");
 
-    if (currentUser) {
+    // 👇 이 줄을 추가합니다! (서버로 보내는 '진짜 유저 이름'을 화면에 보여줍니다)
+    console.log("👀 [확인] 서버로 보내기 직전의 rawUser 데이터:", rawUser);
+
+    if (rawUser) {
       try {
-        // 💡 서버에 로그아웃 요청을 보내어 대기열 및 참여 상태를 깔끔하게 청소(Cleanup)합니다.
+        let username = rawUser;
+        // 객체 형태일 경우 대비하여 파싱 시도
+        try {
+          const parsed = JSON.parse(rawUser);
+          if (parsed && parsed.username) username = parsed.username;
+        } catch (e) {
+          // 단순 문자열인 경우 그대로 사용
+        }
+
+        // 서버에 퇴장 및 로그아웃 처리 요청
         await fetch('/api/logout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: currentUser })
+          body: JSON.stringify({ username })
         });
       } catch (err) {
         console.error("❌ 로그아웃 서버 통신 에러:", err);
       }
     }
 
+    // 웹소켓 연결 강제 종료
+    if (typeof socket !== 'undefined' && socket) {
+      socket.disconnect();
+    }
+
     // 로컬 저장소 비우기 및 새로고침
     localStorage.removeItem("currentUser");
-    location.reload(); // 새로고침하여 다시 로그인 화면으로 이동
+    location.reload(); 
   }
 }
-
 // 페이지 로드 완료 시 사용자 정보 적용
 document.addEventListener("DOMContentLoaded", () => {
   applyUserProfile();
