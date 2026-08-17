@@ -3,10 +3,36 @@
 document.addEventListener("DOMContentLoaded", () => {
   const introOverlay = document.getElementById("auth-intro-overlay");
   const loginOverlay = document.getElementById("auth-login-overlay");
-  const dummySelect = document.getElementById("auth-dummy-select"); // HTML의 드롭다운 ID
+  const mainApp = document.getElementById("main-app"); // 메인 앱 화면
+  const dummySelect = document.getElementById("auth-dummy-select");
   const loginForm = document.getElementById("auth-login-form");
   const usernameInput = document.getElementById("auth-username");
   const authMsg = document.getElementById("auth-msg");
+
+  // =================================================================
+  // 💡 [핵심] 새로고침 시 세션 유지 및 깜빡임 없는 화면 분기 처리
+  // =================================================================
+  const savedUser = localStorage.getItem("currentUser");
+  
+  if (savedUser) {
+    // 1. 로그인 정보가 있는 경우: 인트로/로그인 창은 숨긴 채 메인 앱만 즉시 노출
+    if (mainApp) mainApp.classList.remove("hidden");
+    if (introOverlay) introOverlay.classList.add("hidden");
+    if (loginOverlay) loginOverlay.classList.add("hidden");
+
+    if (typeof applyUserProfile === 'function') {
+      applyUserProfile();
+    }
+    console.log("✅ 깜빡임 없이 자동 로그인(세션 유지)되었습니다.");
+    return; // 타이머 실행을 막기 위해 여기서 종료
+  }
+
+  // -----------------------------------------------------------------
+  // 💡 로그인 정보가 '없는 경우'에만 인트로 및 로그인 로직 실행
+  // -----------------------------------------------------------------
+  
+  // 비로그인 상태이므로 인트로 화면을 노출 시작 (CSS와 HTML에 의해 숨겨져 있던 것을 해제)
+  if (introOverlay) introOverlay.classList.remove("hidden"); 
 
   // 1. 2초 후 인트로 오버레이 페이드아웃 및 로그인 레이어 표시
   setTimeout(() => {
@@ -21,18 +47,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch('/api/members');
       const data = await res.json();
 
-      // 서버에서 전달된 데이터가 배열 형태이므로 안전하게 확인 후 순회
       if (Array.isArray(data) && dummySelect) {
         dummySelect.innerHTML = '<option value="">-- 계정 선택 (선택사항) --</option>';
         data.forEach(u => {
           const opt = document.createElement("option");
-          
-          // input창에 들어갈 값(username 또는 id)을 지정
           opt.value = u.username; 
-          
-          // 화면에 보이는 텍스트
           opt.textContent = `${u.name} (${u.ageGroup} / ${u.grade})`;
-          
           dummySelect.appendChild(opt);
         });
       }
@@ -68,8 +88,9 @@ document.addEventListener("DOMContentLoaded", () => {
           localStorage.setItem("currentUser", JSON.stringify(result.user));
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
-          // 로그인 레이어 닫기 -> 메인 화면 노출!
-          loginOverlay.classList.add("hidden");
+          // 로그인 레이어 닫고, 메인 앱 화면 열기
+          if (loginOverlay) loginOverlay.classList.add("hidden");
+          if (mainApp) mainApp.classList.remove("hidden");
         } else {
           if (authMsg) authMsg.textContent = result.message;
         }
