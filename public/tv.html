@@ -3,45 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📺 체육관 실시간 현황 전광판</title>
+    <title>📺 체육관 실시간 종합 현황판</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0a0c10; color: #ffffff; padding: 15px; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        /* 전체 화면 고정 및 여백 최소화 */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0a0c10; color: #ffffff; padding: 6px; overflow: hidden; height: 100vh; display: flex; flex-direction: column; justify-content: space-between; }
         
-        .header { text-align: center; margin-bottom: 10px; border-bottom: 2px solid #1f293d; padding-bottom: 5px; }
-        .header h1 { color: #66fcf1; font-size: 28px; letter-spacing: 2px; }
+        /* 상단 제목 영역 */
+        .header { text-align: center; margin-bottom: 2px; border-bottom: 2px solid #1f293d; padding-bottom: 2px; flex-shrink: 0; }
+        .header h1 { color: #66fcf1; font-size: 40px; letter-spacing: 2px; }
 
-        /* 상단 코트 그리드 */
-        .court-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; flex-grow: 1; }
+        /* 1. 상단 코트 그리드: 공간을 적게 차지하도록 높이 압축 */
+        .court-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); gap: 6px; width: 100%; flex-grow: 1; min-height: 0; }
         
-        .court-card { background: #141824; border: 2px solid #232d42; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
+        /* 코트 카드 내부 여백을 줄여서 슬림하게 만듦 */
+        .court-card { background: #141824; border: 2px solid #232d42; border-radius: 6px; padding: 4px 6px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; height: 100%; }
         
         .court-card.game { border-color: #3498db; }
         .court-card.nanta { border-color: #ffa500; }
         .court-card.lesson { border-color: #9b59b6; }
 
-        .court-title { font-size: 18px; font-weight: bold; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+        .court-title { font-size: 13px; font-weight: bold; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
         
-        /* 🏸 색상별 셔틀콕 배지 스타일 */
-        .type-badge { font-size: 13px; padding: 3px 8px; border-radius: 6px; font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
+        .type-badge { font-size: 10px; padding: 1px 4px; border-radius: 3px; font-weight: bold; display: inline-flex; align-items: center; gap: 3px; }
         .badge-game { background: rgba(52, 152, 219, 0.15); color: #3498db; border: 1px solid #3498db; }
         .badge-nanta { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid #ffa500; }
         .badge-lesson { background: rgba(155, 89, 182, 0.15); color: #9b59b6; border: 1px solid #9b59b6; }
 
-        .team-list { flex-grow: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
-        .team-row { background: #1f2538; padding: 8px 10px; border-radius: 6px; font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
-        .empty-text { text-align: center; color: #52607d; font-size: 16px; font-weight: bold; }
-        .lesson-text { text-align: center; color: #d8b4fe; font-size: 15px; font-weight: bold; line-height: 1.4; }
+        .team-list { flex-grow: 1; display: flex; flex-direction: column; gap: 2px; justify-content: center; min-height: 0; }
+        
+        .team-row { background: #1f2538; padding: 3px 6px; border-radius: 4px; font-size: 18px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .empty-text { text-align: center; color: #52607d; font-size: 14px; font-weight: bold; }
+        .lesson-text { text-align: center; color: #d8b4fe; font-size: 14px; font-weight: bold; line-height: 1.2; }
 
-        .timer-text { font-size: 13px; color: #00ff66; font-weight: bold; }
+        .timer-text { font-size: 11px; color: #00ff66; font-weight: bold; }
 
-        /* 하단 대기 현황판 영역 */
-        .waiting-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; height: 180px; margin-top: 10px; }
-        .waiting-box { background: #141824; border: 1px solid #232d42; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; }
-        .waiting-title { font-size: 16px; font-weight: bold; margin-bottom: 8px; color: #66fcf1; border-bottom: 1px solid #1f293d; padding-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-        .waiting-list { flex-grow: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
-        .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+        /* 2. 하단 대기 현황판 영역: 높이를 기존보다 훨씬 큼직하게(예: 180px) 키움 */
+        .waiting-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 450px; flex-shrink: 0; margin-top: 6px; }
+        .waiting-box { background: #141824; border: 1px solid #232d42; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; overflow: hidden; }
+        .waiting-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; color: #66fcf1; border-bottom: 1px solid #1f293d; padding-bottom: 3px; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        
+        /* 대기열 리스트 영역: 대기자가 많을 때 스크롤이 원활하게 작동하도록 설정 */
+        .waiting-list { flex-grow: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; max-height: none; }
+        
+        .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 5px 8px; border-radius: 4px; font-size: 18px; font-weight: bold; color: #ffffff; }
+        .empty-queue-text { color: #52607d; font-size: 15px; font-weight: bold; padding: 4px; }
     </style>
 </head>
 <body>
@@ -79,7 +86,7 @@
             .replace(/'/g, "&#039;");
     }
 
-    // 💡 회원 이름을 2명씩 나누어 2줄(<br>)로 변환하는 함수
+    // 💡 회원 이름을 1명씩 각각 한 줄(세로)로 변환하는 함수
     function formatPlayersHtml(players) {
         let arr = [];
         if (Array.isArray(players)) {
@@ -90,15 +97,8 @@
 
         if (arr.length === 0) return '';
         
-        // 2명 이하인 경우 1줄로 출력
-        if (arr.length <= 2) {
-            return arr.join(', ');
-        }
-        
-        // 3명 이상(4명)인 경우 2명 단위로 줄바꿈(<br>) 처리
-        const row1 = arr.slice(0, 2).join(', ');
-        const row2 = arr.slice(2, 4).join(', ');
-        return `${row1}<br>${row2}`;
+        // 들어온 모든 회원을 각각 한 줄씩(<br>로 구분) 세로로 출력
+        return arr.join('<br>');
     }
 
     // 서버 표준 수신 이벤트명: stateUpdated
@@ -120,15 +120,14 @@ socket.on('courtClearedNotice', (data) => {
     if (banner && alertText) {
         alertText.textContent = data.message;
 
-        // 🎨 팝업 색상 카테고리별 분기 처리
         if (data.category === 'game') {
-            banner.style.backgroundColor = '#2980b9'; // 게임코트 삭제 시: 진한 파란색
+            banner.style.backgroundColor = '#2980b9'; 
         } else if (data.category === 'nanta') {
-            banner.style.backgroundColor = '#e67e22'; // 난타코트 삭제 시: 진한 주황색
+            banner.style.backgroundColor = '#e67e22'; 
         } else if (data.category === 'lesson') {
-            banner.style.backgroundColor = '#8e44ad'; // 레슨코트 삭제 시: 진한 보라색
+            banner.style.backgroundColor = '#8e44ad'; 
         } else {
-            banner.style.backgroundColor = '#c0392b'; // 기본 빨간색
+            banner.style.backgroundColor = '#c0392b'; 
         }
 
         banner.style.display = 'block';
@@ -137,25 +136,24 @@ socket.on('courtClearedNotice', (data) => {
             clearTimeout(alertTimer);
         }
 
-        // 4초 뒤 자동 숨김
         alertTimer = setTimeout(() => {
             banner.style.display = 'none';
         }, 4000);
     }
 });
 
-    // 코트 현황 출력
+   // 코트 현황 출력 (난타 타이머 우측 정렬 및 폰트 크기 조정)
     function renderTVCourts(courts) {
         const container = document.getElementById('tv-court-grid');
         if (!container) return;
 
         let html = "";
+        const now = Date.now();
 
         courts.forEach((court, idx) => {
             const courtNum = court.id || (idx + 1);
             const courtType = court.type || 'game';
             
-            // 타입별 배지 설정
             let typeBadge = courtType === 'game' ? '<span class="type-badge badge-game">🏸 게임</span>' :
                             courtType === 'nanta' ? '<span class="type-badge badge-nanta">🏸 난타</span>' :
                             '<span class="type-badge badge-lesson">🏸 레슨</span>';
@@ -166,28 +164,71 @@ socket.on('courtClearedNotice', (data) => {
                 const noteText = escapeHtml(court.players || court.note || '레슨 코트 운영 중');
                 teamsHtml = `<div class="lesson-text">📢 ${noteText}</div>`;
             } else if (courtType === 'nanta') {
-                // 난타 코트 (A, B 두 영역)
                 const sideAEmpty = !court.sideA || court.sideA.isEmpty;
                 const sideBEmpty = !court.sideB || court.sideB.isEmpty;
 
                 if (sideAEmpty && sideBEmpty) {
                     teamsHtml = `<div class="empty-text">비어있음</div>`;
                 } else {
+                    // A코트(팀) 난타 정보 구성
                     if (!sideAEmpty) {
-                        const formattedA = formatPlayersHtml(court.sideA.players);
+                        const formattedA = formatPlayersHorizontal(court.sideA.players);
+                        let timerStrA = "⏱️ 00:00";
+                        let isUrgentA = false;
+                        
+                        if (court.sideA.startTime) {
+                            const elapsed = Math.floor((now - court.sideA.startTime) / 1000);
+                            const limitSec = (court.sideA.limitMinutes || court.limitMinutes || 15) * 60;
+                            const remain = limitSec - elapsed;
+                            if (remain <= 60) isUrgentA = true;
+                            if (remain > 0) {
+                                const m = Math.floor(remain / 60);
+                                const s = remain % 60;
+                                timerStrA = `⏱️ ${m}:${s < 10 ? '0' : ''}${s}`;
+                            } else {
+                                timerStrA = `⏱️ 시간초과`;
+                                isUrgentA = true;
+                            }
+                        }
+
                         teamsHtml += `
-                            <div class="team-row" style="align-items: flex-start;">
-                                <div><b>A:</b> ${formattedA}</div>
-                                <span class="timer-text">⏱️ 사용중</span>
+                            <div class="team-row ${isUrgentA ? 'urgent-flash' : ''}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 4px 6px; margin-bottom: 3px; border-radius: 4px;">
+                                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; position: relative;">
+                                    <span style="font-size: 13px; color: #ffa500; font-weight: bold;">[A코트]</span>
+                                    <span style="font-size: 16px; font-weight: bold; color: #00ff66; position: absolute; right: 0; top: 50%; transform: translateY(-50%);">${timerStrA}</span>
+                                </div>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap; width: 100%; padding-right: 60px;">${formattedA}</div>
                             </div>
                         `;
                     }
+                    // B코트(팀) 난타 정보 구성 (A팀과 동일한 구조)
                     if (!sideBEmpty) {
-                        const formattedB = formatPlayersHtml(court.sideB.players);
+                        const formattedB = formatPlayersHorizontal(court.sideB.players);
+                        let timerStrB = "⏱️ 00:00";
+                        let isUrgentB = false;
+                        
+                        if (court.sideB.startTime) {
+                            const elapsed = Math.floor((now - court.sideB.startTime) / 1000);
+                            const limitSec = (court.sideB.limitMinutes || court.limitMinutes || 15) * 60;
+                            const remain = limitSec - elapsed;
+                            if (remain <= 60) isUrgentB = true;
+                            if (remain > 0) {
+                                const m = Math.floor(remain / 60);
+                                const s = remain % 60;
+                                timerStrB = `⏱️ ${m}:${s < 10 ? '0' : ''}${s}`;
+                            } else {
+                                timerStrB = `⏱️ 시간초과`;
+                                isUrgentB = true;
+                            }
+                        }
+
                         teamsHtml += `
-                            <div class="team-row" style="align-items: flex-start;">
-                                <div><b>B:</b> ${formattedB}</div>
-                                <span class="timer-text">⏱️ 사용중</span>
+                            <div class="team-row ${isUrgentB ? 'urgent-flash' : ''}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 4px 6px; border-radius: 4px;">
+                                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; position: relative;">
+                                    <span style="font-size: 13px; color: #ffa500; font-weight: bold;">[B코트]</span>
+                                    <span style="font-size: 16px; font-weight: bold; color: #00ff66; position: absolute; right: 0; top: 50%; transform: translateY(-50%);">${timerStrB}</span>
+                                </div>
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap; width: 100%; padding-right: 60px;">${formattedB}</div>
                             </div>
                         `;
                     }
@@ -197,11 +238,14 @@ socket.on('courtClearedNotice', (data) => {
                 if (court.isEmpty || !court.players) {
                     teamsHtml = `<div class="empty-text">비어있음</div>`;
                 } else {
-                    const formattedGame = formatPlayersHtml(court.players);
+                    const formattedGame = formatPlayersHorizontal(court.players);
                     teamsHtml = `
-                        <div class="team-row" style="align-items: flex-start;">
-                            <div>${formattedGame}</div>
-                            <span class="timer-text">⏱️ 사용중</span>
+                        <div class="team-row" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 4px 6px; border-radius: 4px;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                <span style="font-size: 13px; color: #3498db; font-weight: bold;">[게임팀]</span>
+                                <span class="timer-text">⏱️ 이용중</span>
+                            </div>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap; width: 100%;">${formattedGame}</div>
                         </div>
                     `;
                 }
@@ -222,8 +266,7 @@ socket.on('courtClearedNotice', (data) => {
 
         container.innerHTML = html;
     }
-
-    // 대기 현황 출력 (게임 및 난타 대기열)
+ // 대기 현황 출력 (어드민 설정의 '입장 대기 제한시간' 연동 표시)
     function renderTVQueues(gameQueue, nantaQueue) {
         const gameContainer = document.getElementById('game-waiting-list');
         const nantaContainer = document.getElementById('nanta-waiting-list');
@@ -233,15 +276,28 @@ socket.on('courtClearedNotice', (data) => {
         document.getElementById('game-queue-count').innerText = `(${gameQueue.length}팀)`;
         document.getElementById('nanta-queue-count').innerText = `(${nantaQueue.length}팀)`;
 
+        // 어드민 설정값(입장 대기 제한시간) 가져오기 (설정되어 있지 않으면 기본 15분 등 지정 가능)
+        const entryTimeoutInput = document.getElementById('entry-timeout');
+        const defaultLimit = entryTimeoutInput ? entryTimeoutInput.value : '';
+
         // 게임 대기열 출력
         if (gameQueue.length === 0) {
-            gameContainer.innerHTML = `<div style="color:#52607d; font-size:13px; padding: 4px;">대기 중인 팀이 없습니다.</div>`;
+            gameContainer.innerHTML = `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
         } else {
             gameContainer.innerHTML = gameQueue.map((q, idx) => {
-                const formattedPlayers = formatPlayersHtml(q.players);
+                const formattedPlayers = formatPlayersHorizontal(q.players);
+                
+                // q 객체 내의 제한시간 속성 혹은 어드민 설정값 활용
+                const limitVal = q.limitMinutes || q.timeout || defaultLimit;
+                const limitText = limitVal ? `<span style="font-size: 13px; color: #f39c12; font-weight: bold;">⏱️ 제한: ${limitVal}분</span>` : '';
+
                 return `
-                    <div class="waiting-card">
-                        <b>[${idx + 1}대기]</b> ${formattedPlayers}
+                    <div class="waiting-card" style="margin-bottom: 6px; width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span style="color: #66fcf1; font-weight: bold;">[대기 ${idx + 1}순위]</span>
+                            ${limitText}
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">${formattedPlayers}</div>
                     </div>
                 `;
             }).join('');
@@ -249,17 +305,40 @@ socket.on('courtClearedNotice', (data) => {
 
         // 난타 대기열 출력
         if (nantaQueue.length === 0) {
-            nantaContainer.innerHTML = `<div style="color:#52607d; font-size:13px; padding: 4px;">대기 중인 팀이 없습니다.</div>`;
+            nantaContainer.innerHTML = `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
         } else {
             nantaContainer.innerHTML = nantaQueue.map((q, idx) => {
-                const formattedPlayers = formatPlayersHtml(q.players);
+                const formattedPlayers = formatPlayersHorizontal(q.players);
+                
+                const limitVal = q.limitMinutes || q.timeout || defaultLimit;
+                const limitText = limitVal ? `<span style="font-size: 13px; color: #f39c12; font-weight: bold;">⏱️ 제한: ${limitVal}분</span>` : '';
+
                 return `
-                    <div class="waiting-card">
-                        <b>[${idx + 1}대기]</b> ${formattedPlayers}
+                    <div class="waiting-card" style="margin-bottom: 6px; width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span style="color: #66fcf1; font-weight: bold;">[대기 ${idx + 1}순위]</span>
+                            ${limitText}
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">${formattedPlayers}</div>
                     </div>
                 `;
             }).join('');
         }
+    }
+
+    // 💡 회원들을 가로 방향으로 나란히 뱃지 형태로 변환하는 함수
+    function formatPlayersHorizontal(players) {
+        let arr = [];
+        if (Array.isArray(players)) {
+            arr = players.filter(Boolean).map(p => escapeHtml(p.trim()));
+        } else if (typeof players === 'string') {
+            arr = players.split(',').map(p => escapeHtml(p.trim())).filter(Boolean);
+        }
+
+        if (arr.length === 0) return '';
+        
+        // 각 회원을 개별 태그(박스) 형태로 감싸서 가로로 배치
+        return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join('');
     }
 </script>
 </body>

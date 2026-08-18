@@ -466,17 +466,18 @@ function enterNantaCourt(slotId) {
 
 function clickAgain(courtId) {
     if (confirm('동일한 멤버로 한 게임 더 진행하시겠습니까? (대기열 최후순위로 재등록됩니다)')) {
-        socket.emit('againGameCourt', courtId);
-        switchTab('game');
+        // 서버의 이벤트 이름과 매개변수 구조({ courtId })에 맞게 수정
+        socket.emit('extendGameCourt', { courtId: courtId });
+        switchTab('game'); // 대기열 탭으로 이동
     }
 }
 
 function clickEnd(courtId) {
     if (confirm('게임을 종료하고 코트를 비우시겠습니까?')) {
-        socket.emit('endGameCourt', courtId);
+        // 서버의 이벤트 이름과 매개변수 구조({ courtId })에 맞게 수정
+        socket.emit('endGameCourt', { courtId: courtId });
     }
 }
-
 function clickNantaEnd(courtId, side) {
     if (confirm('난타를 종료하고 퇴장하시겠습니까?')) {
         socket.emit('endNantaCourt', { courtId, side });
