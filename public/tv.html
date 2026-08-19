@@ -86,19 +86,12 @@
             .replace(/'/g, "&#039;");
     }
 
-    // 💡 회원 이름을 1명씩 각각 한 줄(세로)로 변환하는 함수
-    function formatPlayersHtml(players) {
-        let arr = [];
-        if (Array.isArray(players)) {
-            arr = players.filter(Boolean).map(p => escapeHtml(p.trim()));
-        } else if (typeof players === 'string') {
-            arr = players.split(',').map(p => escapeHtml(p.trim())).filter(Boolean);
-        }
-
-        if (arr.length === 0) return '';
-        
-        // 들어온 모든 회원을 각각 한 줄씩(<br>로 구분) 세로로 출력
-        return arr.join('<br>');
+    // 💡 시간을 mm:ss 형식으로 변환하는 공통 함수
+    function formatTime(sec) {
+        if (sec <= 0 || sec === null || sec === undefined) return "00:00";
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
 
     // 서버 표준 수신 이벤트명: stateUpdated
@@ -111,44 +104,43 @@
         renderTVQueues(gameQueue, nantaQueue);
     });
 
-   // 💡 관리자가 코트를 강제 종료했을 때 TV 화면에 맞춤형 색상/문구 팝업 띄우기
-let alertTimer = null;
-socket.on('courtClearedNotice', (data) => {
-    const banner = document.getElementById('court-alert-banner');
-    const alertText = document.getElementById('court-alert-text');
+    // 💡 관리자가 코트를 강제 종료했을 때 TV 화면에 맞춤형 색상/문구 팝업 띄우기
+    let alertTimer = null;
+    socket.on('courtClearedNotice', (data) => {
+        const banner = document.getElementById('court-alert-banner');
+        const alertText = document.getElementById('court-alert-text');
 
-    if (banner && alertText) {
-        alertText.textContent = data.message;
+        if (banner && alertText) {
+            alertText.textContent = data.message;
 
-        if (data.category === 'game') {
-            banner.style.backgroundColor = '#2980b9'; 
-        } else if (data.category === 'nanta') {
-            banner.style.backgroundColor = '#e67e22'; 
-        } else if (data.category === 'lesson') {
-            banner.style.backgroundColor = '#8e44ad'; 
-        } else {
-            banner.style.backgroundColor = '#c0392b'; 
+            if (data.category === 'game') {
+                banner.style.backgroundColor = '#2980b9'; 
+            } else if (data.category === 'nanta') {
+                banner.style.backgroundColor = '#e67e22'; 
+            } else if (data.category === 'lesson') {
+                banner.style.backgroundColor = '#8e44ad'; 
+            } else {
+                banner.style.backgroundColor = '#c0392b'; 
+            }
+
+            banner.style.display = 'block';
+
+            if (alertTimer) {
+                clearTimeout(alertTimer);
+            }
+
+            alertTimer = setTimeout(() => {
+                banner.style.display = 'none';
+            }, 4000);
         }
+    });
 
-        banner.style.display = 'block';
-
-        if (alertTimer) {
-            clearTimeout(alertTimer);
-        }
-
-        alertTimer = setTimeout(() => {
-            banner.style.display = 'none';
-        }, 4000);
-    }
-});
-
-   // 코트 현황 출력 (난타 타이머 우측 정렬 및 폰트 크기 조정)
+    // 코트 현황 출력 (서버/인덱스의 남은 초(remainingSeconds) 값을 그대로 받아 인덱스와 완벽 동기화)
     function renderTVCourts(courts) {
         const container = document.getElementById('tv-court-grid');
         if (!container) return;
 
         let html = "";
-        const now = Date.now();
 
         courts.forEach((court, idx) => {
             const courtNum = court.id || (idx + 1);
@@ -173,22 +165,16 @@ socket.on('courtClearedNotice', (data) => {
                     // A코트(팀) 난타 정보 구성
                     if (!sideAEmpty) {
                         const formattedA = formatPlayersHorizontal(court.sideA.players);
-                        let timerStrA = "⏱️ 00:00";
-                        let isUrgentA = false;
                         
-                        if (court.sideA.startTime) {
-                            const elapsed = Math.floor((now - court.sideA.startTime) / 1000);
-                            const limitSec = (court.sideA.limitMinutes || court.limitMinutes || 15) * 60;
-                            const remain = limitSec - elapsed;
-                            if (remain <= 60) isUrgentA = true;
-                            if (remain > 0) {
-                                const m = Math.floor(remain / 60);
-                                const s = remain % 60;
-                                timerStrA = `⏱️ ${m}:${s < 10 ? '0' : ''}${s}`;
-                            } else {
-                                timerStrA = `⏱️ 시간초과`;
-                                isUrgentA = true;
-                            }
+                        // ★ 서버/인덱스가 전달하는 remainingSeconds 값을 안전하게 가져와 사용
+                        const remainSecA = (court.sideA.remainingSeconds !== undefined && court.sideA.remainingSeconds !== null) 
+                                           ? court.sideA.remainingSeconds : 0;
+                        let timerStrA = `⏱️ ${formatTime(remainSecA)}`;
+                        let isUrgentA = remainSecA <= 60 && remainSecA > 0;
+                        
+                        if (remainSecA <= 0 && court.sideA.startTime) {
+                            timerStrA = `⏱️ 시간초과`;
+                            isUrgentA = true;
                         }
 
                         teamsHtml += `
@@ -201,25 +187,18 @@ socket.on('courtClearedNotice', (data) => {
                             </div>
                         `;
                     }
-                    // B코트(팀) 난타 정보 구성 (A팀과 동일한 구조)
+                    // B코트(팀) 난타 정보 구성
                     if (!sideBEmpty) {
                         const formattedB = formatPlayersHorizontal(court.sideB.players);
-                        let timerStrB = "⏱️ 00:00";
-                        let isUrgentB = false;
                         
-                        if (court.sideB.startTime) {
-                            const elapsed = Math.floor((now - court.sideB.startTime) / 1000);
-                            const limitSec = (court.sideB.limitMinutes || court.limitMinutes || 15) * 60;
-                            const remain = limitSec - elapsed;
-                            if (remain <= 60) isUrgentB = true;
-                            if (remain > 0) {
-                                const m = Math.floor(remain / 60);
-                                const s = remain % 60;
-                                timerStrB = `⏱️ ${m}:${s < 10 ? '0' : ''}${s}`;
-                            } else {
-                                timerStrB = `⏱️ 시간초과`;
-                                isUrgentB = true;
-                            }
+                        const remainSecB = (court.sideB.remainingSeconds !== undefined && court.sideB.remainingSeconds !== null) 
+                                           ? court.sideB.remainingSeconds : 0;
+                        let timerStrB = `⏱️ ${formatTime(remainSecB)}`;
+                        let isUrgentB = remainSecB <= 60 && remainSecB > 0;
+                        
+                        if (remainSecB <= 0 && court.sideB.startTime) {
+                            timerStrB = `⏱️ 시간초과`;
+                            isUrgentB = true;
                         }
 
                         teamsHtml += `
@@ -266,64 +245,63 @@ socket.on('courtClearedNotice', (data) => {
 
         container.innerHTML = html;
     }
- // 대기 현황 출력 (어드민 설정의 '입장 대기 제한시간' 연동 표시)
+    
+    // TV 전광판 대기열 출력
     function renderTVQueues(gameQueue, nantaQueue) {
         const gameContainer = document.getElementById('game-waiting-list');
         const nantaContainer = document.getElementById('nanta-waiting-list');
         
         if (!gameContainer || !nantaContainer) return;
 
-        document.getElementById('game-queue-count').innerText = `(${gameQueue.length}팀)`;
-        document.getElementById('nanta-queue-count').innerText = `(${nantaQueue.length}팀)`;
+        const gameCountEl = document.getElementById('game-queue-count');
+        const nantaCountEl = document.getElementById('nanta-queue-count');
+        if (gameCountEl) gameCountEl.innerText = `(${gameQueue.length}팀)`;
+        if (nantaCountEl) nantaCountEl.innerText = `(${nantaQueue.length}팀)`;
 
-        // 어드민 설정값(입장 대기 제한시간) 가져오기 (설정되어 있지 않으면 기본 15분 등 지정 가능)
-        const entryTimeoutInput = document.getElementById('entry-timeout');
-        const defaultLimit = entryTimeoutInput ? entryTimeoutInput.value : '';
+        const now = Date.now();
 
-        // 게임 대기열 출력
-        if (gameQueue.length === 0) {
-            gameContainer.innerHTML = `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
-        } else {
-            gameContainer.innerHTML = gameQueue.map((q, idx) => {
+        const buildQueueHTML = (queue) => {
+            if (!queue || queue.length === 0) {
+                return `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
+            }
+
+            return queue.map((q, idx) => {
                 const formattedPlayers = formatPlayersHorizontal(q.players);
-                
-                // q 객체 내의 제한시간 속성 혹은 어드민 설정값 활용
-                const limitVal = q.limitMinutes || q.timeout || defaultLimit;
-                const limitText = limitVal ? `<span style="font-size: 13px; color: #f39c12; font-weight: bold;">⏱️ 제한: ${limitVal}분</span>` : '';
+                let timeDisplayStr = "⏱️ 대기중";
+
+                if (q.remainingSeconds !== undefined && q.remainingSeconds !== null) {
+                    const m = Math.floor(q.remainingSeconds / 60);
+                    const s = q.remainingSeconds % 60;
+                    timeDisplayStr = q.remainingSeconds > 0 ? `⏱️ 입장제한: ${m}분 ${s < 10 ? '0' : ''}${s}초` : `⏱️ 입장제한: 시간 초과`;
+                } else if (q.startTime) {
+                    const limitMinutes = q.limitMinutes || q.timeout || 3; 
+                    const limitSecTotal = limitMinutes * 60;
+                    const elapsedSec = Math.floor((now - q.startTime) / 1000);
+                    const remainSec = limitSecTotal - elapsedSec;
+
+                    if (remainSec > 0) {
+                        const m = Math.floor(remainSec / 60);
+                        const s = remainSec % 60;
+                        timeDisplayStr = `⏱️ 입장제한: ${m}분 ${s < 10 ? '0' : ''}${s}초`;
+                    } else {
+                        timeDisplayStr = `⏱️ 입장제한: 시간 초과`;
+                    }
+                }
 
                 return `
-                    <div class="waiting-card" style="margin-bottom: 6px; width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px;">
+                    <div class="waiting-card" style="margin-bottom: 6px; width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 8px 12px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span style="color: #66fcf1; font-weight: bold;">[대기 ${idx + 1}순위]</span>
-                            ${limitText}
+                            <span style="color: #66fcf1; font-weight: bold; font-size: 15px;">[대기 ${idx + 1}순위]</span>
+                            <span style="font-size: 17px; color: #f39c12; font-weight: bold;">${timeDisplayStr}</span>
                         </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">${formattedPlayers}</div>
                     </div>
                 `;
             }).join('');
-        }
+        };
 
-        // 난타 대기열 출력
-        if (nantaQueue.length === 0) {
-            nantaContainer.innerHTML = `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
-        } else {
-            nantaContainer.innerHTML = nantaQueue.map((q, idx) => {
-                const formattedPlayers = formatPlayersHorizontal(q.players);
-                
-                const limitVal = q.limitMinutes || q.timeout || defaultLimit;
-                const limitText = limitVal ? `<span style="font-size: 13px; color: #f39c12; font-weight: bold;">⏱️ 제한: ${limitVal}분</span>` : '';
-
-                return `
-                    <div class="waiting-card" style="margin-bottom: 6px; width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span style="color: #66fcf1; font-weight: bold;">[대기 ${idx + 1}순위]</span>
-                            ${limitText}
-                        </div>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">${formattedPlayers}</div>
-                    </div>
-                `;
-            }).join('');
-        }
+        gameContainer.innerHTML = buildQueueHTML(gameQueue);
+        nantaContainer.innerHTML = buildQueueHTML(nantaQueue);
     }
 
     // 💡 회원들을 가로 방향으로 나란히 뱃지 형태로 변환하는 함수
@@ -337,7 +315,6 @@ socket.on('courtClearedNotice', (data) => {
 
         if (arr.length === 0) return '';
         
-        // 각 회원을 개별 태그(박스) 형태로 감싸서 가로로 배치
         return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join('');
     }
 </script>

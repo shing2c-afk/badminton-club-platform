@@ -159,7 +159,7 @@ function renderCourts() {
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players" style="margin-bottom:6px;">${court.sideA ? escapeHtml(court.sideA.players) : ''}</div>
-                 <button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료 (퇴장)</button>`;
+                 <button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료</button>`;
 
             const sideBContent = (court.sideB && court.sideB.isEmpty) ? 
                 `<div class="nanta-empty-text">+ B반코트 (빈 코트)</div>` :
@@ -168,7 +168,7 @@ function renderCourts() {
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideB ? court.sideB.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players" style="margin-bottom:6px;">${court.sideB ? escapeHtml(court.sideB.players) : ''}</div>
-                 <button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')">난타 종료 (퇴장)</button>`;
+                 <button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')">난타 종료</button>`;
 
             html = `
                 <div class="court-row">
@@ -480,7 +480,15 @@ function clickEnd(courtId) {
 }
 function clickNantaEnd(courtId, side) {
     if (confirm('난타를 종료하고 퇴장하시겠습니까?')) {
-        socket.emit('endNantaCourt', { courtId, side });
+        // socket 전역 객체가 존재하는지 안전하게 확인 후 서버로 이벤트 전송
+        if (typeof socket !== 'undefined' && socket) {
+            socket.emit('endNantaCourt', { courtId, side });
+        } else if (window.socket) {
+            window.socket.emit('endNantaCourt', { courtId, side });
+        } else {
+            console.error("소켓(socket) 객체를 찾을 수 없습니다.");
+            alert("서버와 연결 상태를 확인해주세요.");
+        }
     }
 }
 

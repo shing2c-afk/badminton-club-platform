@@ -108,3 +108,13 @@ if (typeof socket !== 'undefined') {
         }
     });
 }
+// =================================================================
+// 💡 난타 코트 종료(퇴장) 요청 함수 (버튼 클릭 시 실행)
+// =================================================================
+window.requestClearNantaCourt = function(courtId, side) {
+    if (confirm("정말로 난타를 종료(퇴장)하시겠습니까?")) {
+        // 서버로 난타 코트 종료 이벤트 전송 (서버의 이벤트명인 'clearNantaCourt' 또는 'clearCourt'에 맞춤)
+        // 만약 서버 이벤트명이 다를 경우 서버 소켓 라우터 코드에 맞춰 수정 가능합니다.
+        socket.emit('clearNantaCourt', { courtId, side });
+    }
+};

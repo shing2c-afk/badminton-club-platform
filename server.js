@@ -927,6 +927,31 @@ io.on('connection', (socket) => {
             console.error('코트 입장 처리 에러:', err);
         }
     });
+   // 🏸 난타 코트(특정 사이드) 종료 요청 처리
+    socket.on('endNantaCourt', ({ courtId, side }) => {
+        console.log(`🔍 [디버깅] 난타 종료 요청 수신 - 코트번호: ${courtId}, 사이드: ${side}`);
+
+        const targetCourt = courtsData.find(c => c.id === Number(courtId));
+        if (!targetCourt || targetCourt.type !== 'nanta') return;
+
+        let isCleared = false;
+
+        // 'sideA', 'sideB', 'A', 'B' 어떤 형태로 들어와도 안전하게 인식하도록 정제
+        const cleanSide = side ? String(side).replace('side', '').toUpperCase() : '';
+
+        if (cleanSide === 'A' && targetCourt.sideA && !targetCourt.sideA.isEmpty) {
+            targetCourt.sideA = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+            isCleared = true;
+        } else if (cleanSide === 'B' && targetCourt.sideB && !targetCourt.sideB.isEmpty) {
+            targetCourt.sideB = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
+            isCleared = true;
+        }
+
+        if (isCleared) {
+            addNotification(`🔔 [난타종료] ${targetCourt.id}번 코트 (${cleanSide}면)가 수동 종료되었습니다.`);
+            broadcastState(); // 모든 클라이언트와 TV 화면에 즉시 동기화
+        }
+    });
     // 🏁 [게임 종료] 코트의 게임을 완전히 종료하고 비우는 핸들러
     socket.on('endGameCourt', ({ courtId }) => {
         try {
