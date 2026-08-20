@@ -7,17 +7,13 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        /* 전체 화면 고정 및 여백 최소화 */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #0a0c10; color: #ffffff; padding: 6px; overflow: hidden; height: 100vh; display: flex; flex-direction: column; justify-content: space-between; }
         
-        /* 상단 제목 영역 */
         .header { text-align: center; margin-bottom: 2px; border-bottom: 2px solid #1f293d; padding-bottom: 2px; flex-shrink: 0; }
         .header h1 { color: #66fcf1; font-size: 40px; letter-spacing: 2px; }
 
-        /* 1. 상단 코트 그리드: 공간을 적게 차지하도록 높이 압축 */
         .court-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); gap: 6px; width: 100%; flex-grow: 1; min-height: 0; }
         
-        /* 코트 카드 내부 여백을 줄여서 슬림하게 만듦 */
         .court-card { background: #141824; border: 2px solid #232d42; border-radius: 6px; padding: 4px 6px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; height: 100%; }
         
         .court-card.game { border-color: #3498db; }
@@ -39,17 +35,16 @@
 
         .timer-text { font-size: 11px; color: #00ff66; font-weight: bold; }
 
-        /* 2. 하단 대기 현황판 영역: 높이를 기존보다 훨씬 큼직하게(예: 180px) 키움 */
         .waiting-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 450px; flex-shrink: 0; margin-top: 6px; }
         .waiting-box { background: #141824; border: 1px solid #232d42; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; overflow: hidden; }
         .waiting-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; color: #66fcf1; border-bottom: 1px solid #1f293d; padding-bottom: 3px; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
         
-        /* 대기열 리스트 영역: 대기자가 많을 때 스크롤이 원활하게 작동하도록 설정 */
         .waiting-list { flex-grow: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; max-height: none; }
         
         .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 5px 8px; border-radius: 4px; font-size: 18px; font-weight: bold; color: #ffffff; }
         .empty-queue-text { color: #52607d; font-size: 15px; font-weight: bold; padding: 4px; }
     </style>
+    <script src="/js/audio.js"></script>
 </head>
 <body>
 <div id="court-alert-banner" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 15px 30px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; text-align: center; transition: background-color 0.3s;">
@@ -76,6 +71,25 @@
 <script>
     const socket = io();
 
+    // 접속하자마자 TV 전광판 전용 방에 등록
+    socket.on('connect', () => {
+        socket.emit('registerTV');
+    });
+
+    // 💡 브라우저 내장 음성 합성(TTS) 함수
+    function playVoiceAnnouncement(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel(); // 밀린 안내 취소 후 바로 출력
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ko-KR';
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+        } else {
+            console.warn("이 브라우저는 음성 합성을 지원하지 않습니다.");
+        }
+    }
+
     function escapeHtml(str) {
         if (!str) return '';
         return String(str)
@@ -86,7 +100,6 @@
             .replace(/'/g, "&#039;");
     }
 
-    // 💡 시간을 mm:ss 형식으로 변환하는 공통 함수
     function formatTime(sec) {
         if (sec <= 0 || sec === null || sec === undefined) return "00:00";
         const m = Math.floor(sec / 60);
@@ -94,7 +107,6 @@
         return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
 
-    // 서버 표준 수신 이벤트명: stateUpdated
     socket.on('stateUpdated', (state) => {
         const courts = state.courtsData || state.courts || [];
         const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
@@ -104,7 +116,6 @@
         renderTVQueues(gameQueue, nantaQueue);
     });
 
-    // 💡 관리자가 코트를 강제 종료했을 때 TV 화면에 맞춤형 색상/문구 팝업 띄우기
     let alertTimer = null;
     socket.on('courtClearedNotice', (data) => {
         const banner = document.getElementById('court-alert-banner');
@@ -112,36 +123,40 @@
 
         if (banner && alertText) {
             alertText.textContent = data.message;
-
-            if (data.category === 'game') {
-                banner.style.backgroundColor = '#2980b9'; 
-            } else if (data.category === 'nanta') {
-                banner.style.backgroundColor = '#e67e22'; 
-            } else if (data.category === 'lesson') {
-                banner.style.backgroundColor = '#8e44ad'; 
-            } else {
-                banner.style.backgroundColor = '#c0392b'; 
-            }
+            if (data.category === 'game') banner.style.backgroundColor = '#2980b9'; 
+            else if (data.category === 'nanta') banner.style.backgroundColor = '#e67e22'; 
+            else if (data.category === 'lesson') banner.style.backgroundColor = '#8e44ad'; 
+            else banner.style.backgroundColor = '#c0392b'; 
 
             banner.style.display = 'block';
-
-            if (alertTimer) {
-                clearTimeout(alertTimer);
-            }
-
-            alertTimer = setTimeout(() => {
-                banner.style.display = 'none';
-            }, 4000);
+            if (alertTimer) clearTimeout(alertTimer);
+            alertTimer = setTimeout(() => { banner.style.display = 'none'; }, 4000);
         }
     });
 
-    // 코트 현황 출력 (서버/인덱스의 남은 초(remainingSeconds) 값을 그대로 받아 인덱스와 완벽 동기화)
+    // 서버로부터 음성 안내 요청 수신 (숫자를 한글 발음으로 직접 변환)
+    socket.on('requestVoiceAnnouncement', (data) => {
+        const { courtNumber, names, matchType } = data;
+        const namesString = names.join(', ');
+
+        // 숫자를 확실한 한글 발음으로 매핑
+        const numMap = {
+            '1': '일', '2': '이', '3': '삼', '4': '사', 
+            '5': '오', '6': '육', '7': '칠', '8': '팔', '9': '구'
+        };
+        const readableCourtNum = numMap[String(courtNumber)] || courtNumber;
+
+        // "일 번" 형태로 명확하게 조합
+        const announcementText = `안내 말씀 드립니다. ${namesString} 회원님은, ${readableCourtNum} 번, ${matchType} 코트로, 입장해 주세요.`;
+        
+        playVoiceAnnouncement(announcementText);
+    });
+
     function renderTVCourts(courts) {
         const container = document.getElementById('tv-court-grid');
         if (!container) return;
 
         let html = "";
-
         courts.forEach((court, idx) => {
             const courtNum = court.id || (idx + 1);
             const courtType = court.type || 'game';
@@ -162,20 +177,12 @@
                 if (sideAEmpty && sideBEmpty) {
                     teamsHtml = `<div class="empty-text">비어있음</div>`;
                 } else {
-                    // A코트(팀) 난타 정보 구성
                     if (!sideAEmpty) {
                         const formattedA = formatPlayersHorizontal(court.sideA.players);
-                        
-                        // ★ 서버/인덱스가 전달하는 remainingSeconds 값을 안전하게 가져와 사용
-                        const remainSecA = (court.sideA.remainingSeconds !== undefined && court.sideA.remainingSeconds !== null) 
-                                           ? court.sideA.remainingSeconds : 0;
+                        const remainSecA = (court.sideA.remainingSeconds !== undefined && court.sideA.remainingSeconds !== null) ? court.sideA.remainingSeconds : 0;
                         let timerStrA = `⏱️ ${formatTime(remainSecA)}`;
                         let isUrgentA = remainSecA <= 60 && remainSecA > 0;
-                        
-                        if (remainSecA <= 0 && court.sideA.startTime) {
-                            timerStrA = `⏱️ 시간초과`;
-                            isUrgentA = true;
-                        }
+                        if (remainSecA <= 0 && court.sideA.startTime) { timerStrA = `⏱️ 시간초과`; isUrgentA = true; }
 
                         teamsHtml += `
                             <div class="team-row ${isUrgentA ? 'urgent-flash' : ''}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 4px 6px; margin-bottom: 3px; border-radius: 4px;">
@@ -187,19 +194,12 @@
                             </div>
                         `;
                     }
-                    // B코트(팀) 난타 정보 구성
                     if (!sideBEmpty) {
                         const formattedB = formatPlayersHorizontal(court.sideB.players);
-                        
-                        const remainSecB = (court.sideB.remainingSeconds !== undefined && court.sideB.remainingSeconds !== null) 
-                                           ? court.sideB.remainingSeconds : 0;
+                        const remainSecB = (court.sideB.remainingSeconds !== undefined && court.sideB.remainingSeconds !== null) ? court.sideB.remainingSeconds : 0;
                         let timerStrB = `⏱️ ${formatTime(remainSecB)}`;
                         let isUrgentB = remainSecB <= 60 && remainSecB > 0;
-                        
-                        if (remainSecB <= 0 && court.sideB.startTime) {
-                            timerStrB = `⏱️ 시간초과`;
-                            isUrgentB = true;
-                        }
+                        if (remainSecB <= 0 && court.sideB.startTime) { timerStrB = `⏱️ 시간초과`; isUrgentB = true; }
 
                         teamsHtml += `
                             <div class="team-row ${isUrgentB ? 'urgent-flash' : ''}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 4px 6px; border-radius: 4px;">
@@ -213,7 +213,6 @@
                     }
                 }
             } else {
-                // 게임 코트
                 if (court.isEmpty || !court.players) {
                     teamsHtml = `<div class="empty-text">비어있음</div>`;
                 } else {
@@ -242,15 +241,12 @@
                 </div>
             `;
         });
-
         container.innerHTML = html;
     }
     
-    // TV 전광판 대기열 출력
     function renderTVQueues(gameQueue, nantaQueue) {
         const gameContainer = document.getElementById('game-waiting-list');
         const nantaContainer = document.getElementById('nanta-waiting-list');
-        
         if (!gameContainer || !nantaContainer) return;
 
         const gameCountEl = document.getElementById('game-queue-count');
@@ -259,11 +255,8 @@
         if (nantaCountEl) nantaCountEl.innerText = `(${nantaQueue.length}팀)`;
 
         const now = Date.now();
-
         const buildQueueHTML = (queue) => {
-            if (!queue || queue.length === 0) {
-                return `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
-            }
+            if (!queue || queue.length === 0) return `<div class="empty-queue-text">대기 중인 팀이 없습니다.</div>`;
 
             return queue.map((q, idx) => {
                 const formattedPlayers = formatPlayersHorizontal(q.players);
@@ -278,7 +271,6 @@
                     const limitSecTotal = limitMinutes * 60;
                     const elapsedSec = Math.floor((now - q.startTime) / 1000);
                     const remainSec = limitSecTotal - elapsedSec;
-
                     if (remainSec > 0) {
                         const m = Math.floor(remainSec / 60);
                         const s = remainSec % 60;
@@ -304,7 +296,6 @@
         nantaContainer.innerHTML = buildQueueHTML(nantaQueue);
     }
 
-    // 💡 회원들을 가로 방향으로 나란히 뱃지 형태로 변환하는 함수
     function formatPlayersHorizontal(players) {
         let arr = [];
         if (Array.isArray(players)) {
@@ -312,9 +303,7 @@
         } else if (typeof players === 'string') {
             arr = players.split(',').map(p => escapeHtml(p.trim())).filter(Boolean);
         }
-
         if (arr.length === 0) return '';
-        
         return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join('');
     }
 </script>

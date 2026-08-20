@@ -495,6 +495,18 @@ setInterval(() => {
             
             if (!slot.fullAt) {
                 slot.fullAt = now;
+
+                // 💡 게임 매칭 성사 및 타이머 시작 시 TV 전용 음성 안내 전송
+                const validPlayers = getValidPlayers(slot.players);
+                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                const emptyCourt = courtsData.find(c => c.type === 'game' && c.isEmpty);
+                const courtNum = emptyCourt ? emptyCourt.id : '';
+
+                io.to('tv-room').emit('requestVoiceAnnouncement', {
+                    courtNumber: courtNum,
+                    names: memberNames,
+                    matchType: '게임'
+                });
             }
             const elapsed = Math.floor((now - slot.fullAt) / 1000);
             slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
@@ -537,6 +549,25 @@ setInterval(() => {
             
             if (!slot.fullAt) {
                 slot.fullAt = now;
+
+                // 💡 난타 매칭 성사 및 타이머 시작 시 TV 전용 음성 안내 전송
+                const validPlayers = getValidPlayers(slot.players);
+                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                let targetCourtNum = '';
+                for (let court of courtsData) {
+                    if (court.type === 'nanta') {
+                        if ((court.sideA && court.sideA.isEmpty) || (court.sideB && court.sideB.isEmpty)) {
+                            targetCourtNum = court.id;
+                            break;
+                        }
+                    }
+                }
+
+                io.to('tv-room').emit('requestVoiceAnnouncement', {
+                    courtNumber: targetCourtNum,
+                    names: memberNames,
+                    matchType: '난타'
+                });
             }
             const elapsed = Math.floor((now - slot.fullAt) / 1000);
             slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
@@ -592,6 +623,11 @@ setInterval(() => {
 // 6. Socket.IO 이벤트 핸들링
 // ==========================================
 io.on('connection', (socket) => {
+    // 서버 소켓 연결 부분 어딘가에 추가
+socket.on('registerTV', () => {
+    socket.join('tv-room');
+    console.log("📺 TV 전광판 화면이 'tv-room'에 등록되었습니다.");
+});
     // ==========================
     // 정회원 및 일일회원 로그인 소켓 이벤트
     // ==========================
@@ -898,7 +934,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🏟️ 대기 방에서 정원 충족 후 [코트 입장] 처리 (규칙 반영 완료)
+   // 🏟️ 대기 방에서 정원 충족 후 [코트 입장] 처리 (규칙 반영 완료)
     socket.on('enterCourtFromSlot', ({ type, slotId }) => {
         try {
             if (type === 'game') {
@@ -989,7 +1025,7 @@ io.on('connection', (socket) => {
                     remainingSeconds: config.NANTA_COURT_LIMIT_SEC || 900
                 };
 
-                // 난타 대기열에서 제거 (⭐ 중요: 게임 대기열(gameQueue)은 건드리지 않고 유지함)
+                // 난타 대기열에서 제거
                 nantaQueue.splice(slotIdx, 1);
 
                 addNotification(`🏟️ [코트 입장] 난타 코트 (${targetCourt.id}번 - ${targetSide === 'sideA' ? 'A반' : 'B반'})에 팀이 입장했습니다.`);
