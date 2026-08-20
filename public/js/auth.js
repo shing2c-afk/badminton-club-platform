@@ -4,9 +4,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const introOverlay = document.getElementById("auth-intro-overlay");
   const loginOverlay = document.getElementById("auth-login-overlay");
   const mainApp = document.getElementById("main-app"); // 메인 앱 화면
-  const dummySelect = document.getElementById("auth-dummy-select");
-  const loginForm = document.getElementById("auth-login-form");
-  const usernameInput = document.getElementById("auth-username");
+
+  // 폼 및 입력 요소
+  const memberLoginForm = document.getElementById("memberLoginForm");
+  const guestLoginForm = document.getElementById("guestLoginForm");
   const authMsg = document.getElementById("auth-msg");
 
   // =================================================================
@@ -15,16 +16,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const savedUser = localStorage.getItem("currentUser");
   
   if (savedUser) {
-    // 1. 로그인 정보가 있는 경우: 인트로/로그인 창은 숨긴 채 메인 앱만 즉시 노출
     if (mainApp) mainApp.classList.remove("hidden");
     if (introOverlay) introOverlay.classList.add("hidden");
     if (loginOverlay) loginOverlay.classList.add("hidden");
 
-    // 💡 [추가] 자동 로그인(새로고침) 시점에도 서버 소켓에 유저 아이디 등록
     try {
       const parsedUser = JSON.parse(savedUser);
-      if (typeof socket !== 'undefined' && parsedUser.username) {
-        socket.emit('registerUser', parsedUser.username);
+      if (typeof socket !== 'undefined' && parsedUser.id) {
+        socket.emit('registerUser', parsedUser.id);
       }
     } catch (e) {
       console.error("소켓 유저 등록 에러:", e);
@@ -34,85 +33,129 @@ document.addEventListener("DOMContentLoaded", () => {
       applyUserProfile();
     }
     console.log("✅ 깜빡임 없이 자동 로그인(세션 유지)되었습니다.");
-    return; // 타이머 실행을 막기 위해 여기서 종료
+    return;
   }
 
   // -----------------------------------------------------------------
-  // 💡 로그인 정보가 '없는 경우'에만 인트로 및 로그인 로직 실행
+  // 💡 비로그인 상태: 인트로 화면 노출 후 로그인 레이어 표시
   // -----------------------------------------------------------------
-  
-  // 비로그인 상태이므로 인트로 화면을 노출 시작 (CSS와 HTML에 의해 숨겨져 있던 것을 해제)
   if (introOverlay) introOverlay.classList.remove("hidden"); 
 
-  // 1. 2초 후 인트로 오버레이 페이드아웃 및 로그인 레이어 표시
   setTimeout(() => {
     if (introOverlay) introOverlay.classList.add("hidden");
     if (loginOverlay) loginOverlay.classList.remove("hidden");
-    fetchRegularMembers(); // DB 기반 회원 목록 조회 함수 호출
   }, 2000);
 
-  // 2. 서버 DB에서 정회원 목록 가져오기
-  async function fetchRegularMembers() {
-    try {
-      const res = await fetch('/api/members');
-      const data = await res.json();
+  // =================================================================
+  // 💡 입력 유효성 검사 함수 (이름 문자만, 전화번호 11자리, 결제번호 6자리)
+  // =================================================================
+  window.validateNameInput = function(input) {
+    input.value = input.value.replace(/[^a-zA-Z가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
+  };
 
-      if (Array.isArray(data) && dummySelect) {
-        dummySelect.innerHTML = '<option value="">-- 계정 선택 (선택사항) --</option>';
-        data.forEach(u => {
-          const opt = document.createElement("option");
-          opt.value = u.username; 
-          opt.textContent = `${u.name} (${u.ageGroup} / ${u.grade})`;
-          dummySelect.appendChild(opt);
-        });
-      }
-    } catch (err) {
-      console.error("정회원 목록 조회 실패:", err);
+  window.validatePhoneInput = function(input) {
+    input.value = input.value.replace(/[^0-9]/g, '').slice(0, 11);
+  };
+
+  window.validatePayCodeInput = function(input) {
+    input.value = input.value.replace(/[^0-9]/g, '').slice(0, 6);
+  };
+
+  // =================================================================
+  // 💡 로그인 탭 전환 함수 (정회원 vs 일일회원)
+  // =================================================================
+  window.switchTab = function(type) {
+    const tabMember = document.getElementById('tabMember');
+    const tabGuest = document.getElementById('tabGuest');
+
+    if (type === 'member') {
+      if (memberLoginForm) memberLoginForm.style.display = 'block';
+      if (guestLoginForm) guestLoginForm.style.display = 'none';
+      if (tabMember) tabMember.classList.add('active');
+      if (tabGuest) tabGuest.classList.remove('active');
+    } else {
+      if (memberLoginForm) memberLoginForm.style.display = 'none';
+      if (guestLoginForm) guestLoginForm.style.display = 'block';
+      if (tabMember) tabMember.classList.remove('active');
+      if (tabGuest) tabGuest.classList.add('active');
     }
-  }
+    if (authMsg) authMsg.textContent = ""; // 메시지 초기화
+  };
 
-  // 3. 더미 계정 선택 시 아이디 자동 입력
-  if (dummySelect) {
-    dummySelect.addEventListener("change", (e) => {
-      if (usernameInput) usernameInput.value = e.target.value;
-    });
-  }
-
-  // 4. 로그인 Submit 처리
-  if (loginForm) {
-    loginForm.addEventListener("submit", async (e) => {
+  // =================================================================
+  // 💡 1. 정회원 로그인 Submit 처리 (소켓 통신)
+  // =================================================================
+  if (memberLoginForm) {
+    memberLoginForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const username = usernameInput.value;
-      const password = document.getElementById("auth-password").value;
+      const name = document.getElementById('memberName').value.trim();
+      const phone = document.getElementById('memberPhone').value.trim();
 
-      try {
-        const res = await fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-        const result = await res.json();
+      if (phone.length !== 11) {
+        if (authMsg) authMsg.textContent = '전화번호 11자리를 정확히 입력해 주세요.';
+        return;
+      }
 
-        if (result.success) {
-          // 세션 정보 저장
-          localStorage.setItem("currentUser", JSON.stringify(result.user));
+      if (typeof socket === 'undefined') {
+        if (authMsg) authMsg.textContent = '서버 소켓 연결이 원활하지 않습니다.';
+        return;
+      }
+
+      // 서버로 정회원 로그인 요청
+      socket.emit('loginMember', { name, phone }, (response) => {
+        if (response.success) {
+          localStorage.setItem("currentUser", JSON.stringify(response.user));
           
-          // 💡 [추가] 일반 로그인 성공 시점에도 서버 소켓에 유저 아이디 등록
-          if (typeof socket !== 'undefined' && result.user.username) {
-            socket.emit('registerUser', result.user.username);
-          }
-
+          socket.emit('registerUser', response.user.id);
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
-          // 로그인 레이어 닫고, 메인 앱 화면 열기
           if (loginOverlay) loginOverlay.classList.add("hidden");
           if (mainApp) mainApp.classList.remove("hidden");
         } else {
-          if (authMsg) authMsg.textContent = result.message;
+          if (authMsg) authMsg.textContent = response.message || '등록된 정회원 정보를 찾을 수 없습니다.';
         }
-      } catch (err) {
-        if (authMsg) authMsg.textContent = "서버 통신 오류가 발생했습니다.";
+      });
+    });
+  }
+
+  // =================================================================
+  // 💡 2. 일일회원 로그인 Submit 처리 (소켓 통신)
+  // =================================================================
+  if (guestLoginForm) {
+    guestLoginForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = document.getElementById('guestName').value.trim();
+      const phone = document.getElementById('guestPhone').value.trim();
+      const payCode = document.getElementById('guestPayCode').value.trim();
+
+      if (phone.length !== 11) {
+        if (authMsg) authMsg.textContent = '전화번호 11자리를 정확히 입력해 주세요.';
+        return;
       }
+      if (payCode.length !== 6) {
+        if (authMsg) authMsg.textContent = '결제인증번호 6자리를 정확히 입력해 주세요.';
+        return;
+      }
+
+      if (typeof socket === 'undefined') {
+        if (authMsg) authMsg.textContent = '서버 소켓 연결이 원활하지 않습니다.';
+        return;
+      }
+
+      // 서버로 일일회원 로그인 요청
+      socket.emit('loginGuest', { name, phone, payCode }, (response) => {
+        if (response.success) {
+          localStorage.setItem("currentUser", JSON.stringify(response.user));
+          
+          socket.emit('registerUser', response.user.id);
+          if (typeof applyUserProfile === 'function') applyUserProfile();
+          
+          if (loginOverlay) loginOverlay.classList.add("hidden");
+          if (mainApp) mainApp.classList.remove("hidden");
+        } else {
+          if (authMsg) authMsg.textContent = response.message || '일일회원 입장에 실패했습니다.';
+        }
+      });
     });
   }
 });

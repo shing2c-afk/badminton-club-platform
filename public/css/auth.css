@@ -28,21 +28,20 @@
     /* 상하 정렬을 위한 중앙 배치 */
     align-items: center; 
     justify-content: center;
-    /* 로고와 텍스트 사이의 기본 간격을 0으로 설정 (나중에 margin으로 미세 조정) */
+    /* 로고와 텍스트 사이의 기본 간격을 0으로 설정 */
     gap: 0 !important; 
     width: 100%;
-    max-width: 360px; /* 필요시 박스 최대 너비 조절 */
+    max-width: 360px;
 }
 
 /* 인트로 로고 이미지 스타일 */
 .intro-box img {
-    max-width: 240px; /* 로고 최대 크기 (원하는 대로 조절 가능) */
+    max-width: 240px;
     width: 100%;
     height: auto;
     object-fit: contain;
     display: block;
     margin: 0 auto;
-    /* 이미지 하단의 기본 여백을 제거하여 텍스트와 붙임 */
     margin-bottom: 0 !important; 
     padding-bottom: 0 !important;
 }
@@ -56,10 +55,7 @@
     width: 100%;
     text-align: center;
     margin-top: -85px !important; 
-    
-    /* 👈 왼쪽으로 이동시키는 속성 (숫자가 클수록 왼쪽으로 갑니다. 예: -10px, -15px 등) */
     transform: translateX(-25px); 
-    
     position: relative;
     z-index: 2;
 }
@@ -79,6 +75,37 @@
     margin-top: 0;
     color: #f8fafc;
     text-align: center;
+    margin-bottom: 20px;
+}
+
+/* 💡 로그인 탭 버튼 스타일 추가 */
+.login-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+/* 활성화된 탭 스타일 (오렌지 포인트) */
+.tab-btn.active {
+    background-color: #ff6600 !important;
+    color: #ffffff !important;
+}
+
+/* 비활성화된 탭 스타일 */
+.tab-btn:not(.active) {
+    background-color: #0f172a !important;
+    color: #94a3b8 !important;
+    border: 1px solid #475569;
 }
 
 .dummy-select-box {

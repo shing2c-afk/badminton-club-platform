@@ -534,7 +534,8 @@ function applyUserProfile() {
 
     if (userStr) {
         const user = JSON.parse(userStr);
-        headerUserEl.textContent = `${user.name}님 (${user.ageGroup} / ${user.grade})`;
+        // 💡 성별(user.gender)이 출력되도록 수정
+        headerUserEl.textContent = `${user.name}님 (${user.gender} / ${user.ageGroup} / ${user.grade})`;
     } else {
         headerUserEl.textContent = "로그인 필요";
     }

@@ -73,21 +73,29 @@ function checkAndInsertDefaultData() {
             console.log('📦 정회원 데이터가 없어 기본 더미 데이터를 삽입합니다.');
             const stmt = db.prepare(`INSERT INTO regular_members VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
             
+            const firstNames = ['민준', '서준', '도윤', '예준', '시우', '하준', '주원', '지호', '은우', '지후', '서연', '서윤', '지우', '하윤', '민서', '지유', '채원', '수아', '지민', '은서'];
+            const lastNames = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임'];
             const grades = ['초심', 'D조', 'C조', 'B조', 'A조', 'S조'];
             const genders = ['남', '여'];
             const ageGroups = ['20대', '30대', '40대', '50대'];
             const addresses = ['경기도 파주시'];
 
+            // 관리자 계정 삽입
             stmt.run("reg_admin", "regular", "admin", "admin123", "관리자", "남", "1975-01-01", "50대", "A조", "010-0000-0000", "경기도 파주시", "2023-01-01");
 
+            // 50명의 실제 한글 이름 더미 생성
             for (let i = 1; i <= 50; i++) {
                 const padNum = String(i).padStart(2, '0');
+                const randomLastName = lastNames[i % lastNames.length];
+                const randomFirstName = firstNames[(i * 3) % firstNames.length];
+                const fullName = `${randomLastName}${randomFirstName}`;
+
                 stmt.run(
                     `reg_${padNum}`,
                     'regular',
                     `user${i}`,
                     '1234',
-                    `회원${padNum}`,
+                    fullName,
                     genders[i % genders.length],
                     '1985-05-15',
                     ageGroups[i % ageGroups.length],
@@ -98,8 +106,18 @@ function checkAndInsertDefaultData() {
                 );
             }
             stmt.finalize();
-            console.log('✨ 기본 정회원 더미 데이터 50명 + 관리자 적재 완료');
+            console.log('✨ 실제 한글 이름 정회원 더미 데이터 50명 + 관리자 적재 완료');
         }
+
+        // 💡 [추가] 서버가 켜질 때 로그인 테스트용 계정 몇 개를 터미널에 출력
+        db.all(`SELECT name, phone FROM regular_members LIMIT 5`, (err, rows) => {
+            if (!err && rows) {
+                console.log('📋 [로그인 테스트용 정회원 샘플 명단]');
+                rows.forEach((member, idx) => {
+                    console.log(`  ${idx + 1}. 이름: ${member.name} / 전화번호: ${member.phone}`);
+                });
+            }
+        });
     });
 }
 
@@ -574,6 +592,60 @@ setInterval(() => {
 // 6. Socket.IO 이벤트 핸들링
 // ==========================================
 io.on('connection', (socket) => {
+    // ==========================
+    // 정회원 및 일일회원 로그인 소켓 이벤트
+    // ==========================
+
+    // 1. 정회원 로그인 처리
+    socket.on('loginMember', ({ name, phone }, callback) => {
+        const query = `SELECT * FROM regular_members WHERE name = ? AND REPLACE(phone, '-', '') = ?`;
+        const cleanInputPhone = phone.replace(/[^0-9]/g, '');
+
+        db.get(query, [name, cleanInputPhone], (err, row) => {
+            if (err || !row) {
+                return callback({ success: false, message: '등록된 정회원 정보가 일치하지 않습니다.' });
+            }
+
+            // 프론트엔드 호환을 위해 필요한 모든 속성 포함
+            const user = {
+                id: row.id,
+                username: row.username,
+                name: row.name,
+                rawName: row.name,
+                displayName: `${row.name} / ${row.gender} / ${row.ageGroup} / ${row.grade}`,
+                gender: row.gender,
+                ageGroup: row.ageGroup,
+                grade: row.grade,
+                isGuest: false,
+                phone: row.phone
+            };
+
+            callback({ success: true, user });
+        });
+    });
+
+    // 2. 일일회원 로그인 처리 (undefined 방지를 위한 기본 속성 추가)
+    socket.on('loginGuest', ({ name, phone, payCode }, callback) => {
+        if (!payCode || payCode.length !== 6) {
+            return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
+        }
+
+        const guestId = `guest_${Date.now()}`;
+        const user = {
+            id: guestId,
+            username: guestId,
+            name: name,
+            rawName: name,
+            displayName: `${name}(일일)`,
+            gender: '-',
+            ageGroup: '-',
+            grade: '일일',
+            isGuest: true,
+            phone: phone
+        };
+
+        callback({ success: true, user });
+    });
     socket.lastActiveTime = Date.now();
 
     socket.onAny(() => {

@@ -24,19 +24,43 @@
     <div class="login-card">
       <h2>오늘민턴 로그인</h2>
       
-      <div class="dummy-select-box">
-        <label>테스트 계정 불러오기:</label>
-        <select id="auth-dummy-select">
-          <option value="">불러오는 중...</option>
-        </select>
+      <!-- 정회원 / 일일회원 탭 버튼 -->
+      <div class="login-tabs" style="display: flex; gap: 8px; margin-bottom: 20px;">
+        <button type="button" id="tabMember" class="tab-btn active" onclick="switchTab('member')" style="flex: 1; padding: 10px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">정회원 로그인</button>
+        <button type="button" id="tabGuest" class="tab-btn" onclick="switchTab('guest')" style="flex: 1; padding: 10px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">일일회원 입장</button>
       </div>
 
-      <form id="auth-login-form">
-        <input type="text" id="auth-username" placeholder="아이디" required />
-        <input type="password" id="auth-password" placeholder="비밀번호" required />
-        <button type="submit" class="btn-auth-submit">로그인</button>
+      <!-- 1. 정회원 로그인 폼 -->
+      <form id="memberLoginForm">
+        <div class="input-group" style="margin-bottom: 12px; text-align: left;">
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">이름</label>
+          <input type="text" id="memberName" placeholder="이름 입력 (문자만)" required maxlength="10" oninput="validateNameInput(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+        </div>
+        <div class="input-group" style="margin-bottom: 16px; text-align: left;">
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">전화번호 (- 제외 11자리)</label>
+          <input type="tel" id="memberPhone" placeholder="01012345678" required maxlength="11" oninput="validatePhoneInput(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+        </div>
+        <button type="submit" class="btn-auth-submit" style="width: 100%; padding: 12px; background: #ff6600; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">정회원 로그인</button>
       </form>
-      <div id="auth-msg"></div>
+
+      <!-- 2. 일일회원 입장 폼 (초기 숨김) -->
+      <form id="guestLoginForm" style="display: none;">
+        <div class="input-group" style="margin-bottom: 12px; text-align: left;">
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">이름</label>
+          <input type="text" id="guestName" placeholder="이름 입력 (문자만)" required maxlength="10" oninput="validateNameInput(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+        </div>
+        <div class="input-group" style="margin-bottom: 12px; text-align: left;">
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">전화번호 (- 제외 11자리)</label>
+          <input type="tel" id="guestPhone" placeholder="01012345678" required maxlength="11" oninput="validatePhoneInput(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+        </div>
+        <div class="input-group" style="margin-bottom: 16px; text-align: left;">
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">결제인증번호 (숫자 6자리)</label>
+          <input type="text" id="guestPayCode" placeholder="6자리 입력" required maxlength="6" oninput="validatePayCodeInput(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+        </div>
+        <button type="submit" class="btn-auth-submit" style="width: 100%; padding: 12px; background: #2563eb; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">일일회원 입장</button>
+      </form>
+
+      <div id="auth-msg" style="margin-top: 15px; color: #ff4d4f; font-size: 13px; text-align: center;"></div>
     </div>
   </div>
 
@@ -47,7 +71,7 @@
 
         <!-- 헤더 -->
       <div class="header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: #121212; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
-  
+ 
   <div class="header-left" style="font-size: 13px; font-weight: bold; color: #ffffff;">
     <span id="user-display-name" style="color: #ffffff;">로그인 중...</span>
   </div>
@@ -124,5 +148,6 @@
     <script src="/js/ui.js"></script>
     <script src="/js/socket.js"></script>
     <script src="js/auth.js"></script>
+    <script src="/js/audio.js"></script>
 </body>
 </html>
