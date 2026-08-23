@@ -72,7 +72,13 @@ function accessAdmin() {
     const inputPw = prompt('🔐 관리자 비밀번호를 입력해 주세요:');
     if (inputPw === null) return;
 
-    socket.emit('verifyAdminPassword', inputPw.trim(), (response) => {
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (!activeSocket) {
+        alert("소켓 연결이 원활하지 않습니다.");
+        return;
+    }
+
+    activeSocket.emit('verifyAdminPassword', inputPw.trim(), (response) => {
         if (response.success) {
             window.location.href = '/admin.html';
         } else {
@@ -299,7 +305,7 @@ function createNewGameSlot() {
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
-    const activeSocket = typeof socket !== 'undefined' ? socket : window.socket;
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
         alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
         return;
@@ -317,7 +323,7 @@ function createNewNantaSlot() {
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
-    const activeSocket = typeof socket !== 'undefined' ? socket : window.socket;
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
         alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
         return;
@@ -329,26 +335,30 @@ function createNewNantaSlot() {
 function joinGameCell(slotId, idx) {
     const name = prompt('참여할 회원의 [급수/연령/성별/이름]을 입력하세요:');
     if (name && name.trim() !== '') {
-        socket.emit('joinPlayer', { type: 'game', slotId, index: idx, name: name.trim() });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('joinPlayer', { type: 'game', slotId, index: idx, name: name.trim() });
     }
 }
 
 function joinNantaCell(slotId, idx) {
     const name = prompt('참여할 회원의 [급수/연령/성별/이름]을 입력하세요:');
     if (name && name.trim() !== '') {
-        socket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: name.trim() });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: name.trim() });
     }
 }
 
 function exitGamePlayer(slotId, idx) {
     if (confirm('해당 회원을 정말 퇴장 처리하시겠습니까?')) {
-        socket.emit('exitPlayer', { type: 'game', slotId, index: idx });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('exitPlayer', { type: 'game', slotId, index: idx });
     }
 }
 
 function exitNantaPlayer(slotId, idx) {
     if (confirm('해당 회원을 정말 퇴장 처리하시겠습니까?')) {
-        socket.emit('exitPlayer', { type: 'nanta', slotId, index: idx });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('exitPlayer', { type: 'nanta', slotId, index: idx });
     }
 }
 
@@ -391,10 +401,13 @@ function mergeGameSlot(slotId) {
 
     const choiceNum = parseInt(choice.trim(), 10);
     if (!isNaN(choiceNum) && choiceNum >= 1 && choiceNum <= candidates.length) {
-        socket.emit('mergeSlot', {
-            mySlotId: slotId,
-            targetSlotId: candidates[choiceNum - 1].targetSlot.id
-        });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) {
+            activeSocket.emit('mergeSlot', {
+                mySlotId: slotId,
+                targetSlotId: candidates[choiceNum - 1].targetSlot.id
+            });
+        }
     }
 }
 
@@ -424,7 +437,8 @@ function enterGameCourt(slotId) {
     }
 
     if (confirm('코트로 입장하시겠습니까?')) {
-        socket.emit('enterCourtFromSlot', { type: 'game', slotId });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'game', slotId });
         switchTab('court');
     }
 }
@@ -455,21 +469,24 @@ function enterNantaCourt(slotId) {
     }
 
     if (confirm('난타 코트로 입장하시겠습니까?')) {
-        socket.emit('enterCourtFromSlot', { type: 'nanta', slotId });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'nanta', slotId });
         switchTab('court');
     }
 }
 
 function clickAgain(courtId) {
     if (confirm('동일한 멤버로 한 게임 더 진행하시겠습니까? (대기열 최후순위로 재등록됩니다)')) {
-        socket.emit('extendGameCourt', { courtId: courtId });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('extendGameCourt', { courtId: courtId });
         switchTab('game');
     }
 }
 
 function clickEnd(courtId) {
     if (confirm('게임을 종료하고 코트를 비우시겠습니까?')) {
-        socket.emit('endGameCourt', { courtId: courtId });
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) activeSocket.emit('endGameCourt', { courtId: courtId });
     }
 }
 
@@ -479,7 +496,6 @@ function clickNantaEnd(courtId, side) {
         if (activeSocket) {
             activeSocket.emit('endNantaCourt', { courtId, side });
         } else {
-            console.error("소켓(socket) 객체를 찾을 수 없습니다.");
             alert("서버와 연결 상태를 확인해주세요.");
         }
     }
@@ -529,7 +545,6 @@ function applyUserProfile() {
         const user = JSON.parse(userStr);
         headerUserEl.textContent = `${user.name}님 (${user.gender} / ${user.ageGroup} / ${user.grade})`;
         
-        // 👇 [1단계 추가 코드] 로그인 정보가 확인되면 소켓 세션 등록 요청 전송
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket && user.username) {
             activeSocket.emit('registerUserSession', user.username);
@@ -571,6 +586,33 @@ async function handleLogout() {
     }
 }
 
+// 초기화 및 버튼 이벤트 자동 연결
 document.addEventListener("DOMContentLoaded", () => {
     applyUserProfile();
+
+    // 탭 버튼 클릭 이벤트 바인딩 (게임 대기 / 난타 대기 / 코트 현황)
+    const tabGameBtn = document.getElementById('tab-game');
+    const tabNantaBtn = document.getElementById('tab-nanta');
+    const tabCourtBtn = document.getElementById('tab-court');
+
+    if (tabGameBtn) {
+        tabGameBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            switchTab('game');
+        });
+    }
+
+    if (tabNantaBtn) {
+        tabNantaBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            switchTab('nanta');
+        });
+    }
+
+    if (tabCourtBtn) {
+        tabCourtBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            switchTab('court');
+        });
+    }
 });

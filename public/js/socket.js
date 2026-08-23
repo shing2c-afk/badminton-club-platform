@@ -118,3 +118,40 @@ window.requestClearNantaCourt = function(courtId, side) {
         socket.emit('clearNantaCourt', { courtId, side });
     }
 };
+// 서버로부터 강제 로그아웃 신호를 받았을 때
+if (typeof socket !== 'undefined') {
+    socket.on('forceLogout', (data) => {
+        // auth.js에서 사용하는 currentUser 데이터 가져오기
+        const savedUser = localStorage.getItem("currentUser");
+        
+        let targetMatch = false;
+        if (savedUser) {
+            try {
+                const parsedUser = JSON.parse(savedUser);
+                // 서버가 보낸 username과 일치하는지 확인 (username 또는 name 등 일치하는 필드 비교)
+                if (parsedUser.username === data.username || parsedUser.name === data.username || parsedUser.id === data.username) {
+                    targetMatch = true;
+                }
+            } catch (e) {
+                targetMatch = true; // 파싱 에러 시 안전하게 처리
+            }
+        } else {
+            targetMatch = true;
+        }
+
+        if (targetMatch) {
+            console.warn('⚠️ [강제 로그아웃] 유예 시간 초과로 세션이 만료되었습니다.');
+            
+            // 1. auth.js에서 사용하는 로그인 키 삭제
+            localStorage.removeItem("currentUser");
+            localStorage.removeItem("username");
+            sessionStorage.clear();
+            
+            // 2. 사용자에게 안내 팝업 띄우기
+            alert('장시간 미접속으로 인해 세션이 만료되었습니다. 처음 화면으로 이동합니다.');
+            
+            // 3. 페이지 새로고침 (새로고침되면 localStorage에 currentUser가 없으므로 auth.js에 의해 자연스럽게 인트로 및 로그인 화면이 뜸!)
+            window.location.reload(); 
+        }
+    });
+}

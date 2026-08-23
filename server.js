@@ -10,6 +10,7 @@ const path = require('path');
 // 유저별 연결 끊김 유예 타이머를 저장할 객체
 const disconnectTimers = {};
 const userSockets = {};
+const expiredUsers = {}; // 유예 시간 초과로 만료된 유저를 기록할 객체
 // ==========================
 // 2. 서버 및 미들웨어 초기화
 // ==========================
@@ -732,13 +733,24 @@ socket.on('registerTV', () => {
         notifications: notifications
     });
 
-   // 1단계에서 추가한 소켓 등록 리스너 및 2단계 유예 타이머 로직
-    socket.on('registerUserSession', (username) => {
+   socket.on('registerUserSession', (username) => {
         if (username) {
+            // 만약 유예 시간이 지나서 만료된 유저 명단에 있는 아이디라면?
+            if (expiredUsers[username]) {
+                console.log(`🚫 [세션 만료 차단] 유저 [${username}]님은 유예 시간 초과로 만료되어 강제 로그아웃됩니다.`);
+                
+                // 클라이언트로 강제 로그아웃 신호 전송
+                socket.emit('forceLogout', { username: username, reason: 'timeout' });
+                
+                // 만료 명단에서 제거 (한 번 튕겨낸 후에는 초기화)
+                delete expiredUsers[username];
+                return; // 로그인 등록을 더 이상 진행하지 않음
+            }
+
             socket.username = username;
-            userSockets[socket.id] = username; // 매핑 정보 저장
+            userSockets[socket.id] = username;
             
-            // 만약 이 유저가 나갔다가 1분 이내에 다시 들어왔다면 타이머 취소!
+            // 정상적인 재접속인 경우 타이머 취소
             if (disconnectTimers[username]) {
                 clearTimeout(disconnectTimers[username]);
                 delete disconnectTimers[username];
@@ -749,29 +761,36 @@ socket.on('registerTV', () => {
         }
     });
 
-    // 연결 끊김 발생 시 (1분 유예 타이머 작동)
     socket.on('disconnect', () => {
-        const username = socket.username || userSockets[socket.id];
+    // ⚠️ 수정 포인트: 소켓 ID를 기준으로 정확하게 매핑된 유저만 가져오기
+    const username = userSockets[socket.id] || socket.username;
+    const currentSocketId = socket.id;
+    
+    if (username) {
+        console.log(`🔌 [연결 끊김] 소켓 ID: ${currentSocketId} (유저: ${username}) 연결 해제됨. 유예 타이머 작동 시작...`);
         
-        if (username) {
-            console.log(`🔌 [연결 끊김] 소켓 ID: ${socket.id} (유저: ${username}) 연결 해제됨. 1분 유예 타이머 작동 시작...`);
-            
-            // 기존에 돌던 타이머가 있다면 초기화
-            if (disconnectTimers[username]) {
-                clearTimeout(disconnectTimers[username]);
-            }
-
-            // 🧪 [테스트용 1분 설정] 1분(60,000ms) 동안 재접속하지 않으면 대기열 청소 실행
-            disconnectTimers[username] = setTimeout(() => {
-                console.log(`⏳ [유예 시간 만료] 유저 [${username}]님이 1분 동안 돌아오지 않아 대기열에서 퇴장 및 방 폭파를 진행합니다.`);
-                cleanupUser(username);
-                delete disconnectTimers[username];
-                delete userSockets[socket.id];
-            }, 25 * 60 * 1000); 
-        } else {
-            console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
+        // 만약 이 유저 명의로 된 기존 타이머가 있다면 초기화
+        if (disconnectTimers[username]) {
+            clearTimeout(disconnectTimers[username]);
         }
-    });
+
+        disconnectTimers[username] = setTimeout(() => {
+            console.log(`⏳ [유예 시간 만료] 유저 [${username}]님이 오랜 시간 돌아오지 않아 대기열 퇴장을 진행합니다.`);
+            
+            // 1. 대기열 및 방 정리
+            cleanupUser(username);
+
+            // 2. 만료된 유저 명단에 등록
+            expiredUsers[username] = true;
+
+            // 3. 타이머 및 매핑 정리
+            delete disconnectTimers[username];
+            delete userSockets[currentSocketId];
+        }, 1 * 60 * 1000); 
+    } else {
+        console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
+    }
+});
 
     socket.on('verifyAdminPassword', (inputPw, callback) => {
         if (typeof callback === 'function') {
