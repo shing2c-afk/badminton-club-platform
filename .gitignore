@@ -1,0 +1,15 @@
+# 1. 의존성 패키지 폴더 (가장 중요)
+node_modules/
+
+# 2. 빌드 결과물 또는 배포 폴더
+dist/
+build/
+
+# 3. 로컬 설정 및 데이터 파일 (엑셀, DB 파일 등)
+members.xlsx
+*.db
+
+# 4. 운영체제 및 편집기 부산물
+.DS_Store
+Thumbs.db
+.vscode/
