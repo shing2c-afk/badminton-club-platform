@@ -11,6 +11,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const authMsg = document.getElementById("auth-msg");
 
   // =================================================================
+  // 💡 [수정] 이름 입력 필드 한글 강제 설정 및 포커스 이벤트 처리
+  // =================================================================
+  const memberNameInput = document.getElementById('memberName');
+  const guestNameInput = document.getElementById('guestName');
+
+  [memberNameInput, guestNameInput].forEach(input => {
+    if (input) {
+      input.setAttribute('lang', 'ko');
+      input.setAttribute('inputmode', 'text'); // 모바일에서 한글 키보드 유도 최적화
+      
+      // 포커스가 들어올 때마다 한글 모드 속성을 재확인하고 강제 포커싱 유지 유도
+      input.addEventListener('focus', () => {
+        input.setAttribute('lang', 'ko');
+      });
+    }
+  });
+
+  // =================================================================
   // 💡 [핵심] 새로고침 시 세션 유지 및 깜빡임 없는 화면 분기 처리
   // =================================================================
   const savedUser = localStorage.getItem("currentUser");
@@ -44,6 +62,11 @@ document.addEventListener("DOMContentLoaded", () => {
   setTimeout(() => {
     if (introOverlay) introOverlay.classList.add("hidden");
     if (loginOverlay) loginOverlay.classList.remove("hidden");
+    
+    // 로그인 창이 처음 뜰 때 정회원 이름 input에 자동으로 포커스를 주어 바로 한글 키보드가 올라오도록 유도
+    if (memberNameInput) {
+      memberNameInput.focus();
+    }
   }, 2000);
 
   // =================================================================
@@ -73,11 +96,24 @@ document.addEventListener("DOMContentLoaded", () => {
       if (guestLoginForm) guestLoginForm.style.display = 'none';
       if (tabMember) tabMember.classList.add('active');
       if (tabGuest) tabGuest.classList.remove('active');
+      
+      // 정회원 탭으로 전환될 때 이름 입력창에 포커스를 주어 한글 자판 유도
+      setTimeout(() => {
+        const mInput = document.getElementById('memberName');
+        if (mInput) mInput.focus();
+      }, 50);
+
     } else {
       if (memberLoginForm) memberLoginForm.style.display = 'none';
       if (guestLoginForm) guestLoginForm.style.display = 'block';
       if (tabMember) tabMember.classList.remove('active');
       if (tabGuest) tabGuest.classList.add('active');
+      
+      // 일일회원 탭으로 전환될 때 이름 입력창에 포커스를 주어 한글 자판 유도
+      setTimeout(() => {
+        const gInput = document.getElementById('guestName');
+        if (gInput) gInput.focus();
+      }, 50);
     }
     if (authMsg) authMsg.textContent = ""; // 메시지 초기화
   };

@@ -501,7 +501,8 @@ function clickNantaEnd(courtId, side) {
     }
 }
 
-function switchTab(tabName) {
+// 핵심 탭 전환 함수 (전역 등록)
+window.switchTab = function(tabName) {
     const tabGame = document.getElementById('tab-game');
     const tabNanta = document.getElementById('tab-nanta');
     const tabCourt = document.getElementById('tab-court');
@@ -586,33 +587,6 @@ async function handleLogout() {
     }
 }
 
-// 초기화 및 버튼 이벤트 자동 연결
 document.addEventListener("DOMContentLoaded", () => {
     applyUserProfile();
-
-    // 탭 버튼 클릭 이벤트 바인딩 (게임 대기 / 난타 대기 / 코트 현황)
-    const tabGameBtn = document.getElementById('tab-game');
-    const tabNantaBtn = document.getElementById('tab-nanta');
-    const tabCourtBtn = document.getElementById('tab-court');
-
-    if (tabGameBtn) {
-        tabGameBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchTab('game');
-        });
-    }
-
-    if (tabNantaBtn) {
-        tabNantaBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchTab('nanta');
-        });
-    }
-
-    if (tabCourtBtn) {
-        tabCourtBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchTab('court');
-        });
-    }
 });

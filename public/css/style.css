@@ -108,3 +108,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 #main-app.hidden {
   display: none !important;
 }
+/* 입력창 한글 기본 설정 유도 */
+input[lang="ko"] {
+    ime-mode: active;
+}

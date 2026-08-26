@@ -669,23 +669,41 @@ socket.on('registerTV', () => {
     // 정회원 및 일일회원 로그인 소켓 이벤트
     // ==========================
 
-    // 1. 정회원 로그인 처리
-    socket.on('loginMember', ({ name, phone }, callback) => {
-        const query = `SELECT * FROM regular_members WHERE name = ? AND REPLACE(phone, '-', '') = ?`;
-        const cleanInputPhone = phone.replace(/[^0-9]/g, '');
+    // ==========================
+    // 정회원 및 일일회원 로그인 소켓 이벤트
+    // ==========================
 
-        db.get(query, [name, cleanInputPhone], (err, row) => {
-            if (err || !row) {
+   socket.on('loginMember', ({ name, phone }, callback) => {
+        const trimmedName = name ? name.trim() : '';
+        const cleanInputPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
+
+        if (!trimmedName || !cleanInputPhone) {
+            return callback({ success: false, message: '이름과 전화번호를 모두 입력해 주세요.' });
+        }
+
+        const query = `SELECT * FROM regular_members WHERE TRIM(name) = ? AND REPLACE(REPLACE(phone, '-', ''), ' ', '') = ?`;
+
+        db.get(query, [trimmedName, cleanInputPhone], (err, row) => {
+            if (err) {
+                console.error('❌ 로그인 DB 조회 에러:', err.message);
+                return callback({ success: false, message: '서버 에러가 발생했습니다.' });
+            }
+
+            if (!row) {
                 return callback({ success: false, message: '등록된 정회원 정보가 일치하지 않습니다.' });
             }
 
-            // 프론트엔드 호환을 위해 필요한 모든 속성 포함
+            // 값이 없을 경우를 대비한 안전한 기본값 처리
+            const genderStr = row.gender ? row.gender : '미입력';
+            const ageGroupStr = row.ageGroup ? row.ageGroup : '일반';
+            const gradeStr = row.grade ? row.grade : '초심';
+
             const user = {
                 id: row.id,
                 username: row.username,
                 name: row.name,
                 rawName: row.name,
-                displayName: `${row.name} / ${row.gender} / ${row.ageGroup} / ${row.grade}`,
+                displayName: `${row.name} / ${genderStr} / ${ageGroupStr} / ${gradeStr}`,
                 gender: row.gender,
                 ageGroup: row.ageGroup,
                 grade: row.grade,
