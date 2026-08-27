@@ -439,7 +439,7 @@ function enterGameCourt(slotId) {
     if (confirm('코트로 입장하시겠습니까?')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'game', slotId });
-        switchTab('court');
+        changeMainTab('court'); // switchTab을 changeMainTab으로 수정
     }
 }
 
@@ -471,7 +471,7 @@ function enterNantaCourt(slotId) {
     if (confirm('난타 코트로 입장하시겠습니까?')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'nanta', slotId });
-        switchTab('court');
+        changeMainTab('court'); // switchTab을 changeMainTab으로 수정
     }
 }
 
@@ -587,6 +587,49 @@ async function handleLogout() {
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-    applyUserProfile();
+// 1. 고유한 이름의 메인 탭 전환 함수 (충돌 방지)
+function changeMainTab(tabName) {
+    console.log(`[메인 탭 전환] ${tabName} 실행됨`);
+    
+    const tabGame = document.getElementById('tab-game');
+    const tabNanta = document.getElementById('tab-nanta');
+    const tabCourt = document.getElementById('tab-court');
+
+    const secGame = document.getElementById('section-game');
+    const secNanta = document.getElementById('section-nanta');
+    const secCourt = document.getElementById('section-court');
+
+    if (tabGame) tabGame.classList.remove('active');
+    if (tabNanta) tabNanta.classList.remove('active');
+    if (tabCourt) tabCourt.classList.remove('active');
+
+    if (secGame) secGame.style.display = 'none';
+    if (secNanta) secNanta.style.display = 'none';
+    if (secCourt) secCourt.style.display = 'none';
+
+    if (tabName === 'game') {
+        if (tabGame) tabGame.classList.add('active');
+        if (secGame) secGame.style.display = 'block';
+    } else if (tabName === 'nanta') {
+        if (tabNanta) tabNanta.classList.add('active');
+        if (secNanta) secNanta.style.display = 'block';
+    } else if (tabName === 'court') {
+        if (tabCourt) tabCourt.classList.add('active');
+        if (secCourt) secCourt.style.display = 'block';
+    }
+}
+window.changeMainTab = changeMainTab;
+
+// 2. 전역 클릭 이벤트 위임 (어떤 상황에서도 탭 클릭을 완벽하게 캐치)
+document.addEventListener('click', (event) => {
+    const targetTab = event.target.closest('.tab-btn');
+    if (!targetTab) return;
+
+    if (targetTab.id === 'tab-game') {
+        changeMainTab('game');
+    } else if (targetTab.id === 'tab-nanta') {
+        changeMainTab('nanta');
+    } else if (targetTab.id === 'tab-court') {
+        changeMainTab('court');
+    }
 });
