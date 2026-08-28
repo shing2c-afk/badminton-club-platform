@@ -362,55 +362,6 @@ function exitNantaPlayer(slotId, idx) {
     }
 }
 
-function mergeGameSlot(slotId) {
-    const myIndex = gameQueue.findIndex(s => s.id === slotId);
-    if (myIndex === -1) return;
-
-    const myPlayers = getValidPlayers(gameQueue[myIndex].players);
-    if (myPlayers.length >= 4) {
-        alert('현재 방은 이미 4명이 채워져 있어 통합할 수 없습니다.');
-        return;
-    }
-
-    let candidates = [];
-    gameQueue.forEach((targetSlot, targetIdx) => {
-        if (targetIdx === myIndex) return;
-        const targetPlayers = getValidPlayers(targetSlot.players);
-        if (targetPlayers.length > 0 && (myPlayers.length + targetPlayers.length) <= 4) {
-            candidates.push({
-                targetSlot: targetSlot,
-                rank: targetIdx + 1,
-                count: targetPlayers.length,
-                playersText: targetPlayers.join(', ')
-            });
-        }
-    });
-
-    if (candidates.length === 0) {
-        alert('통합할 수 있는 다른 대기 방이 없습니다 (합쳐서 4명 이하).');
-        return;
-    }
-
-    let promptMsg = `🤝 [게임통합] 합칠 대기 방 번호를 입력하세요:\n\n`;
-    candidates.forEach((c, idx) => {
-        promptMsg += `${idx + 1}. [${c.rank}순위 방] - ${c.count}명 (${c.playersText})\n`;
-    });
-
-    const choice = prompt(promptMsg);
-    if (!choice) return;
-
-    const choiceNum = parseInt(choice.trim(), 10);
-    if (!isNaN(choiceNum) && choiceNum >= 1 && choiceNum <= candidates.length) {
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (activeSocket) {
-            activeSocket.emit('mergeSlot', {
-                mySlotId: slotId,
-                targetSlotId: candidates[choiceNum - 1].targetSlot.id
-            });
-        }
-    }
-}
-
 function enterGameCourt(slotId) {
     const slot = gameQueue.find(s => s.id === slotId);
     if (!slot) return;
@@ -436,10 +387,16 @@ function enterGameCourt(slotId) {
         return;
     }
 
-    if (confirm('코트로 입장하시겠습니까?')) {
+    // 💡 [변경] 순번(1, 2...) 대신 실제 courtsData에서 빈 게임 코트의 물리적 번호(id)를 선착순으로 매칭
+    const emptyGameCourts = (typeof courtsData !== 'undefined') ? courtsData.filter(c => c.type === 'game' && c.isEmpty) : [];
+    const courtIndex = allowedSlots.findIndex(s => s.id === slotId);
+    const assignedCourtNumber = (courtIndex !== -1 && emptyGameCourts[courtIndex]) ? emptyGameCourts[courtIndex].id : 1;
+
+    // 💡 팝업 메시지에 실제 물리적 코트 번호 반영
+    if (confirm(`${assignedCourtNumber}번 코트로 입장하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'game', slotId });
-        changeMainTab('court'); // switchTab을 changeMainTab으로 수정
+        changeMainTab('court');
     }
 }
 
@@ -468,10 +425,27 @@ function enterNantaCourt(slotId) {
         return;
     }
 
-    if (confirm('난타 코트로 입장하시겠습니까?')) {
+    // 💡 [변경] 난타 코트도 courtsData에서 실제 빈 난타 코트의 물리적 번호(id)와 A/B 상태를 선착순으로 파악
+    const emptyNantaCourts = (typeof courtsData !== 'undefined') ? courtsData.filter(c => c.type === 'nanta' && ((c.sideA && c.sideA.isEmpty) || (c.sideB && c.sideB.isEmpty))) : [];
+    const courtIndex = allowedSlots.findIndex(s => s.id === slotId);
+    
+    let assignedCourtNumber = 6;
+    let sideText = 'A';
+    
+    if (courtIndex !== -1 && emptyNantaCourts[courtIndex]) {
+        const targetCourt = emptyNantaCourts[courtIndex];
+        assignedCourtNumber = targetCourt.id;
+        if (targetCourt.sideA && targetCourt.sideA.isEmpty) {
+            sideText = 'A';
+        } else {
+            sideText = 'B';
+        }
+    }
+
+    if (confirm(`난타 ${assignedCourtNumber}번 코트 (${sideText}반코트)로 입장하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'nanta', slotId });
-        changeMainTab('court'); // switchTab을 changeMainTab으로 수정
+        changeMainTab('court');
     }
 }
 
