@@ -274,11 +274,13 @@
 
         // 회원 드롭다운 채우기
         if (userSelect) {
-            uniqueUsersMap.forEach((user) => {
+            userSelect.innerHTML = '<option value="">-- 회원 선택 -- opsi</option>'; // 초기화 옵션 추가 권장
+                uniqueUsersMap.forEach((user) => {
                 const opt = document.createElement('option');
-                opt.value = user.username;
-                opt.textContent = user.displayName;
-                if (user.username === selectedUser) opt.selected = true;
+                // 💡 id가 있으면 id를, 없으면 username을 value로 확실하게 지정
+                opt.value = user.id || user.username; 
+                opt.textContent = `${user.name || user.displayName || user.username} (${user.username || user.id})`;
+                if (user.username === selectedUser || user.id === selectedUser) opt.selected = true;
                 userSelect.appendChild(opt);
             });
         }

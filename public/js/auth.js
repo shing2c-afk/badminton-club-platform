@@ -40,8 +40,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const parsedUser = JSON.parse(savedUser);
-      if (typeof socket !== 'undefined' && parsedUser.id) {
-        socket.emit('registerUser', parsedUser.id);
+      if (typeof socket !== 'undefined' && parsedUser) {
+        socket.emit('registerUserSession', parsedUser);
       }
     } catch (e) {
       console.error("소켓 유저 등록 에러:", e);
@@ -141,8 +141,8 @@ document.addEventListener("DOMContentLoaded", () => {
       socket.emit('loginMember', { name, phone }, (response) => {
         if (response.success) {
           localStorage.setItem("currentUser", JSON.stringify(response.user));
-          
-          socket.emit('registerUser', response.user.id);
+
+          socket.emit('registerUserSession', response.user);
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
           if (loginOverlay) loginOverlay.classList.add("hidden");
@@ -182,8 +182,8 @@ document.addEventListener("DOMContentLoaded", () => {
       socket.emit('loginGuest', { name, phone, payCode }, (response) => {
         if (response.success) {
           localStorage.setItem("currentUser", JSON.stringify(response.user));
-          
-          socket.emit('registerUser', response.user.id);
+
+          socket.emit('registerUserSession', response.user);
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
           if (loginOverlay) loginOverlay.classList.add("hidden");

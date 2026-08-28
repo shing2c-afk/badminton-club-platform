@@ -6,11 +6,14 @@ const http = require('http');
 const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+
 // 유저네임과 소켓 ID를 매핑하기 위한 객체 (이미 있다면 이어서 사용하세요)
 // 유저별 연결 끊김 유예 타이머를 저장할 객체
 const disconnectTimers = {};
 const userSockets = {};
 const expiredUsers = {}; // 유예 시간 초과로 만료된 유저를 기록할 객체
+const UserDictionary = require('./userDictionary'); // 파일 경로에 맞게 설정
+
 // ==========================
 // 2. 서버 및 미들웨어 초기화
 // ==========================
@@ -113,7 +116,7 @@ function checkAndInsertDefaultData() {
             console.log('✨ 실제 한글 이름 정회원 더미 데이터 50명 + 관리자 적재 완료');
         }
 
-        // 💡 [추가] 서버가 켜질 때 로그인 테스트용 계정 몇 개를 터미널에 출력
+        // 서버가 켜질 때 로그인 테스트용 계정 몇 개를 터미널에 출력
         db.all(`SELECT name, phone FROM regular_members LIMIT 5`, (err, rows) => {
             if (!err && rows) {
                 console.log('📋 [로그인 테스트용 정회원 샘플 명단]');
@@ -154,11 +157,22 @@ app.get('/api/members', (req, res) => {
     });
 });
 
-// 로그인 처리 API
+// 1. 회원 목록 조회 API (어드민 드롭다운 연동용)
+app.get('/api/members', (req, res) => {
+    db.all(`SELECT id, username, name, gender, ageGroup, grade, phone, address FROM regular_members`, (err, rows) => {
+        if (err) {
+            console.error('❌ 어드민 회원 목록 조회 실패:', err.message);
+            return res.status(500).json({ success: false, message: '회원 목록을 불러오지 못했습니다.' });
+        }
+        res.json(rows);
+    });
+});
+
+// 2. 로그인 처리 API
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
 
-    db.get(`SELECT * FROM regular_members WHERE username = ?`, [username], (err, user) => {
+    db.get(`SELECT * FROM regular_members WHERE username = ? OR id = ?`, [username, username], (err, user) => {
         if (err) {
             console.error('❌ 로그인 DB 조회 에러:', err.message);
             return res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
@@ -177,191 +191,163 @@ app.post('/api/login', (req, res) => {
     });
 });
 
-// 🧹 [궁극의 완벽 청소 및 방 폭파 함수] 유저명, 고유ID, 실명, 별칭 모두 검사하여 찌꺼기 방을 흔적없이 폭파
-function cleanupUser(usernameOrObj) {
+// 3. 🧹 [안전하고 완벽한 마스터 키 기반 슬롯 청소 함수]
+async function cleanupUser(usernameOrObj) {
     if (!usernameOrObj) return;
 
-    let targetKeyword = '';
-    if (typeof usernameOrObj === 'string') {
-        targetKeyword = usernameOrObj.split('/')[0].trim();
-    } else if (typeof usernameOrObj === 'object' && usernameOrObj.username) {
-        targetKeyword = usernameOrObj.username;
+    let targetId = '';
+    let targetName = '';
+
+    if (typeof usernameOrObj === 'object' && usernameOrObj !== null) {
+        targetId = usernameOrObj.id || '';
+        targetName = usernameOrObj.name || '';
+    } else if (typeof usernameOrObj === 'string') {
+        if (usernameOrObj.trim().startsWith('{')) {
+            try {
+                const parsed = JSON.parse(usernameOrObj);
+                targetId = parsed.id || '';
+                targetName = parsed.name || '';
+            } catch (e) {
+                targetId = usernameOrObj;
+                targetName = usernameOrObj;
+            }
+        } else {
+            targetId = usernameOrObj;
+            targetName = usernameOrObj;
+        }
     }
 
-    if (!targetKeyword) return;
+    console.log(`🧹 [청소 타겟 분석] 입력값:`, usernameOrObj);
 
-    let altKeyword = targetKeyword;
-    if (targetKeyword.startsWith('user')) {
-        const num = targetKeyword.replace('user', '');
-        altKeyword = `회원${num.padStart(2, '0')}`;
-    }
-    
-    // DB에서 해당 유저의 고유 ID(reg_01 등)와 실명(name)을 모두 찾아내어 정확하게 매칭
-    db.get(`SELECT id, name FROM regular_members WHERE username = ?`, [targetKeyword], (err, row) => {
-        const uniqueRegId = row ? row.id : null; // 예: 'reg_04'
-        const realName = row ? row.name : null;   // 예: '정지우'
-
-        console.log(`🧹 [청소 대상 분석] 아이디: "${targetKeyword}" -> 실명: "${realName}", 고유ID: "${uniqueRegId}", 별칭: "${altKeyword}"`);
-
-        // 1. 게임 대기열(gameQueue) 정리 및 빈 방 폭파
-        if (typeof gameQueue !== 'undefined') {
-            const validGameQueue = gameQueue.filter(slot => {
-                // userIds 배열에서 매칭되는 아이디/고유ID 전면 제거
-                if (slot.userIds) {
-                    slot.userIds = slot.userIds.filter(id => {
-                        return id !== targetKeyword && 
-                               id !== altKeyword && 
-                               id !== uniqueRegId && 
-                               !id.includes(targetKeyword) && 
-                               !id.includes(altKeyword);
-                    });
+    // DB에서 해당 유저의 정확한 정보를 확실하게 조회 (존재하지 않는 username 컬럼 제거)
+    let dbRow = null;
+    try {
+        dbRow = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT id, name FROM regular_members WHERE id = ? OR name = ?`, 
+                [targetId, targetName], 
+                (err, row) => {
+                    if (err) reject(err);
+                    else resolve(row || null);
                 }
-                
-                // players 배열에서 플레이어 이름 제거 (실명, 아이디, 별칭 모두 검사)
-                if (slot.players) {
+            );
+        });
+    } catch (e) {
+        console.error('❌ [청소 DB 조회 에러]:', e.message);
+    }
+
+    const realId = dbRow ? dbRow.id : targetId;
+    const realName = dbRow ? dbRow.name : targetName;
+    const realUsername = realId; // 호환성 유지
+
+    console.log(`🎯 [확정된 청소 대상] ID: "${realId}", Name: "${realName}"`);
+
+    // 게임 대기열 정리
+    if (typeof gameQueue !== 'undefined' && Array.isArray(gameQueue)) {
+        const validGameQueue = gameQueue.filter(slot => {
+            const slotStr = JSON.stringify(slot);
+            const isMatched = 
+                (realId && slotStr.includes(realId)) ||
+                (realName && slotStr.includes(realName));
+
+            if (isMatched) {
+                if (slot.userIds && Array.isArray(slot.userIds)) {
+                    slot.userIds = slot.userIds.filter(id => id !== realId);
+                }
+                if (slot.players && Array.isArray(slot.players)) {
                     slot.players = slot.players.map(p => {
                         if (!p) return '';
-                        
-                        // p가 객체인 경우
-                        if (typeof p === 'object') {
-                            const pStr = JSON.stringify(p);
-                            if (pStr.includes(targetKeyword) || (altKeyword && pStr.includes(altKeyword)) || (realName && pStr.includes(realName))) {
-                                return '';
-                            }
-                            return p;
-                        }
-                        
-                        // p가 문자열인 경우 (예: "정지우 / 남 / 20대 / A조")
-                        const pString = String(p);
+                        const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
                         if (
-                            pString.includes(targetKeyword) || 
-                            (altKeyword && pString.includes(altKeyword)) || 
-                            (realName && pString.includes(realName))
+                            (realId && pStr.includes(realId)) ||
+                            (realName && pStr.includes(realName))
                         ) {
                             return '';
                         }
                         return p;
                     });
                 }
-                
-                // 남은 유효 인원 및 유효 ID 재확인
-                const hasValidPlayers = slot.players && slot.players.some(p => {
-                    if (!p) return false;
-                    const trimmed = String(p).trim();
-                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
-                });
-                
-                const hasValidIds = slot.userIds && slot.userIds.some(id => {
-                    if (!id) return false;
-                    const trimmed = String(id).trim();
-                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
-                });
-                
-                // 💥 플레이어도 없고 개설자 ID도 비어있으면 게임방 완전 폭파!
-                if (!hasValidPlayers && !hasValidIds) {
-                    console.log(`💥 [빈 게임방 폭파 완료] 남은 인원/ID가 없어 게임방이 삭제됩니다.`);
-                    return false; 
+            }
+
+            const hasValidPlayers = slot.players && slot.players.some(p => String(p || '').trim() !== '' && String(p) !== 'undefined');
+            const hasValidIds = slot.userIds && slot.userIds.some(id => String(id || '').trim() !== '' && String(id) !== 'undefined');
+            return hasValidPlayers || hasValidIds;
+        });
+        gameQueue.length = 0;
+        gameQueue.push(...validGameQueue);
+    }
+
+    // 난타 대기열 정리
+    if (typeof nantaQueue !== 'undefined' && Array.isArray(nantaQueue)) {
+        const validNantaQueue = nantaQueue.filter(slot => {
+            const slotStr = JSON.stringify(slot);
+            const isMatched = 
+                (realId && slotStr.includes(realId)) ||
+                (realName && slotStr.includes(realName));
+
+            if (isMatched) {
+                if (slot.userIds && Array.isArray(slot.userIds)) {
+                    slot.userIds = slot.userIds.filter(id => id !== realId);
                 }
-
-                return true;
-            });
-
-            gameQueue.length = 0;
-            gameQueue.push(...validGameQueue);
-        }
-
-        // 2. 난타 대기열(nantaQueue) 정리 및 빈 방 폭파
-        if (typeof nantaQueue !== 'undefined') {
-            const validNantaQueue = nantaQueue.filter(slot => {
-                if (slot.userIds) {
-                    slot.userIds = slot.userIds.filter(id => {
-                        return id !== targetKeyword && 
-                               id !== altKeyword && 
-                               id !== uniqueRegId && 
-                               !id.includes(targetKeyword) && 
-                               !id.includes(altKeyword);
-                    });
-                }
-                
-                if (slot.players) {
+                if (slot.players && Array.isArray(slot.players)) {
                     slot.players = slot.players.map(p => {
                         if (!p) return '';
-                        
-                        if (typeof p === 'object') {
-                            const pStr = JSON.stringify(p);
-                            if (pStr.includes(targetKeyword) || (altKeyword && pStr.includes(altKeyword)) || (realName && pStr.includes(realName))) {
-                                return '';
-                            }
-                            return p;
-                        }
-                        
-                        const pString = String(p);
+                        const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
                         if (
-                            pString.includes(targetKeyword) || 
-                            (altKeyword && pString.includes(altKeyword)) || 
-                            (realName && pString.includes(realName))
+                            (realId && pStr.includes(realId)) ||
+                            (realName && pStr.includes(realName))
                         ) {
                             return '';
                         }
                         return p;
                     });
                 }
-                
-                const hasRemainingPlayers = slot.players && slot.players.some(p => {
-                    if (!p) return false;
-                    const trimmed = String(p).trim();
-                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
-                });
-                
-                const hasRemainingIds = slot.userIds && slot.userIds.some(id => {
-                    if (!id) return false;
-                    const trimmed = String(id).trim();
-                    return trimmed !== '' && trimmed !== 'undefined' && trimmed !== 'null';
-                });
-                
-                // 💥 플레이어도 없고 개설자 ID도 비어있으면 난타방 완전 폭파!
-                if (!hasRemainingPlayers && !hasRemainingIds) {
-                    console.log(`💥 [빈 난타방 폭파 완료] 남은 인원/ID가 없어 난타방이 삭제됩니다.`);
-                    return false; 
-                }
-                
-                return true;
-            });
+            }
 
-            nantaQueue.length = 0;
-            nantaQueue.push(...validNantaQueue);
-        }
+            const hasRemainingPlayers = slot.players && slot.players.some(p => String(p || '').trim() !== '' && String(p) !== 'undefined');
+            const hasRemainingIds = slot.userIds && slot.userIds.some(id => String(id || '').trim() !== '' && String(id) !== 'undefined');
+            return hasRemainingPlayers || hasRemainingIds;
+        });
+        nantaQueue.length = 0;
+        nantaQueue.push(...validNantaQueue);
+    }
 
-        console.log(`✨ [청소 완료] 키워드 "${targetKeyword}" (실명: ${realName}) 관련 모든 슬롯 데이터 및 찌꺼기 방이 정리되었습니다.`);
-        
-        if (typeof broadcastState === 'function') {
-            broadcastState();
-        }
-    });
+    if (typeof broadcastState === 'function') {
+        broadcastState();
+        console.log('📢 [디버깅] 대기열 청소 후 broadcastState() 실행 완료');
+    } else if (typeof io !== 'undefined') {
+        io.emit('updateState', { gameQueue, nantaQueue });
+        console.log('📢 [디버깅] io.emit을 통한 대기열 상태 강제 브로드캐스트 완료');
+    } else {
+        console.log('⚠️ [디버깅 경고] 브로드캐스트 수단을 찾을 수 없습니다!');
+    }
 }
 
-// 로그아웃 API
-app.post('/api/logout', (req, res) => {
+// 4. 로그아웃 API
+app.post('/api/logout', async (req, res) => {
     const { username } = req.body;
-    console.log(`🧹 [로그아웃 요청 수신] 유저: ${username}의 대기/방 참여 상태 정리 중...`);
+    console.log(`🧹 [로그아웃 요청 수신] 유저 데이터 정리 중...`);
     if (username) {
-        cleanupUser(username);
+        await cleanupUser(username);
     }
     res.json({ success: true });
 });
 
-// 관리자 모드: 강제 퇴장 및 방 강제 종료 API
-app.post('/api/admin/kick-user', (req, res) => {
-    const { targetUsername } = req.body;
+// 관리자 모드: 강제 퇴장 API
+app.post('/api/admin/kick-user', async (req, res) => {
+    const target = req.body.targetUsername || req.body.targetId || req.body.username;
 
-    if (!targetUsername) {
-        return res.status(400).json({ success: false, message: '퇴장시킬 회원 아이디가 없습니다.' });
+    if (!target) {
+        console.log('❌ [관리자 강제 퇴장 실패] 전달된 회원 식별자가 없습니다.', req.body);
+        return res.status(400).json({ success: false, message: '퇴장시킬 회원 정보가 없습니다.' });
     }
 
-    cleanupUser(targetUsername);
+    console.log(`🚨 [관리자 강제 퇴장 요청] 타겟 식별자:`, target);
 
-    console.log(`🚨 [관리자 강제 퇴장] 회원 [${targetUsername}]님이 강제 퇴장 및 정리되었습니다.`);
-    res.json({ success: true, message: `${targetUsername}님을 강제 퇴장시켰습니다.` });
+    // 비동기 청소 완료를 기다림
+    await cleanupUser(target);
+
+    res.json({ success: true, message: `해당 회원을 성공적으로 강제 퇴장 및 정리했습니다.` });
 });
 
 app.post('/api/admin/delete-room', (req, res) => {
@@ -751,60 +737,86 @@ socket.on('registerTV', () => {
         notifications: notifications
     });
 
-   socket.on('registerUserSession', (username) => {
-        if (username) {
+   socket.on('registerUserSession', (userData) => {
+        if (userData) {
+            // 객체든 문자열이든 안전한 문자열 식별자(userKey) 추출
+            let userKey = '';
+            if (typeof userData === 'object' && userData !== null) {
+                userKey = userData.id || userData.username || userData.name || '';
+            } else {
+                userKey = String(userData);
+            }
+
+            if (!userKey) {
+                console.log(`❌ [세션 등록 실패] 유효한 유저 식별자를 찾을 수 없습니다.`);
+                return;
+            }
+
             // 만약 유예 시간이 지나서 만료된 유저 명단에 있는 아이디라면?
-            if (expiredUsers[username]) {
-                console.log(`🚫 [세션 만료 차단] 유저 [${username}]님은 유예 시간 초과로 만료되어 강제 로그아웃됩니다.`);
+            if (expiredUsers[userKey]) {
+                console.log(`🚫 [세션 만료 차단] 유저 [${userKey}]님은 유예 시간 초과로 만료되어 강제 로그아웃됩니다.`);
                 
                 // 클라이언트로 강제 로그아웃 신호 전송
-                socket.emit('forceLogout', { username: username, reason: 'timeout' });
+                socket.emit('forceLogout', { username: userKey, reason: 'timeout' });
                 
-                // 만료 명단에서 제거 (한 번 튕겨낸 후에는 초기화)
-                delete expiredUsers[username];
+                // 만료 명단에서 제거
+                delete expiredUsers[userKey];
                 return; // 로그인 등록을 더 이상 진행하지 않음
             }
 
-            socket.username = username;
-            userSockets[socket.id] = username;
+            socket.username = userData;
+            userSockets[socket.id] = userKey;
             
             // 정상적인 재접속인 경우 타이머 취소
-            if (disconnectTimers[username]) {
-                clearTimeout(disconnectTimers[username]);
-                delete disconnectTimers[username];
-                console.log(`🔄 [재접속 성공] 유저 [${username}]님이 유예 시간 내에 돌아와 대기열 유지가 확정되었습니다.`);
+            if (disconnectTimers[userKey]) {
+                clearTimeout(disconnectTimers[userKey]);
+                delete disconnectTimers[userKey];
+                console.log(`🔄 [재접속 성공] 유저 [${userKey}]님이 유예 시간 내에 돌아와 대기열 유지가 확정되었습니다.`);
             }
 
-            console.log(`👤 [소켓 등록] 유저 ${username}의 소켓(ID: ${socket.id})이 매핑되었습니다.`);
+            console.log(`👤 [소켓 등록] 유저 ${userKey}의 소켓(ID: ${socket.id})이 매핑되었습니다.`);
         }
     });
 
     socket.on('disconnect', () => {
-    // ⚠️ 수정 포인트: 소켓 ID를 기준으로 정확하게 매핑된 유저만 가져오기
-    const username = userSockets[socket.id] || socket.username;
+    const rawUser = userSockets[socket.id] || socket.username;
     const currentSocketId = socket.id;
     
-    if (username) {
-        console.log(`🔌 [연결 끊김] 소켓 ID: ${currentSocketId} (유저: ${username}) 연결 해제됨. 유예 타이머 작동 시작...`);
-        
-        // 만약 이 유저 명의로 된 기존 타이머가 있다면 초기화
-        if (disconnectTimers[username]) {
-            clearTimeout(disconnectTimers[username]);
+    if (rawUser) {
+        // 객체든 문자열이든 타이머 키로 쓸 수 있는 안전한 문자열 추출
+        let userKey = '';
+        if (typeof rawUser === 'object' && rawUser !== null) {
+            userKey = rawUser.id || rawUser.username || rawUser.name || '';
+        } else {
+            userKey = String(rawUser);
         }
 
-        disconnectTimers[username] = setTimeout(() => {
-            console.log(`⏳ [유예 시간 만료] 유저 [${username}]님이 오랜 시간 돌아오지 않아 대기열 퇴장을 진행합니다.`);
+        if (!userKey) {
+            console.log(`🔌 [연결 끊김] 소켓 ID: ${currentSocketId} - 유저 식별자 추출 실패`);
+            return;
+        }
+
+        console.log(`🔌 [연결 끊김] 소켓 ID: ${currentSocketId} (유저: ${userKey}) 연결 해제됨. 유예 타이머(1분) 작동 시작...`);
+        
+        // 만약 이 유저 명의로 된 기존 타이머가 있다면 초기화
+        if (disconnectTimers[userKey]) {
+            clearTimeout(disconnectTimers[userKey]);
+        }
+
+        disconnectTimers[userKey] = setTimeout(() => {
+            console.log(`⏳ [유예 시간 만료] 유저 [${userKey}]님이 오랜 시간 돌아오지 않아 대기열 퇴장을 진행합니다.`);
             
-            // 1. 대기열 및 방 정리
-            cleanupUser(username);
+            // 1. 대기열 및 방 정리 (앞서 만든 강력 청소 함수 호출)
+            cleanupUser(rawUser);
 
             // 2. 만료된 유저 명단에 등록
-            expiredUsers[username] = true;
+            expiredUsers[userKey] = true;
 
             // 3. 타이머 및 매핑 정리
-            delete disconnectTimers[username];
+            delete disconnectTimers[userKey];
             delete userSockets[currentSocketId];
-        }, 1 * 60 * 1000); 
+        }, 1 * 60 * 1000); // 1분 유예 시간
+        
     } else {
         console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
     }
