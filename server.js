@@ -815,7 +815,7 @@ socket.on('registerTV', () => {
             // 3. 타이머 및 매핑 정리
             delete disconnectTimers[userKey];
             delete userSockets[currentSocketId];
-        }, 1 * 60 * 1000); // 1분 유예 시간
+        }, 25 * 60 * 1000); // 25분 유예 시간
         
     } else {
         console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);

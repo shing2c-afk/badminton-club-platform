@@ -71,20 +71,97 @@
 <script>
     const socket = io();
 
+    // 외부 audio.js에 선언된 맵이 없을 경우에만 안전하게 생성
+    if (typeof window.pendingAnnouncements === 'undefined') {
+        window.pendingAnnouncements = new Map();
+    }
+
+    function cancelVoiceAnnouncement(announcementId) {
+        if (!announcementId) return;
+
+        const possibleKeys = [
+            announcementId,
+            String(announcementId),
+            Number(announcementId)
+        ];
+
+        possibleKeys.forEach(key => {
+            if (window.pendingAnnouncements.has(key)) {
+                clearTimeout(window.pendingAnnouncements.get(key));
+                window.pendingAnnouncements.delete(key);
+                console.log(`[방송 취소 완료] 코트 ID (${key})의 30초 대기 방송이 성공적으로 취소되었습니다.`);
+            }
+        });
+    }
+
     // 접속하자마자 TV 전광판 전용 방에 등록
     socket.on('connect', () => {
         socket.emit('registerTV');
     });
 
-    // 💡 브라우저 내장 음성 합성(TTS) 함수
-    function playVoiceAnnouncement(text) {
+    // 브라우저 내장 음성 합성(TTS) 함수
+    function playVoiceAnnouncement(text, delaySeconds = 0, announcementId = null) {
         if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel(); // 밀린 안내 취소 후 바로 출력
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'ko-KR';
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
-            window.speechSynthesis.speak(utterance);
+            if (announcementId && window.pendingAnnouncements.has(announcementId)) {
+                clearTimeout(window.pendingAnnouncements.get(announcementId));
+                window.pendingAnnouncements.delete(announcementId);
+            }
+
+            let cleanMessage = text
+                .replace(/안내\s*말씀\s*드립니다[\.!]?\s*/g, '')
+                .trim();
+
+            let refinedMessage = cleanMessage
+                .replace(/1\s*번/g, '일 번')
+                .replace(/2\s*번/g, '이 번')
+                .replace(/3\s*번/g, '삼 번')
+                .replace(/4\s*번/g, '사 번')
+                .replace(/5\s*번/g, '오 번')
+                .replace(/6\s*번/g, '육 번')
+                .replace(/7\s*번/g, '칠 번')
+                .replace(/8\s*번/g, '팔 번')
+                .replace(/9\s*번/g, '구 번');
+
+            if (refinedMessage.includes('회원님은')) {
+                let parts = refinedMessage.split('회원님은');
+                let rawNames = parts[0].trim();
+                let spacedNames = rawNames.split(',').map(nameGroup => {
+                    return nameGroup.trim().split('').join(' '); 
+                }).join(', ');
+                refinedMessage = `${spacedNames} 회원님은${parts[1]}`;
+            }
+
+            const runSpeech = () => {
+                window.speechSynthesis.cancel();
+                if (window.speechSynthesis.paused) {
+                    window.speechSynthesis.resume();
+                }
+                const utterance = new SpeechSynthesisUtterance(refinedMessage);
+                utterance.lang = 'ko-KR';
+                utterance.rate = 0.93;
+                utterance.pitch = 1.0;
+                
+                const cleanup = () => {
+                    if (announcementId) window.pendingAnnouncements.delete(announcementId);
+                };
+                utterance.onend = cleanup;
+                utterance.onerror = cleanup;
+
+                window.speechSynthesis.speak(utterance);
+            };
+
+            if (delaySeconds > 0) {
+                const timerId = setTimeout(() => {
+                    if (announcementId) window.pendingAnnouncements.delete(announcementId);
+                    runSpeech();
+                }, delaySeconds * 1000);
+
+                if (announcementId) {
+                    window.pendingAnnouncements.set(announcementId, timerId);
+                }
+            } else {
+                runSpeech();
+            }
         } else {
             console.warn("이 브라우저는 음성 합성을 지원하지 않습니다.");
         }
@@ -107,13 +184,48 @@
         return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
 
-    socket.on('stateUpdated', (state) => {
-        const courts = state.courtsData || state.courts || [];
-        const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
-        const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
+    let previousCourtStates = {};
 
-        renderTVCourts(courts);
-        renderTVQueues(gameQueue, nantaQueue);
+    socket.on('stateUpdated', (state) => {
+        try {
+            const courts = state.courtsData || state.courts || [];
+            const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
+            const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
+
+            if (Array.isArray(courts)) {
+                courts.forEach((court, idx) => {
+                    if (!court) return;
+                    const courtNum = court.id || (idx + 1);
+
+                    let isOccupied = false;
+                    if (court.type === 'nanta') {
+                        const sideAHas = court.sideA && !court.sideA.isEmpty;
+                        const sideBHas = court.sideB && !court.sideB.isEmpty;
+                        isOccupied = sideAHas || sideBHas;
+                    } else {
+                        isOccupied = court.isEmpty === false;
+                    }
+
+                    const wasOccupied = previousCourtStates[courtNum] || false;
+                    
+                    if (isOccupied && !wasOccupied) {
+                        console.log(`[취소 시도] ${courtNum}번 코트에 사람이 입장함! cancelVoiceAnnouncement 호출`);
+                        if (typeof cancelVoiceAnnouncement === 'function') {
+                            cancelVoiceAnnouncement(courtNum);
+                            cancelVoiceAnnouncement(String(courtNum));
+                            cancelVoiceAnnouncement(Number(courtNum));
+                        }
+                    }
+
+                    previousCourtStates[courtNum] = isOccupied;
+                });
+            }
+
+            renderTVCourts(courts);
+            renderTVQueues(gameQueue, nantaQueue);
+        } catch (err) {
+            console.error("stateUpdated 처리 중 오류 발생:", err);
+        }
     });
 
     let alertTimer = null;
@@ -134,22 +246,19 @@
         }
     });
 
-    // 서버로부터 음성 안내 요청 수신 (숫자를 한글 발음으로 직접 변환)
     socket.on('requestVoiceAnnouncement', (data) => {
         const { courtNumber, names, matchType } = data;
         const namesString = names.join(', ');
 
-        // 숫자를 확실한 한글 발음으로 매핑
         const numMap = {
             '1': '일', '2': '이', '3': '삼', '4': '사', 
             '5': '오', '6': '육', '7': '칠', '8': '팔', '9': '구'
         };
         const readableCourtNum = numMap[String(courtNumber)] || courtNumber;
 
-        // "일 번" 형태로 명확하게 조합
-        const announcementText = `안내 말씀 드립니다. ${namesString} 회원님은, ${readableCourtNum} 번, ${matchType} 코트로, 입장해 주세요.`;
+        const announcementText = `${namesString} 회원님은, ${readableCourtNum} 번, ${matchType} 코트로, 입장해 주세요.`;
         
-        playVoiceAnnouncement(announcementText);
+        playVoiceAnnouncement(announcementText, 30, courtNumber);
     });
 
     function renderTVCourts(courts) {

@@ -387,13 +387,16 @@ function enterGameCourt(slotId) {
         return;
     }
 
-    // 💡 [변경] 순번(1, 2...) 대신 실제 courtsData에서 빈 게임 코트의 물리적 번호(id)를 선착순으로 매칭
     const emptyGameCourts = (typeof courtsData !== 'undefined') ? courtsData.filter(c => c.type === 'game' && c.isEmpty) : [];
     const courtIndex = allowedSlots.findIndex(s => s.id === slotId);
     const assignedCourtNumber = (courtIndex !== -1 && emptyGameCourts[courtIndex]) ? emptyGameCourts[courtIndex].id : 1;
 
-    // 💡 팝업 메시지에 실제 물리적 코트 번호 반영
     if (confirm(`${assignedCourtNumber}번 코트로 입장하시겠습니까?`)) {
+        // 💡 [추가] 사용자가 직접 입장 버튼을 눌렀으므로 해당 코트의 30초 대기 방송 즉시 취소!
+        if (typeof cancelVoiceAnnouncement === 'function') {
+            cancelVoiceAnnouncement(assignedCourtNumber);
+        }
+
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'game', slotId });
         changeMainTab('court');
@@ -425,7 +428,6 @@ function enterNantaCourt(slotId) {
         return;
     }
 
-    // 💡 [변경] 난타 코트도 courtsData에서 실제 빈 난타 코트의 물리적 번호(id)와 A/B 상태를 선착순으로 파악
     const emptyNantaCourts = (typeof courtsData !== 'undefined') ? courtsData.filter(c => c.type === 'nanta' && ((c.sideA && c.sideA.isEmpty) || (c.sideB && c.sideB.isEmpty))) : [];
     const courtIndex = allowedSlots.findIndex(s => s.id === slotId);
     
@@ -443,6 +445,11 @@ function enterNantaCourt(slotId) {
     }
 
     if (confirm(`난타 ${assignedCourtNumber}번 코트 (${sideText}반코트)로 입장하시겠습니까?`)) {
+        // 💡 [추가] 난타 코트 입장 시에도 해당 코트의 대기 방송 즉시 취소!
+        if (typeof cancelVoiceAnnouncement === 'function') {
+            cancelVoiceAnnouncement(assignedCourtNumber);
+        }
+
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('enterCourtFromSlot', { type: 'nanta', slotId });
         changeMainTab('court');
