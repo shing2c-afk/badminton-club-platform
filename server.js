@@ -14,6 +14,34 @@ const userSockets = {};
 const expiredUsers = {}; // 유예 시간 초과로 만료된 유저를 기록할 객체
 const UserDictionary = require('./userDictionary'); // 파일 경로에 맞게 설정
 
+// 서버 전용 음성 안내 큐 및 상태 관리 변수
+let serverAudioQueue = [];
+let isVoicePlayingOnServer = false;
+// ==========================================
+// 🔊 서버 음성 큐 처리 프로세서 (약 10초 간격 순차 발송)
+// ==========================================
+setInterval(() => {
+    // 이미 재생 중이거나 큐에 보낼 데이터가 없으면 대기
+    if (isVoicePlayingOnServer || serverAudioQueue.length === 0) {
+        return;
+    }
+
+    // 큐에서 가장 먼저 들어온 안내 건을 꺼냄
+    const nextAnnouncement = serverAudioQueue.shift();
+    
+    // 재생 상태 플래그 켜기
+    isVoicePlayingOnServer = true;
+
+    // TV로 소켓 신호 발송
+    io.to('tv-room').emit('requestVoiceAnnouncement', nextAnnouncement);
+
+    // 안내 음성 재생 소요 시간(약 10초) 동안 다음 발송을 차단
+    setTimeout(() => {
+        isVoicePlayingOnServer = false;
+    }, 10000); // 10초 (10000ms)
+
+}, 1000); // 1초마다 큐 상태를 체크
+
 // ==========================
 // 2. 서버 및 미들웨어 초기화
 // ==========================
@@ -518,36 +546,53 @@ setInterval(() => {
             
             if (!slot.fullAt) {
                 slot.fullAt = now;
-
-                // 💡 게임 매칭 성사 및 타이머 시작 시 TV 전용 음성 안내 전송
-                const validPlayers = getValidPlayers(slot.players);
-                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-                const emptyCourt = courtsData.find(c => c.type === 'game' && c.isEmpty);
-                const courtNum = emptyCourt ? emptyCourt.id : '';
-
-                io.to('tv-room').emit('requestVoiceAnnouncement', {
-                    courtNumber: courtNum,
-                    names: memberNames,
-                    matchType: '게임'
-                });
             }
+            
+            // 경과 시간 및 남은 시간 계산 (1번만 선언)
             const elapsed = Math.floor((now - slot.fullAt) / 1000);
             slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
 
+            // 💡 타이머 시작 후 정확히 30초가 지났을 때 음성 안내 전송
+if (elapsed === 30 && !slot.announced) {
+    slot.announced = true;
+    const validPlayers = getValidPlayers(slot.players);
+    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+    
+    // activeTimerCount 순서에 맞는 빈 코트를 정확히 매칭
+    const emptyGameCourts = courtsData.filter(c => c.type === 'game' && c.isEmpty);
+    const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
+    const courtNum = targetCourt ? targetCourt.id : '';
+
+    // 🚀 [수정] 즉시 쏘지 않고 서버 큐에 푸시
+    serverAudioQueue.push({
+        courtNumber: courtNum,
+        names: memberNames,
+        matchType: '게임'
+    });
+}
+
+            // --- 게임 대기열 시간 초과 처리부 ---
             if (slot.remainingSeconds === 0) {
                 const targetIdx = gameQueue.findIndex(s => s.id === slot.id);
                 if (targetIdx !== -1) {
                     const expiredTeam = gameQueue.splice(targetIdx, 1)[0];
-                    expiredTeam.fullAt = null;
-                    expiredTeam.remainingSeconds = null;
-                    gameQueue.push(expiredTeam);
+                    const validPlayers = getValidPlayers(expiredTeam.players);
+                    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
 
-                    addNotification(`⏰ [게임대기] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열 맨 뒤로 이동되었습니다.`);
+                    // 🖥️ TV 전광판에 대기방 삭제 팝업 전송
+                    io.to('tv-room').emit('tvPopupAlert', {
+                        matchType: '게임',
+                        names: memberNames,
+                        message: '입장 시간 초과로 게임 대기방이 삭제되었습니다.<br>게임 대기를 원하시면 다시 등록해 주세요.'
+                    });
+
+                    addNotification(`🗑️ [게임 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`);
                 }
             }
         } else {
             slot.fullAt = null;
             slot.remainingSeconds = null;
+            slot.announced = false;
         }
     });
 
@@ -572,46 +617,67 @@ setInterval(() => {
             
             if (!slot.fullAt) {
                 slot.fullAt = now;
-
-                // 💡 난타 매칭 성사 및 타이머 시작 시 TV 전용 음성 안내 전송
-                const validPlayers = getValidPlayers(slot.players);
-                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-                let targetCourtNum = '';
-                for (let court of courtsData) {
-                    if (court.type === 'nanta') {
-                        if ((court.sideA && court.sideA.isEmpty) || (court.sideB && court.sideB.isEmpty)) {
-                            targetCourtNum = court.id;
-                            break;
-                        }
-                    }
-                }
-
-                io.to('tv-room').emit('requestVoiceAnnouncement', {
-                    courtNumber: targetCourtNum,
-                    names: memberNames,
-                    matchType: '난타'
-                });
             }
+
+            // 경과 시간 및 남은 시간 계산
             const elapsed = Math.floor((now - slot.fullAt) / 1000);
             slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
 
+           // 💡 난타 타이머 시작 후 정확히 30초가 지났을 때 음성 안내 전송
+if (elapsed === 30 && !slot.announced) {
+    slot.announced = true;
+    const validPlayers = getValidPlayers(slot.players);
+    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+    
+    // 비어있는 난타 반코트들을 순서대로 수집하여 activeNantaTimerCount에 맞게 매칭
+    let availableSides = [];
+    for (let court of courtsData) {
+        if (court.type === 'nanta') {
+            if (court.sideA && court.sideA.isEmpty) {
+                availableSides.push({ courtId: court.id, side: 'sideA' });
+            }
+            if (court.sideB && court.sideB.isEmpty) {
+                availableSides.push({ courtId: court.id, side: 'sideB' });
+            }
+        }
+    }
+    
+    const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
+    const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
+
+    // 🚀 [수정] 즉시 쏘지 않고 서버 큐에 푸시
+    serverAudioQueue.push({
+        courtNumber: targetCourtNum,
+        names: memberNames,
+        matchType: '난타'
+    });
+}
+
+            // --- 난타 대기열 시간 초과 처리부 ---
             if (slot.remainingSeconds === 0) {
                 const index = nantaQueue.findIndex(s => s.id === slot.id);
                 if (index !== -1) {
                     const expiredTeam = nantaQueue.splice(index, 1)[0];
-                    expiredTeam.fullAt = null;
-                    expiredTeam.remainingSeconds = null;
-                    nantaQueue.push(expiredTeam);
+                    const validPlayers = getValidPlayers(expiredTeam.players);
+                    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
 
-                    addNotification(`⏰ [난타대기] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열 맨 뒤로 이동되었습니다.`);
+                    // 🖥️ TV 전광판에 대기방 삭제 팝업 전송
+                    io.to('tv-room').emit('tvPopupAlert', {
+                        matchType: '난타',
+                        names: memberNames,
+                        message: '입장 시간 초과로 난타 대기방이 삭제되었습니다.<br>난타 대기를 원하시면 다시 등록해 주세요.'
+                    });
+
+                    addNotification(`🗑️ [난타 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`);
                 }
             }
         } else {
             slot.fullAt = null;
             slot.remainingSeconds = null;
+            slot.announced = false;
         }
     });
-    
+
     courtsData.forEach(court => {
         if (court.type === 'nanta') {
             ['sideA', 'sideB'].forEach(side => {
@@ -651,10 +717,7 @@ socket.on('registerTV', () => {
     socket.join('tv-room');
     console.log("📺 TV 전광판 화면이 'tv-room'에 등록되었습니다.");
 });
-    // ==========================
-    // 정회원 및 일일회원 로그인 소켓 이벤트
-    // ==========================
-
+    
     // ==========================
     // 정회원 및 일일회원 로그인 소켓 이벤트
     // ==========================
