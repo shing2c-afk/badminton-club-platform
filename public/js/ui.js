@@ -4,6 +4,10 @@ let gameQueue = [];
 let nantaQueue = [];
 let notificationsList = [];
 
+let currentUser = null;
+
+let activeMergeSlotId = null;
+
 function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -204,6 +208,7 @@ function renderCourts() {
     });
 }
 
+// 1. 대기열 렌더링 함수 (통합 메뉴 템플릿 포함)
 function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
     if (!container) return;
@@ -246,13 +251,73 @@ function renderGameQueue() {
             } else {
                 // 빈자리 처리: 텍스트는 "게임참여"로 통일하되 활성화/비활성화 상태 구분
                 if (amIInGameQueue) {
-                    // 비활성화된 게임참여 (이미 다른 곳에 참여 중이거나 제한된 상태) -> 어두운 회색
+                    // 비활성화된 게임참여 -> 어두운 회색
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">게임참여</span></div>`;
                 } else {
-                    // 활성화된 게임참여 (입장 가능 상태) -> 밝은 텍스트 및 클릭 가능
+                    // 활성화된 게임참여 -> 밝은 텍스트 및 클릭 가능
                     playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell" style="color:#fff; font-weight:500;">게임참여</span></div>`;
                 }
             }
+        }
+
+        // 공통으로 사용할 유효 인원 및 본인 방 여부 체크 변수
+        const validPlayersCount = getValidPlayers(slot.players).length;
+        const isMySlotGame = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+
+        // 1. 코트 입장 버튼 활성/비활성화 판별 로직
+        const isFullGame = (validPlayersCount === 4);
+        let gameEnterBtnHtml = '';
+        if (isFullGame && isMySlotGame) {
+            // 4명 꽉 차고 내 방일 때: 초록색 활성화
+            gameEnterBtnHtml = `<button class="btn-action btn-enter" onclick="enterGameCourt('${slot.id}')" style="background: #10b981; color: #fff; cursor: pointer; opacity: 1;">코트 입장</button>`;
+        } else {
+            // 조건 미달 또는 남의 방일 때: 회색 비활성화
+            gameEnterBtnHtml = `<button class="btn-action btn-enter" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">코트 입장</button>`;
+        }
+
+        // 2. 게임 통합 버튼 활성/비활성화 판별 로직 (1~3명이고 내 방일 때만 활성화, 4명이면 비활성화)
+        const isMergeableCount = (validPlayersCount > 0 && validPlayersCount < 4);
+        let gameMergeBtnHtml = '';
+        if (isMergeableCount && isMySlotGame) {
+            gameMergeBtnHtml = `<button class="btn-action btn-merge" onclick="mergeGameSlot('${slot.id}')" style="background: #8b5cf6; color: #fff; cursor: pointer; opacity: 1;">게임 통합</button>`;
+        } else {
+            gameMergeBtnHtml = `<button class="btn-action btn-merge" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">게임 통합</button>`;
+        }
+
+        // 만약 현재 슬롯이 통합 메뉴를 열어둔 상태라면 리스트 HTML 생성 (상태 변수 연동)
+        let mergeMenuHtml = '';
+        if (activeMergeSlotId === slot.id) {
+            const targetSlots = gameQueue.filter(s => {
+                if (s.id === slot.id) return false;
+                const targetValid = getValidPlayers(s.players);
+                return (validPlayersCount + targetValid.length === 4);
+            });
+
+            let listHtml = '';
+            if (targetSlots.length === 0) {
+                listHtml = `<div style="color: #888; font-size: 12px; padding: 6px 0;">합칠 수 있는 대기 방이 없습니다.</div>`;
+            } else {
+                targetSlots.forEach((targetSlot) => {
+                    const targetRank = gameQueue.findIndex(s => s.id === targetSlot.id) + 1;
+                    const playersStr = getValidPlayers(targetSlot.players).join(", ");
+                    listHtml += `
+                        <div class="merge-option-item" onclick="confirmAndExecuteMerge('${slot.id}', '${targetSlot.id}', ${targetRank})" style="padding: 10px 12px; margin-bottom: 6px; background: #1e1e2f; border: 1px solid #7c3aed; border-radius: 6px; cursor: pointer;">
+                            <div style="font-weight: bold; color: #a78bfa; font-size: 13px;">📌 ${targetRank}순위 방과 통합</div>
+                            <div style="color: #cbd5e1; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">멤버: ${escapeHtml(playersStr)}</div>
+                        </div>
+                    `;
+                });
+            }
+
+            mergeMenuHtml = `
+                <div class="merge-dropdown-menu" style="margin-top: 10px; padding: 12px; background: #111118; border: 1px solid #4c1d95; border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 13px; font-weight: bold; color: #fff;">🔄 합칠 대기 방을 선택하세요</span>
+                        <span onclick="activeMergeSlotId = null; renderGameQueue();" style="cursor: pointer; color: #888; font-size: 14px; padding: 0 4px;">✕</span>
+                    </div>
+                    ${listHtml}
+                </div>
+            `;
         }
 
         const timerText = slot.remainingSeconds !== null ? `⏱️ 입장제한 ${formatTime(slot.remainingSeconds)}` : '대기중';
@@ -266,13 +331,69 @@ function renderGameQueue() {
                 </div>
                 <div class="players-grid">${playerCellsHtml}</div>
                 <div class="slot-footer">
-                    <button class="btn-action btn-enter" onclick="enterGameCourt('${slot.id}')">코트 입장</button>
-                    <button class="btn-action btn-merge" onclick="mergeGameSlot('${slot.id}')">게임 통합</button>
+                    ${gameEnterBtnHtml}
+                    ${gameMergeBtnHtml}
                 </div>
+                ${mergeMenuHtml}
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
     });
+}
+
+// 2. 게임 통합 버튼 클릭 시 호출되는 함수 (상태값 토글 후 렌더링)
+function mergeGameSlot(slotId) {
+    const savedUser = localStorage.getItem("currentUser");
+    let currentUserName = "";
+    if (savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            currentUserName = (u.name || u.username || "").trim();
+        } catch (e) {}
+    }
+
+    const currentSlot = gameQueue.find(s => s.id === slotId);
+    if (!currentSlot) return;
+
+    const currentValidPlayers = getValidPlayers(currentSlot.players);
+    const isMySlot = currentSlot.players.some(p => p && currentUserName && p.includes(currentUserName));
+    if (!isMySlot || currentValidPlayers.length === 0 || currentValidPlayers.length >= 4) return;
+
+    // 합칠 수 있는 대상 슬롯이 있는지 우선 체크
+    const targetSlots = gameQueue.filter(s => {
+        if (s.id === slotId) return false;
+        const targetValid = getValidPlayers(s.players);
+        return (currentValidPlayers.length + targetValid.length === 4);
+    });
+
+    if (targetSlots.length === 0) {
+        alert("⚠️ 현재 합쳤을 때 총원이 4명이 되는 다른 대기 방이 없습니다.");
+        return;
+    }
+
+    // 이미 열려 있는 방을 다시 누르면 닫고, 다른 방이면 해당 방의 메뉴를 연다.
+    if (activeMergeSlotId === slotId) {
+        activeMergeSlotId = null;
+    } else {
+        activeMergeSlotId = slotId;
+    }
+
+    // 대기열 화면을 다시 그려서 메뉴를 안정적으로 표시/제거한다.
+    renderGameQueue();
+}
+
+// 3. 실제 통합 실행 함수
+function confirmAndExecuteMerge(mySlotId, targetSlotId, targetRank) {
+    if (confirm(`[${targetRank}순위 방]과 통합하시겠습니까?\n(합쳐진 총 인원: 4명)`)) {
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) {
+            activeSocket.emit('mergeSlot', { 
+                mySlotId: mySlotId, 
+                targetSlotId: targetSlotId 
+            });
+            activeMergeSlotId = null; // 통합 요청 후 메뉴 닫기
+        }
+    }
 }
 
 function renderNantaQueue() {
@@ -326,6 +447,20 @@ function renderNantaQueue() {
             }
         }
 
+        // 난타 코트 입장 버튼 활성/비활성화 판별 로직
+        const validNantaCount = getValidPlayers(slot.players).length;
+        const isFullNanta = (validNantaCount === 2);
+        const isMySlotNanta = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+
+        let nantaEnterBtnHtml = '';
+        if (isFullNanta && isMySlotNanta) {
+            // 2명 꽉 차고 내 방일 때: 초록색 활성화
+            nantaEnterBtnHtml = `<button class="btn-action btn-enter" onclick="enterNantaCourt('${slot.id}')" style="background: #10b981; color: #fff; cursor: pointer; opacity: 1;">코트 입장</button>`;
+        } else {
+            // 조건 미달 또는 남의 방일 때: 회색 비활성화
+            nantaEnterBtnHtml = `<button class="btn-action btn-enter" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">코트 입장</button>`;
+        }
+
         const timerText = slot.remainingSeconds !== null ? `⏱️ 입장제한 ${formatTime(slot.remainingSeconds)}` : '대기중';
         const timerClass = slot.remainingSeconds !== null ? '' : 'idle';
 
@@ -337,7 +472,7 @@ function renderNantaQueue() {
                 </div>
                 <div class="players-grid">${playerCellsHtml}</div>
                 <div class="slot-footer">
-                    <button class="btn-action btn-enter" onclick="enterNantaCourt('${slot.id}')">코트 입장</button>
+                    ${nantaEnterBtnHtml}
                 </div>
             </div>
         `;
@@ -483,6 +618,23 @@ function enterGameCourt(slotId) {
     const slot = gameQueue.find(s => s.id === slotId);
     if (!slot) return;
 
+    // 💡 [추가] 로그인한 회원이 이 방에 참여 중인지 확인
+    const savedUser = localStorage.getItem("currentUser");
+    let currentUserName = "";
+    if (savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            currentUserName = (u.name || u.username || "").trim();
+        } catch (e) {}
+    }
+
+    const isMySlot = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+    if (!isMySlot) {
+        alert('⚠️ 해당 게임 방에 참여 중인 회원만 코트에 입장할 수 있습니다.');
+        return;
+    }
+    // ----------------------------------------------------
+
     const validPlayers = getValidPlayers(slot.players);
     if (validPlayers.length < 4) {
         alert('⚠️ 4명이 모두 채워져야 코트에 입장할 수 있습니다.');
@@ -509,7 +661,6 @@ function enterGameCourt(slotId) {
     const assignedCourtNumber = (courtIndex !== -1 && emptyGameCourts[courtIndex]) ? emptyGameCourts[courtIndex].id : 1;
 
     if (confirm(`${assignedCourtNumber}번 코트로 입장하시겠습니까?`)) {
-        // 💡 [추가] 사용자가 직접 입장 버튼을 눌렀으므로 해당 코트의 30초 대기 방송 즉시 취소!
         if (typeof cancelVoiceAnnouncement === 'function') {
             cancelVoiceAnnouncement(assignedCourtNumber);
         }
@@ -523,6 +674,23 @@ function enterGameCourt(slotId) {
 function enterNantaCourt(slotId) {
     const slot = nantaQueue.find(s => s.id === slotId);
     if (!slot) return;
+
+    // 💡 [추가] 로그인한 회원이 이 난타 방에 참여 중인지 확인
+    const savedUser = localStorage.getItem("currentUser");
+    let currentUserName = "";
+    if (savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            currentUserName = (u.name || u.username || "").trim();
+        } catch (e) {}
+    }
+
+    const isMySlot = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+    if (!isMySlot) {
+        alert('⚠️ 해당 난타 방에 참여 중인 회원만 코트에 입장할 수 있습니다.');
+        return;
+    }
+    // ----------------------------------------------------
 
     const validPlayers = getValidPlayers(slot.players);
     if (validPlayers.length < 2) {
@@ -562,7 +730,6 @@ function enterNantaCourt(slotId) {
     }
 
     if (confirm(`난타 ${assignedCourtNumber}번 코트 (${sideText}반코트)로 입장하시겠습니까?`)) {
-        // 💡 [추가] 난타 코트 입장 시에도 해당 코트의 대기 방송 즉시 취소!
         if (typeof cancelVoiceAnnouncement === 'function') {
             cancelVoiceAnnouncement(assignedCourtNumber);
         }
