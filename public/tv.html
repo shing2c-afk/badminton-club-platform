@@ -51,6 +51,15 @@
     <span id="court-alert-text">알림 내용</span>
 </div>
 
+<!-- TV 화면 중앙에 띄울 대기방 삭제 알림 모달 팝업 -->
+<div id="popupModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:#141824; border: 2px solid #3498db; padding:30px; border-radius:10px; text-align:center; max-width:500px; width:80%; color: #ffffff;">
+        <h2 id="popupTitle" style="color: #ff4d4d; margin-bottom: 15px; font-size: 24px;">대기방 삭제 안내</h2>
+        <p id="popupMessage" style="font-size: 18px; color: #ffffff; margin-bottom: 25px; line-height: 1.5;"></p>
+        <button onclick="document.getElementById('popupModal').style.display='none'" style="padding: 10px 25px; font-size: 16px; font-weight: bold; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">확인</button>
+    </div>
+</div>
+
     <div class="header">
         <h1>🏸 체육관 실시간 종합 현황판</h1>
     </div>
@@ -98,6 +107,31 @@
     socket.on('connect', () => {
         socket.emit('registerTV');
     });
+
+    // TV 전광판 클라이언트 - 대기방 삭제 팝업 수신 리스너
+    socket.on('tvPopupAlert', (data) => {
+        // data 예시: { matchType: '게임', names: ['김철수', '이영희', ...], message: '...' }
+        showPopupModal(data.matchType, data.names, data.message);
+    });
+
+    // 실제 화면에 팝업을 띄워주는 함수
+    let popupTimer = null;
+    function showPopupModal(matchType, names, message) {
+        const modal = document.getElementById('popupModal');
+        const title = document.getElementById('popupTitle');
+        const msg = document.getElementById('popupMessage');
+
+        if (modal && title && msg) {
+            title.innerText = `[${matchType} 대기방 삭제]`;
+            msg.innerHTML = `<strong>${names.join(', ')}</strong> 팀<br>${message}`;
+            modal.style.display = 'flex';
+
+            if (popupTimer) clearTimeout(popupTimer);
+            popupTimer = setTimeout(() => {
+                modal.style.display = 'none';
+            }, 5000);
+        }
+    }
 
     // 브라우저 내장 음성 합성(TTS) 함수
     function playVoiceAnnouncement(text, delaySeconds = 0, announcementId = null) {
@@ -247,6 +281,7 @@
     });
 
     socket.on('requestVoiceAnnouncement', (data) => {
+        console.log('[Socket Debug] 서버로부터 음성 요청 수신됨:', data); // 👈 이 로그가 찍히는지 확인
         const { courtNumber, names, matchType } = data;
         const namesString = names.join(', ');
 
@@ -258,7 +293,7 @@
 
         const announcementText = `${namesString} 회원님은, ${readableCourtNum} 번, ${matchType} 코트로, 입장해 주세요.`;
         
-        playVoiceAnnouncement(announcementText, 30, courtNumber);
+        playVoiceAnnouncement(announcementText, 0, courtNumber);
     });
 
     function renderTVCourts(courts) {

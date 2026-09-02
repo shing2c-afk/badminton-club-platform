@@ -209,6 +209,20 @@ function renderGameQueue() {
     if (!container) return;
     container.innerHTML = '';
 
+    const savedUser = localStorage.getItem("currentUser");
+    let currentUserName = "";
+    if (savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            currentUserName = (u.name || u.username || "").trim();
+        } catch (e) {}
+    }
+
+    // 내가 이 게임 대기열 어디든 참여 중인지 확인
+    const amIInGameQueue = gameQueue.some(slot => 
+        slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
+    );
+
     if (gameQueue.length === 0) {
         container.innerHTML = `<div class="empty-queue-msg">현재 대기 중인 게임 방이 없습니다.</div>`;
         return;
@@ -221,9 +235,23 @@ function renderGameQueue() {
         for (let i = 0; i < 4; i++) {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
-                playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
+                if (isMe) {
+                    // 내 퇴장 버튼: 활성화 (빨간색 계열)
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                } else {
+                    // 타인의 퇴장 버튼: 비활성화 (회색 계열)
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
+                }
             } else {
-                playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})"><span class="empty-cell">+ 입장하기</span></div>`;
+                // 빈자리 처리: 텍스트는 "게임참여"로 통일하되 활성화/비활성화 상태 구분
+                if (amIInGameQueue) {
+                    // 비활성화된 게임참여 (이미 다른 곳에 참여 중이거나 제한된 상태) -> 어두운 회색
+                    playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">게임참여</span></div>`;
+                } else {
+                    // 활성화된 게임참여 (입장 가능 상태) -> 밝은 텍스트 및 클릭 가능
+                    playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell" style="color:#fff; font-weight:500;">게임참여</span></div>`;
+                }
             }
         }
 
@@ -252,6 +280,20 @@ function renderNantaQueue() {
     if (!container) return;
     container.innerHTML = '';
 
+    const savedUser = localStorage.getItem("currentUser");
+    let currentUserName = "";
+    if (savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            currentUserName = (u.name || u.username || "").trim();
+        } catch (e) {}
+    }
+
+    // 내가 이 난타 대기열 어디든 참여 중인지 확인
+    const amIInNantaQueue = nantaQueue.some(slot => 
+        slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
+    );
+
     if (nantaQueue.length === 0) {
         container.innerHTML = `<div class="empty-queue-msg">현재 대기 중인 난타 방이 없습니다.</div>`;
         return;
@@ -264,9 +306,23 @@ function renderNantaQueue() {
         for (let i = 0; i < 2; i++) {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
-                playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
+                if (isMe) {
+                    // 내 퇴장 버튼: 활성화 (빨간색 계열)
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                } else {
+                    // 타인의 퇴장 버튼: 비활성화 (회색 계열)
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
+                }
             } else {
-                playerCellsHtml += `<div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})"><span class="empty-cell">+ 입장하기</span></div>`;
+                // 빈자리 처리: 텍스트는 "난타참여"로 통일하되 활성화/비활성화 상태 구분
+                if (amIInNantaQueue) {
+                    // 비활성화된 난타참여 -> 어두운 회색
+                    playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">난타참여</span></div>`;
+                } else {
+                    // 활성화된 난타참여 -> 밝은 텍스트 및 클릭 가능
+                    playerCellsHtml += `<div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell" style="color:#fff; font-weight:500;">난타참여</span></div>`;
+                }
             }
         }
 
@@ -333,18 +389,79 @@ function createNewNantaSlot() {
 }
 
 function joinGameCell(slotId, idx) {
-    const name = prompt('참여할 회원의 [급수/연령/성별/이름]을 입력하세요:');
-    if (name && name.trim() !== '') {
+    const savedUser = localStorage.getItem("currentUser");
+    if (!savedUser) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        return;
+    }
+
+    let u;
+    try {
+        u = JSON.parse(savedUser);
+    } catch (e) {
+        alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
+        return;
+    }
+
+    // 이름, 성별, 연령대, 급수 추출 (데이터 구조에 맞게 안전하게 가져오기)
+    const name = (u.name || u.username || "").trim();
+    const gender = (u.gender || "").trim();
+    const age = (u.age || u.ageGroup || "").trim();
+    const level = (u.level || u.grade || "").trim();
+
+    if (!name) {
+        alert("회원 이름 정보를 찾을 수 없습니다.");
+        return;
+    }
+
+    // 요구하신 순서: 이름 / 성별 / 연령대 / 급수 (예: "김민수 / 남 / 40대 / A조")
+    // 데이터가 없는 항목은 빈 값 대신 자연스럽게 처리되도록 조합합니다.
+    const parts = [name, gender, age, level].filter(Boolean);
+    const formattedPlayerInfo = parts.join(" / ");
+
+    // 확인창 띄우기 (정보 타이핑 없이 참여 여부만 물어봄)
+    if (confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (activeSocket) activeSocket.emit('joinPlayer', { type: 'game', slotId, index: idx, name: name.trim() });
+        if (activeSocket) {
+            activeSocket.emit('joinPlayer', { type: 'game', slotId, index: idx, name: formattedPlayerInfo });
+        }
     }
 }
 
 function joinNantaCell(slotId, idx) {
-    const name = prompt('참여할 회원의 [급수/연령/성별/이름]을 입력하세요:');
-    if (name && name.trim() !== '') {
+    const savedUser = localStorage.getItem("currentUser");
+    if (!savedUser) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        return;
+    }
+
+    let u;
+    try {
+        u = JSON.parse(savedUser);
+    } catch (e) {
+        alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
+        return;
+    }
+
+    const name = (u.name || u.username || "").trim();
+    const gender = (u.gender || "").trim();
+    const age = (u.age || u.ageGroup || "").trim();
+    const level = (u.level || u.grade || "").trim();
+
+    if (!name) {
+        alert("회원 이름 정보를 찾을 수 없습니다.");
+        return;
+    }
+
+    // 요구하신 순서: 이름 / 성별 / 연령대 / 급수
+    const parts = [name, gender, age, level].filter(Boolean);
+    const formattedPlayerInfo = parts.join(" / ");
+
+    if (confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (activeSocket) activeSocket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: name.trim() });
+        if (activeSocket) {
+            activeSocket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: formattedPlayerInfo });
+        }
     }
 }
 
