@@ -141,6 +141,23 @@ function renderCourts() {
         } catch (e) {}
     }
 
+    // 📌 [완전 해결] 기존 클래스 영향력을 무시하고 인라인 스타일로 완벽하게 동일한 줄 간격/폰트 강제 적용
+    function formatPlayersToLines(playersInput) {
+        if (!playersInput) return '';
+        let pArray = [];
+
+        if (Array.isArray(playersInput)) {
+            pArray = playersInput;
+        } else if (typeof playersInput === 'string') {
+            pArray = playersInput.split(',').map(item => item.trim());
+        }
+
+        return pArray
+            .filter(p => p && p.length > 0)
+            .map(p => `<div style="width: 100%; text-align: left; font-size: inherit; font-family: inherit; line-height: 1.5; margin-bottom: 4px;">${escapeHtml(p)}</div>`)
+            .join('');
+    }
+
     courtsData.forEach(court => {
         let html = '';
         if(court.type === 'game') {
@@ -154,7 +171,6 @@ function renderCourts() {
                         <div class="empty-court-box">✨ 빈 코트 (입장 대기 가능)</div>
                     </div>`;
             } else {
-                // 현재 로그인한 유저가 이 게임 코트에 소속되어 있는지 확인
                 let isUserOnThisCourt = false;
                 if (court.players) {
                     if (Array.isArray(court.players)) {
@@ -164,7 +180,6 @@ function renderCourts() {
                     }
                 }
 
-                // 소속된 회원에게만 버튼 활성화, 다른 코트는 비활성화
                 let gameActionBtns = '';
                 if (isUserOnThisCourt) {
                     gameActionBtns = `
@@ -185,7 +200,8 @@ function renderCourts() {
                             <span class="type-badge badge-game">게임 코트</span>
                         </div>
                         <div class="court-body-game">
-                            <div class="court-players">${formatCourtPlayers(court.players)}</div>
+                            <!-- 📌 부모 컨테이너도 세로 정렬 및 간격 균일화 설정 -->
+                            <div class="court-players" style="display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 2px;">${formatPlayersToLines(court.players)}</div>
                             <div class="court-timer-off"></div>
                             <div>
                                 ${gameActionBtns}
@@ -195,7 +211,6 @@ function renderCourts() {
             }
         } 
         else if(court.type === 'nanta') {
-            // A반코트 소속 여부 확인
             let isUserOnSideA = false;
             if (court.sideA && court.sideA.players) {
                 if (Array.isArray(court.sideA.players)) {
@@ -205,7 +220,6 @@ function renderCourts() {
                 }
             }
 
-            // B반코트 소속 여부 확인
             let isUserOnSideB = false;
             if (court.sideB && court.sideB.players) {
                 if (Array.isArray(court.sideB.players)) {
@@ -215,12 +229,10 @@ function renderCourts() {
                 }
             }
 
-            // A반코트 난타 종료 버튼 (소속된 경우만 활성화)
             const sideABtn = isUserOnSideA ? 
                 `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료</button>` :
                 `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
 
-            // B반코트 난타 종료 버튼 (소속된 경우만 활성화)
             const sideBBtn = isUserOnSideB ? 
                 `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')">난타 종료</button>` :
                 `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
@@ -231,7 +243,7 @@ function renderCourts() {
                     <span class="nanta-label">A 반코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
-                 <div class="court-players" style="margin-bottom:6px;">${court.sideA ? escapeHtml(court.sideA.players) : ''}</div>
+                 <div class="court-players" style="display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 2px; margin-bottom:6px;">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
                  ${sideABtn}`;
 
             const sideBContent = (court.sideB && court.sideB.isEmpty) ? 
@@ -240,7 +252,7 @@ function renderCourts() {
                     <span class="nanta-label">B 반코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideB ? court.sideB.remainingSeconds : 0)}</span>
                  </div>
-                 <div class="court-players" style="margin-bottom:6px;">${court.sideB ? escapeHtml(court.sideB.players) : ''}</div>
+                 <div class="court-players" style="display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 2px; margin-bottom:6px;">${formatPlayersToLines(court.sideB ? court.sideB.players : '')}</div>
                  ${sideBBtn}`;
 
             html = `

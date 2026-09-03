@@ -100,6 +100,27 @@ function initDatabase() {
             visitedAt TEXT
         )
     `);
+
+    // 📌 [추가] 공지사항 테이블 생성 및 기본 더미 공지 삽입
+    db.run(`
+        CREATE TABLE IF NOT EXISTS notices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            author TEXT DEFAULT '관리자',
+            createdAt TEXT NOT NULL
+        )
+    `, (err) => {
+        if (!err) {
+            db.get(`SELECT COUNT(*) as count FROM notices`, (err, row) => {
+                if (row && row.count === 0) {
+                    db.run(`INSERT INTO notices (title, content, author, createdAt) VALUES (?, ?, ?, ?)`,
+                        ['체육관 이용 수칙 안내', '체육관 내 음료 및 음식물 반입을 금지합니다. 즐거운 배드민턴 되세요!', '관리자', '2026-09-03']
+                    );
+                }
+            });
+        }
+    });
 }
 
 function checkAndInsertDefaultData() {
@@ -171,6 +192,52 @@ app.get('/tv', (req, res) => {
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ==========================
+// [추가] 공지사항 관련 API 및 라우트
+// ==========================
+
+// 1. 공지사항 목록 조회 API (인덱스 화면 및 게시판용)
+app.get('/api/notices', (req, res) => {
+    db.all(`SELECT * FROM notices ORDER BY id DESC`, (err, rows) => {
+        if (err) {
+            console.error('❌ 공지사항 조회 실패:', err.message);
+            return res.status(500).json({ success: false, message: '공지사항을 불러오지 못했습니다.' });
+        }
+        res.json(rows);
+    });
+});
+
+// 2. 관리자용 공지사항 등록 API
+app.post('/api/admin/notice', (req, res) => {
+    const { title, content, author } = req.body;
+    if (!title || !content) {
+        return res.status(400).json({ success: false, message: '제목과 내용을 모두 입력해 주세요.' });
+    }
+
+    const createdAt = new Date().toISOString().split('T')[0];
+    db.run(`INSERT INTO notices (title, content, author, createdAt) VALUES (?, ?, ?, ?)`,
+        [title, content, author || '관리자', createdAt],
+        function(err) {
+            if (err) {
+                console.error('❌ 공지 등록 실패:', err.message);
+                return res.status(500).json({ success: false, message: '공지 등록 중 오류가 발생했습니다.' });
+            }
+            
+            const newNotice = { id: this.lastID, title, content, author: author || '관리자', createdAt };
+
+            // 📌 [핵심 추가] 연결된 모든 클라이언트(인덱스, TV 등)에게 실시간 공지 전송!
+            io.emit('noticeUpdated', newNotice);
+
+            res.json({ success: true, message: '공지사항이 성공적으로 등록되었습니다.', id: this.lastID });
+        }
+    );
+});
+
+// 3. 공지사항 상세 게시판 페이지 라우트
+app.get('/notice', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'notice.html'));
 });
 
 // 정회원 목록 조회 API

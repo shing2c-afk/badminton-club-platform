@@ -48,12 +48,12 @@
 </head>
 <body>
 
-<!-- [수정됨] 코트 비우기 알림 상단 배너 (기존 대비 약 3배 확대 및 가독성 개선) -->
+<!-- [수정됨] 코트 비우기 알림 상단 배너 -->
 <div id="court-alert-banner" style="display: none; position: fixed; top: 30px; left: 50%; transform: translateX(-50%); color: white; padding: 35px 70px; border-radius: 16px; font-weight: bold; font-size: 45px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 99999; text-align: center; border: 4px solid rgba(255,255,255,0.3); transition: background-color 0.3s;">
     <span id="court-alert-text">알림 내용</span>
 </div>
 
-<!-- [수정됨] TV 화면 중앙에 띄울 대기방 삭제 알림 모달 팝업 (기존 대비 약 3배 확대) -->
+<!-- [수정됨] TV 화면 중앙에 띄울 대기방 삭제 알림 모달 팝업 -->
 <div id="popupModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; justify-content:center; align-items:center;">
     <div style="background:#141824; border: 5px solid #3498db; padding:60px 80px; border-radius:20px; text-align:center; max-width:1200px; width:85%; color: #ffffff; box-shadow: 0 25px 50px rgba(0,0,0,0.8);">
         <h2 id="popupTitle" style="color: #ff4d4d; margin-bottom: 30px; font-size: 55px; font-weight: 900;">대기방 삭제 안내</h2>
@@ -64,6 +64,13 @@
 
     <div class="header">
         <h1>🏸 체육관 실시간 종합 현황판</h1>
+    </div>
+
+    <!-- 📢 [수정] 인덱스 화면과 동일하게 가로로 꽉 차고 내용이 왼쪽 정렬되는 공지 바 -->
+    <div style="width: 100%; background: #161b22; border-bottom: 1px solid #30363d; border-top: 1px solid #30363d; padding: 12px 24px; box-sizing: border-box; margin-bottom: 15px;">
+        <div id="tv-notice-text" style="color: #e6edf3; font-size: 20px; font-weight: bold; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            📢 공지사항을 불러오는 중...
+        </div>
     </div>
 
     <div class="court-grid" id="tv-court-grid"></div>
@@ -86,6 +93,36 @@
     if (typeof window.pendingAnnouncements === 'undefined') {
         window.pendingAnnouncements = new Map();
     }
+
+    // 1. TV 페이지 로드 시 최신 공지 불러오기
+async function loadTvNotice() {
+    try {
+        const response = await fetch('/api/notices');
+        const notices = await response.json();
+
+        const noticeElement = document.getElementById('tv-notice-text');
+        if (noticeElement && notices && notices.length > 0) {
+            noticeElement.textContent = `📢 [공지] ${notices[0].title}`;
+        } else if (noticeElement) {
+            noticeElement.textContent = '📢 등록된 공지사항이 없습니다.';
+        }
+    } catch (error) {
+        console.error('❌ TV 공지 로드 실패:', error);
+    }
+}
+
+// 초기 실행
+loadTvNotice();
+
+// 2. 실시간 소켓 수신 (관리자가 공지를 올리면 TV 화면에도 즉시 반영)
+if (typeof socket !== 'undefined') {
+    socket.on('noticeUpdated', (newNotice) => {
+        const noticeElement = document.getElementById('tv-notice-text');
+        if (noticeElement && newNotice) {
+            noticeElement.textContent = `📢 [공지] ${newNotice.title}`;
+        }
+    });
+}
 
     function cancelVoiceAnnouncement(announcementId) {
         if (!announcementId) return;

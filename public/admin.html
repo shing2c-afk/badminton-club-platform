@@ -228,6 +228,23 @@
         <button class="btn-danger" onclick="handleClearCourt()">선택한 코트 강제 비우기</button>
     </div>
 
+    <!-- 📢 [추가] 관리자 공지사항 등록 섹션 -->
+<div class="admin-card" style="background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; color: white;">
+    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #f59e0b;">📢 새 공지사항 등록</h3>
+    <form id="noticeForm">
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; color: #aaa; margin-bottom: 4px;">공지 제목</label>
+            <input type="text" id="noticeTitle" placeholder="제목을 입력하세요" required style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px;" />
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-size: 12px; color: #aaa; margin-bottom: 4px;">공지 내용</label>
+            <textarea id="noticeContent" rows="4" placeholder="내용을 입력하세요" required style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px; resize: vertical;"></textarea>
+        </div>
+        <button type="submit" style="width: 100%; padding: 10px; background: #f59e0b; border: none; border-radius: 4px; color: #000; font-weight: bold; cursor: pointer;">공지사항 등록하기</button>
+    </form>
+    <div id="notice-msg" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
+</div>
+
     <a href="/" class="btn-link">📱 사용자 메인 화면으로 돌아가기</a>
 
 <script>
@@ -570,6 +587,47 @@
         socket.emit('updateCourtsConfig', newCourts);
         alert('코트 구성 설정이 현장에 즉시 반영되었습니다.');
     }
+
+    document.getElementById('noticeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const title = document.getElementById('noticeTitle').value.trim();
+    const content = document.getElementById('noticeContent').value.trim();
+    const msgDiv = document.getElementById('notice-msg');
+
+    if (!title || !content) {
+        msgDiv.style.color = '#ff4d4f';
+        msgDiv.textContent = '제목과 내용을 모두 입력해 주세요.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/notice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, content, author: '관리자' })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            msgDiv.style.color = '#52c41a';
+            msgDiv.textContent = '✅ 공지사항이 성공적으로 등록되었습니다!';
+            document.getElementById('noticeForm').reset();
+
+            // 3초 뒤 메시지 초기화
+            setTimeout(() => { msgDiv.textContent = ''; }, 3000);
+        } else {
+            msgDiv.style.color = '#ff4d4f';
+            msgDiv.textContent = `❌ 등록 실패: ${result.message}`;
+        }
+    } catch (error) {
+        console.error('공지 등록 통신 오류:', error);
+        msgDiv.style.color = '#ff4d4f';
+        msgDiv.textContent = '❌ 서버 통신 중 오류가 발생했습니다.';
+    }
+});
+
 </script>
 </body>
 </html>
