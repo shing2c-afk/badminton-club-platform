@@ -615,7 +615,7 @@ function joinGameCell(slotId, idx) {
     // 요구하신 순서: 이름 / 성별 / 연령대 / 급수 (예: "김민수 / 남 / 40대 / A조")
     // 데이터가 없는 항목은 빈 값 대신 자연스럽게 처리되도록 조합합니다.
     const parts = [name, gender, age, level].filter(Boolean);
-    const formattedPlayerInfo = parts.join(" / ");
+    const formattedPlayerInfo = parts.join("/");
 
     // 확인창 띄우기 (정보 타이핑 없이 참여 여부만 물어봄)
     if (confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`)) {
@@ -653,7 +653,7 @@ function joinNantaCell(slotId, idx) {
 
     // 요구하신 순서: 이름 / 성별 / 연령대 / 급수
     const parts = [name, gender, age, level].filter(Boolean);
-    const formattedPlayerInfo = parts.join(" / ");
+    const formattedPlayerInfo = parts.join("/");
 
     if (confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
@@ -872,7 +872,7 @@ function applyUserProfile() {
 
     if (userStr) {
         const user = JSON.parse(userStr);
-        headerUserEl.textContent = `${user.name}님 (${user.gender} / ${user.ageGroup} / ${user.grade})`;
+        headerUserEl.textContent = `${user.name}님`;
         
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket && user.username) {
