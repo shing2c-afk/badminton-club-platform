@@ -131,6 +131,16 @@ function renderCourts() {
     if (!courtList) return;
     courtList.innerHTML = '';
 
+    // 현재 로그인한 사용자 이름 가져오기
+    const savedUser = localStorage.getItem("currentUser");
+    let currentUserName = "";
+    if (savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            currentUserName = (u.name || u.username || "").trim();
+        } catch (e) {}
+    }
+
     courtsData.forEach(court => {
         let html = '';
         if(court.type === 'game') {
@@ -144,6 +154,30 @@ function renderCourts() {
                         <div class="empty-court-box">✨ 빈 코트 (입장 대기 가능)</div>
                     </div>`;
             } else {
+                // 현재 로그인한 유저가 이 게임 코트에 소속되어 있는지 확인
+                let isUserOnThisCourt = false;
+                if (court.players) {
+                    if (Array.isArray(court.players)) {
+                        isUserOnThisCourt = court.players.some(p => p && currentUserName && p.includes(currentUserName));
+                    } else if (typeof court.players === 'string') {
+                        isUserOnThisCourt = currentUserName && court.players.includes(currentUserName);
+                    }
+                }
+
+                // 소속된 회원에게만 버튼 활성화, 다른 코트는 비활성화
+                let gameActionBtns = '';
+                if (isUserOnThisCourt) {
+                    gameActionBtns = `
+                        <button class="btn-court-ctrl btn-again" onclick="clickAgain(${court.id})">한 게임 더</button>
+                        <button class="btn-court-ctrl btn-end" onclick="clickEnd(${court.id})">게임 종료</button>
+                    `;
+                } else {
+                    gameActionBtns = `
+                        <button class="btn-court-ctrl btn-again" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">한 게임 더</button>
+                        <button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">게임 종료</button>
+                    `;
+                }
+
                 html = `
                     <div class="court-row">
                         <div class="court-head-info">
@@ -154,14 +188,43 @@ function renderCourts() {
                             <div class="court-players">${formatCourtPlayers(court.players)}</div>
                             <div class="court-timer-off"></div>
                             <div>
-                                <button class="btn-court-ctrl btn-again" onclick="clickAgain(${court.id})">한 게임 더</button>
-                                <button class="btn-court-ctrl btn-end" onclick="clickEnd(${court.id})">게임 종료</button>
+                                ${gameActionBtns}
                             </div>
                         </div>
                     </div>`;
             }
         } 
         else if(court.type === 'nanta') {
+            // A반코트 소속 여부 확인
+            let isUserOnSideA = false;
+            if (court.sideA && court.sideA.players) {
+                if (Array.isArray(court.sideA.players)) {
+                    isUserOnSideA = court.sideA.players.some(p => p && currentUserName && p.includes(currentUserName));
+                } else if (typeof court.sideA.players === 'string') {
+                    isUserOnSideA = currentUserName && court.sideA.players.includes(currentUserName);
+                }
+            }
+
+            // B반코트 소속 여부 확인
+            let isUserOnSideB = false;
+            if (court.sideB && court.sideB.players) {
+                if (Array.isArray(court.sideB.players)) {
+                    isUserOnSideB = court.sideB.players.some(p => p && currentUserName && p.includes(currentUserName));
+                } else if (typeof court.sideB.players === 'string') {
+                    isUserOnSideB = currentUserName && court.sideB.players.includes(currentUserName);
+                }
+            }
+
+            // A반코트 난타 종료 버튼 (소속된 경우만 활성화)
+            const sideABtn = isUserOnSideA ? 
+                `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료</button>` :
+                `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
+
+            // B반코트 난타 종료 버튼 (소속된 경우만 활성화)
+            const sideBBtn = isUserOnSideB ? 
+                `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')">난타 종료</button>` :
+                `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
+
             const sideAContent = (court.sideA && court.sideA.isEmpty) ? 
                 `<div class="nanta-empty-text">+ A반코트 (빈 코트)</div>` :
                 `<div class="nanta-card-head">
@@ -169,7 +232,7 @@ function renderCourts() {
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players" style="margin-bottom:6px;">${court.sideA ? escapeHtml(court.sideA.players) : ''}</div>
-                 <button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료</button>`;
+                 ${sideABtn}`;
 
             const sideBContent = (court.sideB && court.sideB.isEmpty) ? 
                 `<div class="nanta-empty-text">+ B반코트 (빈 코트)</div>` :
@@ -178,7 +241,7 @@ function renderCourts() {
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideB ? court.sideB.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players" style="margin-bottom:6px;">${court.sideB ? escapeHtml(court.sideB.players) : ''}</div>
-                 <button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')">난타 종료</button>`;
+                 ${sideBBtn}`;
 
             html = `
                 <div class="court-row">
