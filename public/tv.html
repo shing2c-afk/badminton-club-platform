@@ -335,7 +335,7 @@ if (typeof socket !== 'undefined') {
         playVoiceAnnouncement(announcementText, 0, courtNumber);
     });
 
-    function renderTVCourts(courts) {
+function renderTVCourts(courts) {
         const container = document.getElementById('tv-court-grid');
         if (!container) return;
 
@@ -479,16 +479,31 @@ if (typeof socket !== 'undefined') {
         nantaContainer.innerHTML = buildQueueHTML(nantaQueue);
     }
 
-    function formatPlayersHorizontal(players) {
-        let arr = [];
-        if (Array.isArray(players)) {
-            arr = players.filter(Boolean).map(p => escapeHtml(p.trim()));
-        } else if (typeof players === 'string') {
-            arr = players.split(',').map(p => escapeHtml(p.trim())).filter(Boolean);
-        }
-        if (arr.length === 0) return '';
-        return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join('');
+   // 📌 슬래시 공백 정규화 및 가로 나열을 처리하는 단일 통합 포맷 함수
+function formatPlayersHorizontal(players) {
+    let arr = [];
+    if (Array.isArray(players)) {
+        arr = players.filter(Boolean).map(p => {
+            let item = p.trim();
+            // 슬래시가 포함되어 있다면 양옆 공백을 통일 (" / ")
+            if (item.includes('/')) {
+                item = item.split('/').map(part => part.trim()).join(' / ');
+            }
+            return escapeHtml(item);
+        });
+    } else if (typeof players === 'string') {
+        arr = players.split(',').map(p => {
+            let item = p.trim();
+            if (item.includes('/')) {
+                item = item.split('/').map(part => part.trim()).join(' / ');
+            }
+            return escapeHtml(item);
+        }).filter(Boolean);
     }
+    
+    if (arr.length === 0) return '';
+    return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join(' ');
+}
 </script>
 </body>
 </html>

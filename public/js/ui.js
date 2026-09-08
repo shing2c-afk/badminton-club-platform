@@ -141,7 +141,7 @@ function renderCourts() {
         } catch (e) {}
     }
 
-    // 📌 [완전 해결] 기존 클래스 영향력을 무시하고 인라인 스타일로 완벽하게 동일한 줄 간격/폰트 강제 적용
+    // 📌 [수정] 슬래시(/) 기준 양옆의 공백을 균일하게 맞춰주고, 일정한 간격으로 출력하는 함수
     function formatPlayersToLines(playersInput) {
         if (!playersInput) return '';
         let pArray = [];
@@ -154,7 +154,15 @@ function renderCourts() {
 
         return pArray
             .filter(p => p && p.length > 0)
-            .map(p => `<div style="width: 100%; text-align: left; font-size: inherit; font-family: inherit; line-height: 1.5; margin-bottom: 4px;">${escapeHtml(p)}</div>`)
+            .map(p => {
+                // 슬래시(/) 기준으로 쪼갠 후 공백을 제거하고, " / " 형태로 예쁘게 다시 조인(Join)해 줍니다.
+                // 이렇게 하면 데이터가 어떻게 들어왔든 항상 "이름 / 성별 / 연령대 / 조" 형태로 띄워쓰기가 통일됩니다.
+                let normalizedStr = p;
+                if (p.includes('/')) {
+                    normalizedStr = p.split('/').map(part => part.trim()).join(' / ');
+                }
+                return `<div>${escapeHtml(normalizedStr)}</div>`;
+            })
             .join('');
     }
 
@@ -200,8 +208,7 @@ function renderCourts() {
                             <span class="type-badge badge-game">게임 코트</span>
                         </div>
                         <div class="court-body-game">
-                            <!-- 📌 부모 컨테이너도 세로 정렬 및 간격 균일화 설정 -->
-                            <div class="court-players" style="display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 2px;">${formatPlayersToLines(court.players)}</div>
+                            <div class="court-players">${formatPlayersToLines(court.players)}</div>
                             <div class="court-timer-off"></div>
                             <div>
                                 ${gameActionBtns}
@@ -243,7 +250,7 @@ function renderCourts() {
                     <span class="nanta-label">A 반코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
-                 <div class="court-players" style="display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 2px; margin-bottom:6px;">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
+                 <div class="court-players">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
                  ${sideABtn}`;
 
             const sideBContent = (court.sideB && court.sideB.isEmpty) ? 
@@ -252,7 +259,7 @@ function renderCourts() {
                     <span class="nanta-label">B 반코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideB ? court.sideB.remainingSeconds : 0)}</span>
                  </div>
-                 <div class="court-players" style="display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 2px; margin-bottom:6px;">${formatPlayersToLines(court.sideB ? court.sideB.players : '')}</div>
+                 <div class="court-players">${formatPlayersToLines(court.sideB ? court.sideB.players : '')}</div>
                  ${sideBBtn}`;
 
             html = `
@@ -298,6 +305,15 @@ function renderGameQueue() {
         } catch (e) {}
     }
 
+    // 📌 [추가] 슬래시(/) 기준 양옆의 공백을 통일해주는 함수
+    function formatPlayerText(playerStr) {
+        if (!playerStr) return '';
+        if (playerStr.includes('/')) {
+            return playerStr.split('/').map(part => part.trim()).join(' / ');
+        }
+        return playerStr;
+    }
+
     // 내가 이 게임 대기열 어디든 참여 중인지 확인
     const amIInGameQueue = gameQueue.some(slot => 
         slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
@@ -316,12 +332,13 @@ function renderGameQueue() {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
                 const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
+                const formattedPlayer = formatPlayerText(p); // 📌 공백 정규화 적용
                 if (isMe) {
                     // 내 퇴장 버튼: 활성화 (빨간색 계열)
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
                 } else {
                     // 타인의 퇴장 버튼: 비활성화 (회색 계열)
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
                 }
             } else {
                 // 빈자리 처리: 텍스트는 "게임참여"로 통일하되 활성화/비활성화 상태 구분
@@ -374,7 +391,8 @@ function renderGameQueue() {
             } else {
                 targetSlots.forEach((targetSlot) => {
                     const targetRank = gameQueue.findIndex(s => s.id === targetSlot.id) + 1;
-                    const playersStr = getValidPlayers(targetSlot.players).join(", ");
+                    const rawPlayersList = getValidPlayers(targetSlot.players).map(p => formatPlayerText(p)); // 📌 통합 목록도 공백 정규화 적용
+                    const playersStr = rawPlayersList.join(", ");
                     listHtml += `
                         <div class="merge-option-item" onclick="confirmAndExecuteMerge('${slot.id}', '${targetSlot.id}', ${targetRank})" style="padding: 10px 12px; margin-bottom: 6px; background: #1e1e2f; border: 1px solid #7c3aed; border-radius: 6px; cursor: pointer;">
                             <div style="font-weight: bold; color: #a78bfa; font-size: 13px;">📌 ${targetRank}순위 방과 통합</div>
@@ -404,7 +422,7 @@ function renderGameQueue() {
                     <span class="rank-badge">${rank}순위</span>
                     <span class="timer-badge ${timerClass}">${timerText}</span>
                 </div>
-                <div class="players-grid">${playerCellsHtml}</div>
+                <div class="players-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">${playerCellsHtml}</div>
                 <div class="slot-footer">
                     ${gameEnterBtnHtml}
                     ${gameMergeBtnHtml}
@@ -485,6 +503,15 @@ function renderNantaQueue() {
         } catch (e) {}
     }
 
+    // 📌 [추가] 난타용 슬래시 공백 정규화 함수
+    function formatNantaPlayerText(playerStr) {
+        if (!playerStr) return '';
+        if (playerStr.includes('/')) {
+            return playerStr.split('/').map(part => part.trim()).join(' / ');
+        }
+        return playerStr;
+    }
+
     // 내가 이 난타 대기열 어디든 참여 중인지 확인
     const amIInNantaQueue = nantaQueue.some(slot => 
         slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
@@ -503,12 +530,13 @@ function renderNantaQueue() {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
                 const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
+                const formattedNantaPlayer = formatNantaPlayerText(p); // 📌 공백 정규화 적용
                 if (isMe) {
                     // 내 퇴장 버튼: 활성화 (빨간색 계열)
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
                 } else {
                     // 타인의 퇴장 버튼: 비활성화 (회색 계열)
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(p)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
+                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
                 }
             } else {
                 // 빈자리 처리: 텍스트는 "난타참여"로 통일하되 활성화/비활성화 상태 구분
@@ -545,7 +573,7 @@ function renderNantaQueue() {
                     <span class="rank-badge" style="color:#f97316;">${rank}순위</span>
                     <span class="timer-badge ${timerClass}">${timerText}</span>
                 </div>
-                <div class="players-grid">${playerCellsHtml}</div>
+                <div class="players-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">${playerCellsHtml}</div>
                 <div class="slot-footer">
                     ${nantaEnterBtnHtml}
                 </div>
