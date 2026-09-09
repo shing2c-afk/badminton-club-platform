@@ -76,8 +76,22 @@ document.addEventListener("DOMContentLoaded", () => {
     input.value = input.value.replace(/[^a-zA-Z가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
   };
 
-  window.validatePhoneInput = function(input) {
-    input.value = input.value.replace(/[^0-9]/g, '').slice(0, 11);
+  // 📌 로그인 창 전화번호 실시간 하이픈 적용을 위한 함수 추가
+  window.formatPhone = function(input) {
+    let value = input.value.replace(/\D/g, ''); // 숫자만 남기기
+    if (value.length > 11) value = value.slice(0, 11);
+
+    let formatted = '';
+    if (value.length < 4) {
+      formatted = value;
+    } else if (value.length < 8) {
+      formatted = value.slice(0, 3) + '-' + value.slice(3);
+    } else if (value.length < 11) {
+      formatted = value.slice(0, 3) + '-' + value.slice(3, 7) + '-' + value.slice(7);
+    } else {
+      formatted = value.slice(0, 3) + '-' + value.slice(3, 7) + '-' + value.slice(7, 11);
+    }
+    input.value = formatted;
   };
 
   window.validatePayCodeInput = function(input) {
@@ -125,7 +139,8 @@ document.addEventListener("DOMContentLoaded", () => {
     memberLoginForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = document.getElementById('memberName').value.trim();
-      const phone = document.getElementById('memberPhone').value.trim();
+      // 📌 하이픈(-)을 제거하여 순수 11자리 숫자로 변환 후 검증 및 전송
+      const phone = document.getElementById('memberPhone').value.trim().replace(/-/g, '');
 
       if (phone.length !== 11) {
         if (authMsg) authMsg.textContent = '전화번호 11자리를 정확히 입력해 주세요.';
@@ -161,7 +176,8 @@ document.addEventListener("DOMContentLoaded", () => {
     guestLoginForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = document.getElementById('guestName').value.trim();
-      const phone = document.getElementById('guestPhone').value.trim();
+      // 📌 하이픈(-)을 제거하여 순수 11자리 숫자로 변환 후 검증 및 전송
+      const phone = document.getElementById('guestPhone').value.trim().replace(/-/g, '');
       const payCode = document.getElementById('guestPayCode').value.trim();
 
       if (phone.length !== 11) {
@@ -194,4 +210,169 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
   }
+});
+
+// [추가] 정회원 가입 신청 제출 처리 함수
+async function handleRegisterSubmit(event) {
+    event.preventDefault();
+
+    const name = document.getElementById('regName').value.trim();
+    const phone = document.getElementById('regPhone').value.trim();
+    const gender = document.getElementById('regGender').value;
+    const birthDate = document.getElementById('regBirthDate').value;
+    const grade = document.getElementById('regGrade').value;
+    const msgDiv = document.getElementById('reg-msg');
+
+    msgDiv.textContent = '가입 신청 중입니다...';
+    msgDiv.style.color = '#3b82f6';
+
+    try {
+        const response = await fetch('/api/register-request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, phone, gender, birthDate, grade })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            msgDiv.textContent = '✨ 가입 신청이 완료되었습니다! 관리자 승인 후 로그인할 수 있습니다.';
+            msgDiv.style.color = '#10b981';
+            
+            // 2초 후 모달 창 닫기 및 폼 초기화
+            setTimeout(() => {
+                document.getElementById('registerForm').reset();
+                closeRegisterModal();
+                msgDiv.textContent = '';
+            }, 2000);
+        } else {
+            msgDiv.textContent = `❌ ${result.message || '가입 신청에 실패했습니다.'}`;
+            msgDiv.style.color = '#ff4d4f';
+        }
+    } catch (error) {
+        console.error('가입 신청 에러:', error);
+        msgDiv.textContent = '❌ 서버 통신 중 오류가 발생했습니다.';
+        msgDiv.style.color = '#ff4d4f';
+    }
+}
+// ==========================================
+// 팝업 알림(토스트 메시지)을 띄워주는 함수
+// ==========================================
+function showToast(message, isSuccess = true) {
+    // 기존에 이미 떠있는 토스트가 있다면 제거
+    const existingToast = document.getElementById('custom-toast');
+    if (existingToast) existingToast.remove();
+
+    // 토스트 요소 생성
+    const toast = document.createElement('div');
+    toast.id = 'custom-toast';
+    toast.textContent = message;
+    
+    // 스타일 지정 (화면 중앙 상단 또는 정중앙에 멋지게 표시)
+    toast.style.position = 'fixed';
+    toast.style.top = '20%';
+    toast.style.left = '50%';
+    toast.style.transform = 'translate(-50%, -50%)';
+    toast.style.backgroundColor = isSuccess ? '#10b981' : '#ef4444'; // 성공은 초록색, 실패는 빨간색
+    toast.style.color = '#ffffff';
+    toast.style.padding = '12px 24px';
+    toast.style.borderRadius = '8px';
+    toast.style.fontSize = '15px';
+    toast.style.fontWeight = 'bold';
+    toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    toast.style.zIndex = '2147483647';
+    toast.style.transition = 'opacity 0.3s ease';
+
+    document.body.appendChild(toast);
+
+    // 2초 뒤에 서서히 사라지면서 제거
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+// ==========================================
+// 정회원 가입 신청 폼 제출 처리 함수
+// ==========================================
+async function handleRegisterSubmit(event) {
+    event.preventDefault(); // 폼 제출로 인한 페이지 새로고침 방지
+
+    const formData = {
+        name: document.getElementById('regName').value.trim(),
+        phone: document.getElementById('regPhone').value.trim(),
+        gender: document.getElementById('regGender').value,
+        birthDate: document.getElementById('regBirthDate').value.trim(),
+        grade: document.getElementById('regGrade').value,
+        address: document.getElementById('regAddress').value.trim()
+    };
+
+    try {
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            // 📌 성공 시 예쁜 팝업 메시지 출력
+            showToast(result.message || '가입 신청이 완료되었습니다.', true);
+            
+            // 1.5초 후 모달 닫기 및 폼 초기화
+            setTimeout(() => {
+                closeRegisterModal();
+                document.getElementById('registerForm').reset();
+            }, 1500);
+        } else {
+            // 📌 실패 시 에러 팝업 메시지 출력
+            showToast(result.message || '가입 신청에 실패했습니다.', false);
+        }
+    } catch (error) {
+        console.error('가입 신청 통신 오류:', error);
+        showToast('서버와의 통신 중 오류가 발생했습니다.', false);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. 전화번호 실시간 자동 하이픈 (010-XXXX-XXXX)
+    const phoneInput = document.getElementById('regPhone');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, ''); // 숫자만 남기기
+            if (value.length > 11) value = value.slice(0, 11);
+
+            let formatted = '';
+            if (value.length < 4) {
+                formatted = value;
+            } else if (value.length < 8) {
+                formatted = value.slice(0, 3) + '-' + value.slice(3);
+            } else if (value.length < 11) {
+                formatted = value.slice(0, 3) + '-' + value.slice(3, 7) + '-' + value.slice(7);
+            } else {
+                formatted = value.slice(0, 3) + '-' + value.slice(3, 7) + '-' + value.slice(7, 11);
+            }
+            e.target.value = formatted;
+        });
+    }
+
+    // 2. 생년월일 실시간 자동 하이픈 (2000-01-01)
+    const birthInput = document.getElementById('regBirthDate');
+    if (birthInput) {
+        birthInput.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, ''); // 숫자만 남기기
+            if (value.length > 8) value = value.slice(0, 8);
+
+            let formatted = '';
+            if (value.length <= 4) {
+                formatted = value;
+            } else if (value.length <= 6) {
+                formatted = value.slice(0, 4) + '-' + value.slice(4);
+            } else {
+                formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+            }
+            e.target.value = formatted;
+        });
+    }
 });

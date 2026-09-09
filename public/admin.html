@@ -228,21 +228,30 @@
         <button class="btn-danger" onclick="handleClearCourt()">선택한 코트 강제 비우기</button>
     </div>
 
-    <!-- 📢 [추가] 관리자 공지사항 등록 섹션 -->
-<div class="admin-card" style="background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; color: white;">
-    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #f59e0b;">📢 새 공지사항 등록</h3>
-    <form id="noticeForm">
-        <div style="margin-bottom: 12px;">
-            <label style="display: block; font-size: 12px; color: #aaa; margin-bottom: 4px;">공지 제목</label>
-            <input type="text" id="noticeTitle" placeholder="제목을 입력하세요" required style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px;" />
-        </div>
-        <div style="margin-bottom: 12px;">
-            <label style="display: block; font-size: 12px; color: #aaa; margin-bottom: 4px;">공지 내용</label>
-            <textarea id="noticeContent" rows="4" placeholder="내용을 입력하세요" required style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px; resize: vertical;"></textarea>
-        </div>
-        <button type="submit" style="width: 100%; padding: 10px; background: #f59e0b; border: none; border-radius: 4px; color: #000; font-weight: bold; cursor: pointer;">공지사항 등록하기</button>
-    </form>
-    <div id="notice-msg" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
+    <!-- 📢 관리자 공지사항 등록 섹션 -->
+    <div class="admin-card" style="background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; color: white;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #f59e0b;">📢 새 공지사항 등록</h3>
+        <form id="noticeForm">
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; font-size: 12px; color: #aaa; margin-bottom: 4px;">공지 제목</label>
+                <input type="text" id="noticeTitle" placeholder="제목을 입력하세요" required style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px;" />
+            </div>
+            <div style="margin-bottom: 12px;">
+                <label style="display: block; font-size: 12px; color: #aaa; margin-bottom: 4px;">공지 내용</label>
+                <textarea id="noticeContent" rows="4" placeholder="내용을 입력하세요" required style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 4px; resize: vertical;"></textarea>
+            </div>
+            <button type="submit" style="width: 100%; padding: 10px; background: #f59e0b; border: none; border-radius: 4px; color: #000; font-weight: bold; cursor: pointer;">공지사항 등록하기</button>
+        </form>
+        <div id="notice-msg" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
+    </div>
+
+    <!-- 정회원 가입 승인 대기 관리 섹션 -->
+<div class="admin-section" style="margin-top: 20px; background: #1a1a1a; padding: 15px; border-radius: 8px; color: white;">
+    <h3 style="margin-bottom: 10px; font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 8px;">👥 정회원 가입 승인 대기 목록</h3>
+    <div id="pending-member-list" style="margin-top: 10px;">
+        <!-- 동적으로 대기 목록이 렌더링되는 영역 -->
+        <div style="font-size: 12px; color: #888; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>
+    </div>
 </div>
 
     <a href="/" class="btn-link">📱 사용자 메인 화면으로 돌아가기</a>
@@ -377,7 +386,6 @@
                         courtSelect.appendChild(optB);
                     }
                 }
-                // lesson 코트는 강제 비우기 대상에서 제외됨
             });
         }
 
@@ -589,45 +597,110 @@
     }
 
     document.getElementById('noticeForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
+        e.preventDefault();
 
-    const title = document.getElementById('noticeTitle').value.trim();
-    const content = document.getElementById('noticeContent').value.trim();
-    const msgDiv = document.getElementById('notice-msg');
+        const title = document.getElementById('noticeTitle').value.trim();
+        const content = document.getElementById('noticeContent').value.trim();
+        const msgDiv = document.getElementById('notice-msg');
 
-    if (!title || !content) {
-        msgDiv.style.color = '#ff4d4f';
-        msgDiv.textContent = '제목과 내용을 모두 입력해 주세요.';
-        return;
+        if (!title || !content) {
+            msgDiv.style.color = '#ff4d4f';
+            msgDiv.textContent = '제목과 내용을 모두 입력해 주세요.';
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/admin/notice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content, author: '관리자' })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                msgDiv.style.color = '#52c41a';
+                msgDiv.textContent = '✅ 공지사항이 성공적으로 등록되었습니다!';
+                document.getElementById('noticeForm').reset();
+
+                // 3초 뒤 메시지 초기화
+                setTimeout(() => { msgDiv.textContent = ''; }, 3000);
+            } else {
+                msgDiv.style.color = '#ff4d4f';
+                msgDiv.textContent = `❌ 등록 실패: ${result.message}`;
+            }
+        } catch (error) {
+            console.error('공지 등록 통신 오류:', error);
+            msgDiv.style.color = '#ff4d4f';
+            msgDiv.textContent = '❌ 서버 통신 중 오류가 발생했습니다.';
+        }
+    });
+
+    // ==========================================
+// 정회원 가입 신청 대기 목록 불러오기
+// ==========================================
+async function loadPendingMembers() {
+    try {
+        const response = await fetch('/api/admin/pending-members');
+        const result = await response.json();
+        
+        const container = document.getElementById('pending-member-list');
+        if (!container) return;
+
+        if (!result.success || !result.data || result.data.length === 0) {
+            container.innerHTML = '<div style="font-size: 12px; color: #888; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>';
+            return;
+        }
+
+        // 대기 목록을 순회하며 HTML 카드 생성
+        container.innerHTML = result.data.map(member => `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #333;">
+                <div>
+                    <strong style="font-size: 14px; color: #fff;">${member.name}</strong> 
+                    <span style="font-size: 12px; color: #aaa;">(${member.gender}, ${member.grade})</span><br>
+                    <span style="font-size: 11px; color: #888;">📞 ${member.phone} | 생년월일: ${member.birthDate}</span>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                    <button type="button" onclick="processApproval('${member.phone}', 'approve')" style="background: #10b981; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">승인</button>
+                    <button type="button" onclick="processApproval('${member.phone}', 'reject')" style="background: #ef4444; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">반려</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('대기 목록 로드 실패:', error);
     }
+}
+
+// ==========================================
+// 가입 신청 승인 또는 반려 처리 함수
+// ==========================================
+async function processApproval(phone, action) {
+    const actionText = action === 'approve' ? '승인' : '반려';
+    if (!confirm(`정말 이 가입 신청을 ${actionText}하시겠습니까?`)) return;
 
     try {
-        const response = await fetch('/api/admin/notice', {
+        const response = await fetch('/api/admin/approve-member', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, content, author: '관리자' })
+            body: JSON.stringify({ phone, action })
         });
-
+        
         const result = await response.json();
-
+        alert(result.message);
+        
         if (result.success) {
-            msgDiv.style.color = '#52c41a';
-            msgDiv.textContent = '✅ 공지사항이 성공적으로 등록되었습니다!';
-            document.getElementById('noticeForm').reset();
-
-            // 3초 뒤 메시지 초기화
-            setTimeout(() => { msgDiv.textContent = ''; }, 3000);
-        } else {
-            msgDiv.style.color = '#ff4d4f';
-            msgDiv.textContent = `❌ 등록 실패: ${result.message}`;
+            loadPendingMembers(); // 처리가 성공하면 목록 즉시 새로고침
         }
     } catch (error) {
-        console.error('공지 등록 통신 오류:', error);
-        msgDiv.style.color = '#ff4d4f';
-        msgDiv.textContent = '❌ 서버 통신 중 오류가 발생했습니다.';
+        console.error('승인 처리 통신 오류:', error);
+        alert('처리 중 오류가 발생했습니다.');
     }
-});
+}
 
+// 관리자 페이지 진입 시 자동으로 대기 목록 불러오기 실행
+document.addEventListener('DOMContentLoaded', function() {
+    loadPendingMembers();
+});
 </script>
 </body>
 </html>

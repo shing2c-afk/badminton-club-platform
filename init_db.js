@@ -18,38 +18,59 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 function initAndImportData() {
-    db.serialize(() => {
-        // 기존 테이블 삭제 후 재생성
-        db.run(`DROP TABLE IF EXISTS regular_members`, (err) => {
-            if (err) {
-                console.error('❌ 기존 테이블 삭제 실패:', err.message);
-                return;
-            }
+    // init_db.js 파일 내부의 테이블 생성 부분 수정
 
-            // [수정] ageGroup 컬럼 추가
-            db.run(`
-                CREATE TABLE regular_members (
-                    id TEXT PRIMARY KEY,
-                    type TEXT,
-                    name TEXT,
-                    phone TEXT,
-                    gender TEXT,
-                    birthDate TEXT,
-                    ageGroup TEXT,
-                    grade TEXT,
-                    address TEXT,
-                    joinedAt TEXT
-                )
-            `, (err) => {
-                if (err) {
-                    console.error('❌ 테이블 생성 실패:', err.message);
-                    return;
-                }
-                console.log('✅ regular_members 테이블 새로 생성 완료');
-                processExcelData();
-            });
-        });
+db.serialize(() => {
+    // 기존 정회원 테이블 삭제 후 재생성
+    db.run(`DROP TABLE IF EXISTS regular_members`);
+    
+    // 📌 [추가] 승인 대기 테이블도 기존에 있다면 삭제 후 재생성
+    db.run(`DROP TABLE IF EXISTS pending_members`);
+
+    // 1. 정회원 테이블 생성
+    db.run(`
+        CREATE TABLE regular_members (
+            id TEXT PRIMARY KEY,
+            type TEXT,
+            name TEXT,
+            phone TEXT,
+            gender TEXT,
+            birthDate TEXT,
+            ageGroup TEXT,
+            grade TEXT,
+            address TEXT,
+            joinedAt TEXT
+        )
+    `, (err) => {
+        if (err) {
+            console.error('❌ 정회원 테이블 생성 실패:', err.message);
+            return;
+        }
+        console.log('✅ regular_members 테이블 생성 완료');
     });
+
+    // 📌 2. [추가] 승인 대기 회원 테이블 생성
+    db.run(`
+        CREATE TABLE pending_members (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            phone TEXT,
+            gender TEXT,
+            birthDate TEXT,
+            ageGroup TEXT,
+            grade TEXT,
+            address TEXT,
+            requestedAt TEXT
+        )
+    `, (err) => {
+        if (err) {
+            console.error('❌ 승인 대기 테이블 생성 실패:', err.message);
+            return;
+        }
+        console.log('✅ pending_members (승인 대기) 테이블 생성 완료');
+        processExcelData();
+    });
+});
 }
 
 function processExcelData() {

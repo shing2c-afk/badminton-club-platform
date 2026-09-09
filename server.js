@@ -54,6 +54,171 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
+// 생년월일(YYYY-MM-DD)을 받아 '40대', '50대' 등의 연령대 문자열로 변환하는 함수
+function calculateAgeGroup(birthDateStr) {
+    if (!birthDateStr) return '기타';
+    const birthYear = new Date(birthDateStr).getFullYear();
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - birthYear;
+    const decade = Math.floor(age / 10) * 10;
+    return `${decade}대`;
+}
+
+// ==========================================
+// 정회원 가입 및 관리자 승인 관련 API
+// ==========================================
+
+// 1. 정회원 가입 신청 접수 API
+app.post('/api/register', async (req, res) => {
+    try {
+        const { name, phone, gender, birthDate, grade, address } = req.body; // 📌 address 받기
+
+        if (!name || !phone || !gender || !birthDate || !grade) {
+            return res.status(400).json({ success: false, message: '필수 항목을 모두 입력해주세요.' });
+        }
+
+        // 1단계: 이미 정회원(regular_members)으로 등록된 전화번호인지 확인
+        db.get(`SELECT * FROM regular_members WHERE phone = ?`, [phone], (err, existingMember) => {
+            if (existingMember) {
+                return res.status(400).json({ success: false, message: '이미 정회원으로 가입되어 있는 연락처입니다.' });
+            }
+
+            // 2단계: 이미 대기 목록(pending_registrations)에 신청되어 있는 전화번호인지 확인
+            db.get(`SELECT * FROM pending_registrations WHERE phone = ?`, [phone], (err, existingPending) => {
+                if (existingPending) {
+                    return res.status(400).json({ success: false, message: '이미 가입 대기 중인 연락처입니다. 관리자 승인을 기다려주세요.' });
+                }
+
+                // 3단계: 중복이 없다면 주소까지 포함해서 대기 테이블에 INSERT
+                const createdAt = new Date().toISOString();
+                const query = `INSERT INTO pending_registrations (name, phone, gender, birthDate, grade, address, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`;
+                
+                db.run(query, [name, phone, gender, birthDate, grade, address || '', createdAt], function(err) {
+                    if (err) {
+                        console.error('가입 신청 DB 저장 오류:', err.message);
+                        return res.status(500).json({ success: false, message: '데이터베이스 저장 중 오류가 발생했습니다.' });
+                    }
+                    res.json({ success: true, message: '정회원 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.' });
+                });
+            });
+        });
+    } catch (error) {
+        console.error('가입 신청 오류:', error);
+        res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 2. 관리자용: 가입 신청 대기 목록 조회 API (SQLite 조회 구현)
+app.get('/api/admin/pending-members', async (req, res) => {
+    try {
+        db.all(`SELECT * FROM pending_registrations WHERE status = 'pending'`, [], (err, rows) => {
+            if (err) {
+                console.error('대기 목록 조회 오류:', err.message);
+                return res.status(500).json({ success: false, message: '데이터베이스 조회 중 오류가 발생했습니다.' });
+            }
+            res.json({ success: true, data: rows });
+        });
+    } catch (error) {
+        console.error('대기 목록 조회 오류:', error);
+        res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 3. 관리자용: 가입 신청 승인 처리 API
+app.post('/api/admin/approve-member', async (req, res) => {
+    try {
+        const { phone, action } = req.body;
+
+        if (!phone || !action) {
+            return res.status(400).json({ success: false, message: '잘못된 요청입니다.' });
+        }
+
+        if (action === 'approve') {
+            db.get(`SELECT * FROM pending_registrations WHERE phone = ?`, [phone], (err, user) => {
+                if (err || !user) {
+                    return res.status(404).json({ success: false, message: '신청 내역을 찾을 수 없습니다.' });
+                }
+
+                // 생년월일로부터 연령대 자동 계산
+                const ageGroup = calculateAgeGroup(user.birthDate);
+                const memberId = 'reg_' + Date.now();
+                
+                const insertQuery = `
+                    INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt)
+                    VALUES (?, 'regular', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `;
+                const joinedAt = new Date().toISOString().split('T')[0];
+
+                // 📌 user.address 값을 정회원 테이블에 함께 투입
+                db.run(insertQuery, [
+                    memberId, 
+                    user.name, 
+                    user.phone, 
+                    user.name, 
+                    user.gender, 
+                    user.birthDate, 
+                    ageGroup, 
+                    user.grade, 
+                    user.phone, 
+                    user.address, 
+                    joinedAt
+                ], (insertErr) => {
+                    if (insertErr) {
+                        console.error('정회원 테이블 등록 오류:', insertErr.message);
+                        if (insertErr.message.includes('UNIQUE constraint failed')) {
+                            return res.status(400).json({ success: false, message: '이미 동일한 연락처로 등록된 정회원이 존재합니다.' });
+                        }
+                        return res.status(500).json({ success: false, message: '정회원 등록 중 오류가 발생했습니다.' });
+                    }
+
+                    db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], () => {
+                        res.json({ success: true, message: '정회원 가입이 승인되었습니다.' });
+                    });
+                });
+            });
+        } else {
+            db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], (err) => {
+                if (err) {
+                    return res.status(500).json({ success: false, message: '반려 처리 중 오류가 발생했습니다.' });
+                }
+                res.json({ success: true, message: '가입 신청이 반려되었습니다.' });
+            });
+        }
+    } catch (error) {
+        console.error('가입 승인 처리 오류:', error);
+        res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// 4. 정회원 탈퇴 처리 API
+app.post('/api/member/withdraw', async (req, res) => {
+    try {
+        const { phone, name } = req.body; // 식별을 위해 전화번호나 이름 사용
+
+        if (!phone) {
+            return res.status(400).json({ success: false, message: '회원 정보를 확인할 수 없습니다.' });
+        }
+
+        // regular_members 테이블에서 해당 회원 삭제
+        db.run(`DELETE FROM regular_members WHERE phone = ?`, [phone], function(err) {
+            if (err) {
+                console.error('회원 탈퇴 처리 오류:', err.message);
+                return res.status(500).json({ success: false, message: '탈퇴 처리 중 서버 오류가 발생했습니다.' });
+            }
+
+            if (this.changes === 0) {
+                return res.status(404).json({ success: false, message: '해당하는 회원 정보를 찾을 수 없습니다.' });
+            }
+
+            console.log(`🗑️ [회원 탈퇴 완료]: 전화번호 ${phone}`);
+            res.json({ success: true, message: '정상적으로 탈퇴 처리되었습니다.' });
+        });
+    } catch (error) {
+        console.error('회원 탈퇴 오류:', error);
+        res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+    }
+});
+
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
@@ -80,12 +245,15 @@ function initDatabase() {
             birthDate TEXT,
             ageGroup TEXT,
             grade TEXT,
-            phone TEXT,
+            phone TEXT UNIQUE,
             address TEXT,
             joinedAt TEXT
         )
     `, (err) => {
         if (!err) {
+            // 혹시 기존 테이블에 컬럼이 없어 에러가 나는 경우를 대비해 안전하게 컬럼 추가 시도
+            db.run(`ALTER TABLE regular_members ADD COLUMN username TEXT`, () => {});
+            db.run(`ALTER TABLE regular_members ADD COLUMN password TEXT`, () => {});
             checkAndInsertDefaultData();
         }
     });
@@ -101,7 +269,26 @@ function initDatabase() {
         )
     `);
 
-    // 📌 [추가] 공지사항 테이블 생성 및 기본 더미 공지 삽입
+    // 📌 정회원 가입 신청 대기 테이블 생성
+    db.run(`
+        CREATE TABLE IF NOT EXISTS pending_registrations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            phone TEXT UNIQUE NOT NULL,
+            gender TEXT,
+            birthDate TEXT,
+            grade TEXT,
+            address TEXT, 
+            status TEXT DEFAULT 'pending',
+            createdAt TEXT NOT NULL
+        )
+    `, (err) => {
+        if (!err) {
+            // 📌 테이블이 이미 있거나 해서 address 컬럼이 누락된 경우를 대비해 안전하게 추가 시도
+            db.run(`ALTER TABLE pending_registrations ADD COLUMN address TEXT`, () => {});
+        }
+    });
+
     db.run(`
         CREATE TABLE IF NOT EXISTS notices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -283,6 +470,52 @@ app.post('/api/login', (req, res) => {
         } else {
             res.json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
         }
+    });
+});
+
+// 📌 [추가] 정회원 가입 신청 API
+app.post('/api/register-request', (req, res) => {
+    const { name, phone, gender, birthDate, grade } = req.body;
+
+    if (!name || !phone || !birthDate) {
+        return res.status(400).json({ message: '필수 입력 항목(이름, 전화번호, 생년월일)이 누락되었습니다.' });
+    }
+
+    // 중복 전화번호 체크 (정회원 테이블 또는 대기 테이블에 이미 존재하는지 확인)
+    db.get(`SELECT phone FROM regular_members WHERE phone = ? UNION SELECT phone FROM pending_members WHERE phone = ?`, [phone, phone], (err, row) => {
+        if (err) {
+            console.error('DB 조회 에러:', err.message);
+            return res.status(500).json({ message: '서버 내부 오류가 발생했습니다.' });
+        }
+
+        if (row) {
+            return res.status(400).json({ message: '이미 가입되었거나 신청된 전화번호입니다.' });
+        }
+
+        // 고유 ID 생성 (예: pending_시간밀리초) 및 연령대 계산
+        const pendingId = 'pending_' + Date.now();
+        const birthYear = parseInt(String(birthDate).substring(0, 4)) || 1990;
+        const currentYear = new Date().getFullYear(); // 2026 등 현재 연도
+        const age = currentYear - birthYear;
+        const ageGroup = `${Math.floor(age / 10) * 10}대`;
+        
+        const address = '경기도 파주시'; // 기본 주소 설정 (필요시 폼에서 받도록 확장 가능)
+        const requestedAt = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+        const query = `
+            INSERT INTO pending_members (id, name, phone, gender, birthDate, ageGroup, grade, address, requestedAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        db.run(query, [pendingId, name, phone, gender, birthDate, ageGroup, grade, address, requestedAt], function(err) {
+            if (err) {
+                console.error('승인 대기 데이터 저장 실패:', err.message);
+                return res.status(500).json({ message: '가입 신청 저장에 실패했습니다.' });
+            }
+
+            console.log(`📝 [가입신청] ${name} (${phone}) 님이 가입을 신청했습니다.`);
+            res.status(200).json({ success: true, message: '가입 신청이 성공적으로 접수되었습니다.' });
+        });
     });
 });
 
@@ -945,7 +1178,7 @@ socket.on('registerTV', () => {
             // 3. 타이머 및 매핑 정리
             delete disconnectTimers[userKey];
             delete userSockets[currentSocketId];
-        }, 25 * 60 * 1000); // 25분 유예 시간
+        }, 30 * 60 * 1000); // 30분 유예 시간(정해진 시간동안 웹 동작이 없으면 자동 로그아웃처리)
         
     } else {
         console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
