@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>회원 통합 관리 - 배드민턴 클럽</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h2 { border-bottom: 2px solid #444; padding-bottom: 10px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .back-btn { background: #555; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; text-decoration: none; }
+        .back-btn:hover { background: #777; }
+        
+        .section-box { background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .section-box h3 { margin-top: 0; font-size: 16px; color: #ddd; }
+        
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn-blue { background: #0275d8; color: #fff; }
+        .btn-green { background: #5cb85c; color: #fff; }
+        .btn-red { background: #d9534f; color: #fff; }
+        .btn:hover { opacity: 0.9; }
+
+        .search-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .search-box input { padding: 8px; width: 250px; background: #121212; color: #fff; border: 1px solid #444; border-radius: 4px; }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+        th, td { padding: 12px; border-bottom: 1px solid #333; }
+        th { background: #333; color: #eee; }
+        tr:hover { background: #252525; }
+        .text-center { text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>
+        <span>👥 회원 통합 관리 모듈</span>
+        <a href="/admin.html" class="back-btn">⬅ 관리자 메인으로</a>
+    </h2>
+
+    <!-- 1. 엑셀 업로드 / 다운로드 영역 -->
+    <div class="section-box">
+        <h3>📊 회원 명부 엑셀(CSV) 관리</h3>
+        <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+            <button id="downloadCsvBtn" class="btn btn-blue">📥 전체 회원 명부 다운로드 (CSV)</button>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" style="color: #ccc;">
+                <button id="uploadExcelBtn" class="btn btn-green">📤 일괄 업로드 등록</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 회원 목록, 검색 및 개별 관리 영역 -->
+    <div class="section-box">
+        <div class="search-box">
+            <span>등록된 정회원 목록 (<span id="memberCount">0</span>명)</span>
+            <input type="text" id="memberSearch" placeholder="이름 또는 전화번호 검색...">
+        </div>
+        
+        <div style="max-height: 500px; overflow-y: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>이름</th>
+                        <th>연락처</th>
+                        <th>성별</th>
+                        <th>연령대</th>
+                        <th>급수</th>
+                        <th>주소</th>
+                        <th class="text-center">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="adminMemberListBody">
+                    <tr><td colspan="7" class="text-center" style="color: #888;">데이터를 불러오는 중...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let allMembers = []; // 전체 회원 데이터 캐싱
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadMemberList();
+
+        // 실시간 검색 기능 (이름 또는 전화번호 매칭)
+        document.getElementById('memberSearch').addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase();
+            const filtered = allMembers.filter(m => 
+                (m.name && m.name.toLowerCase().includes(keyword)) || 
+                (m.phone && m.phone.includes(keyword))
+            );
+            renderTable(filtered);
+        });
+
+        // 엑셀 다운로드 버튼 이벤트
+        document.getElementById('downloadCsvBtn').addEventListener('click', () => {
+            window.location.href = '/api/admin/download-excel';
+        });
+
+        // 일괄 업로드 버튼 이벤트
+        document.getElementById('uploadExcelBtn').addEventListener('click', async () => {
+            const fileInput = document.getElementById('excelFile');
+            if (!fileInput.files[0]) {
+                alert('업로드할 파일을 선택해주세요.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('excelFile', fileInput.files[0]);
+
+            try {
+                const res = await fetch('/api/admin/upload-excel', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await res.json();
+                alert(result.message || '처리되었습니다.');
+                if (result.success) {
+                    loadMemberList();
+                    fileInput.value = '';
+                }
+            } catch (err) {
+                console.error('업로드 오류:', err);
+                alert('파일 업로드 중 오류가 발생했습니다.');
+            }
+        });
+    });
+
+    // 회원 목록 불러오기
+    async function loadMemberList() {
+        try {
+            const res = await fetch('/api/members');
+            allMembers = await res.json();
+            renderTable(allMembers);
+        } catch (error) {
+            console.error('회원 목록 조회 실패:', error);
+        }
+    }
+
+    // 테이블 렌더링 함수
+    function renderTable(members) {
+        const tbody = document.getElementById('adminMemberListBody');
+        document.getElementById('memberCount').innerText = members.length;
+        tbody.innerHTML = '';
+
+        if (members.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center" style="color: #888;">검색된 회원이 없습니다.</td></tr>`;
+            return;
+        }
+
+        members.forEach(m => {
+            const tr = document.createElement('tr');
+            tr.id = `row-${m.id}`;
+            tr.innerHTML = `
+                <td>${m.name}</td>
+                <td id="td-phone-${m.id}">${m.phone || '-'}</td>
+                <td>${m.gender || '-'}</td>
+                <td>${m.ageGroup || '-'}</td>
+                <td id="td-grade-${m.id}">${m.grade || '-'}</td>
+                <td id="td-address-${m.id}">${m.address || '-'}</td>
+                <td class="text-center" style="white-space: nowrap;">
+                    <button class="btn btn-blue" id="btn-edit-${m.id}" style="margin-right: 4px;" onclick="enableEdit('${m.id}', '${m.phone || ''}', '${m.grade || ''}', '${m.address || ''}')">수정</button>
+                    <button class="btn btn-red" onclick="withdrawMember('${m.phone}', '${m.name}')">탈퇴</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // [수정] 버튼 클릭 시, 해당 행만 입력 폼으로 전환
+    function enableEdit(id, phone, grade, address) {
+        document.getElementById(`td-phone-${id}`).innerHTML = `<input type="text" id="edit-phone-${id}" value="${phone}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:110px;">`;
+        document.getElementById(`td-grade-${id}`).innerHTML = `<input type="text" id="edit-grade-${id}" value="${grade}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:50px;">`;
+        document.getElementById(`td-address-${id}`).innerHTML = `<input type="text" id="edit-address-${id}" value="${address}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:150px;">`;
+
+        const btnContainer = document.getElementById(`btn-edit-${id}`);
+        btnContainer.innerText = '저장';
+        btnContainer.className = 'btn btn-green';
+        btnContainer.setAttribute('onclick', `saveMember('${id}')`);
+    }
+
+    // 수정된 내용 서버로 저장
+    async function saveMember(id) {
+        const phone = document.getElementById(`edit-phone-${id}`).value;
+        const grade = document.getElementById(`edit-grade-${id}`).value;
+        const address = document.getElementById(`edit-address-${id}`).value;
+
+        try {
+            const res = await fetch('/api/member/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, phone, grade, address })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                alert(result.message);
+                loadMemberList(); // 최신 목록 새로고침
+            } else {
+                alert(result.message || '수정에 실패했습니다.');
+            }
+        } catch (err) {
+            console.error('수정 요청 오류:', err);
+            alert('서버 통신 중 오류가 발생했습니다.');
+        }
+    }
+
+    // 회원 탈퇴 처리
+    async function withdrawMember(phone, name) {
+        if (!confirm(`정말로 '${name}' 회원을 탈퇴 처리하시겠습니까?`)) return;
+
+        try {
+            const res = await fetch('/api/member/withdraw', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                alert(result.message);
+                loadMemberList();
+            } else {
+                alert(result.message || '탈퇴 처리에 실패했습니다.');
+            }
+        } catch (err) {
+            console.error('탈퇴 요청 오류:', err);
+            alert('서버 통신 중 오류가 발생했습니다.');
+        }
+    }
+</script>
+
+</body>
+</html>

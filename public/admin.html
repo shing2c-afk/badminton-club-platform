@@ -254,6 +254,13 @@
     </div>
 </div>
 
+<!-- admin.html에 배치할 회원 관리 페이지 이동 카드 -->
+<div class="admin-menu-card" style="background: #1e1e1e; padding: 25px; border-radius: 8px; margin-top: 20px; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+    <h3 style="margin-top: 0; color: #fff; font-size: 18px;">👥 회원 통합 관리 시스템</h3>
+    <p style="color: #aaa; font-size: 14px; margin-bottom: 20px;">회원 명부 엑셀 업로드 및 다운로드, 전체 회원 목록 조회, 검색 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
+    <a href="/admin-member.html" style="display: inline-block; padding: 10px 20px; background: #0275d8; color: #fff; text-decoration: none; border-radius: 4px; font-weight: bold; transition: background 0.2s;">회원 관리 페이지로 이동 ➡</a>
+</div>
+
     <a href="/" class="btn-link">📱 사용자 메인 화면으로 돌아가기</a>
 
 <script>
@@ -697,10 +704,87 @@ async function processApproval(phone, action) {
     }
 }
 
-// 관리자 페이지 진입 시 자동으로 대기 목록 불러오기 실행
-document.addEventListener('DOMContentLoaded', function() {
-    loadPendingMembers();
+// ==========================================
+// 페이지 로드 시 초기화 및 3초 주기 자동 실시간 갱신 설정
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    loadPendingMembers(); // 최초 진입 시 실행
+
+    // 3초마다 자동으로 대기 목록 새로고침
+    setInterval(() => {
+        loadPendingMembers();
+    }, 3000);
 });
+
+// ==========================================
+// 1. 전체 회원 명부 CSV 다운로드 기능
+// ==========================================
+async function downloadMemberCSV() {
+    try {
+        const response = await fetch('/api/admin/members/export');
+        const result = await response.json();
+
+        if (!result.success || !result.members.length) {
+            alert('다운로드할 회원 데이터가 없습니다.');
+            return;
+        }
+
+        let csvContent = '\uFEFF이름,전화번호,성별,생년월일,급수,주소\n';
+        
+        result.members.forEach(m => {
+            csvContent += `"${m.name}","${m.phone}","${m.gender || ''}","${m.birthDate || ''}","${m.grade || ''}","${m.address || ''}"\n`;
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `badminton_members_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        alert('회원 명부가 다운로드되었습니다.');
+    } catch (error) {
+        console.error('다운로드 오류:', error);
+        alert('다운로드 중 오류가 발생했습니다.');
+    }
+}
+
+// ==========================================
+// 2. 엑셀(CSV) 파일 일괄 업로드 기능
+// ==========================================
+async function uploadMemberExcel() {
+    const fileInput = document.getElementById('memberCsvFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert('업로드할 파일을 먼저 선택해 주세요!');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('csvFile', file);
+
+    try {
+        const response = await fetch('/api/admin/members/import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(result.message || '회원이 성공적으로 일괄 등록되었습니다.');
+            fileInput.value = ''; // 파일 선택창 초기화
+        } else {
+            alert(result.message || '업로드에 실패했습니다.');
+        }
+    } catch (error) {
+        console.error('업로드 통신 오류:', error);
+        alert('서버 통신 중 오류가 발생했습니다.');
+    }
+}
 </script>
 </body>
 </html>

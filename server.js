@@ -7,6 +7,11 @@ const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
+const fs = require('fs');
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
+const readline = require('readline');
+
 // 유저네임과 소켓 ID를 매핑하기 위한 객체 (이미 있다면 이어서 사용하세요)
 // 유저별 연결 끊김 유예 타이머를 저장할 객체
 const disconnectTimers = {};
@@ -139,30 +144,33 @@ app.post('/api/admin/approve-member', async (req, res) => {
                     return res.status(404).json({ success: false, message: '신청 내역을 찾을 수 없습니다.' });
                 }
 
-                // 생년월일로부터 연령대 자동 계산
+                // 생년월일로부터 연령대 자동 계산 ("50대" 형태로 반환된다고 가정)
                 const ageGroup = calculateAgeGroup(user.birthDate);
                 const memberId = 'reg_' + Date.now();
+                const joinedAt = new Date().toISOString().split('T')[0];
                 
                 const insertQuery = `
                     INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt)
-                    VALUES (?, 'regular', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `;
-                const joinedAt = new Date().toISOString().split('T')[0];
 
-                // 📌 user.address 값을 정회원 테이블에 함께 투입
-                db.run(insertQuery, [
-                    memberId, 
-                    user.name, 
-                    user.phone, 
-                    user.name, 
-                    user.gender, 
-                    user.birthDate, 
-                    ageGroup, 
-                    user.grade, 
-                    user.phone, 
-                    user.address, 
-                    joinedAt
-                ], (insertErr) => {
+                // 물음표 12개에 대응하는 파라미터 12개 정확히 매칭
+                const params = [
+                    memberId,           // 1. id
+                    'regular',          // 2. type
+                    user.phone,         // 3. username
+                    '1234',             // 4. password
+                    user.name,          // 5. name
+                    user.gender,        // 6. gender
+                    user.birthDate,     // 7. birthDate
+                    ageGroup,           // 8. ageGroup
+                    user.grade,         // 9. grade
+                    user.phone,         // 10. phone
+                    user.address || '', // 11. address
+                    joinedAt            // 12. joinedAt
+                ];
+
+                db.run(insertQuery, params, (insertErr) => {
                     if (insertErr) {
                         console.error('정회원 테이블 등록 오류:', insertErr.message);
                         if (insertErr.message.includes('UNIQUE constraint failed')) {
@@ -190,28 +198,31 @@ app.post('/api/admin/approve-member', async (req, res) => {
     }
 });
 
-// 4. 정회원 탈퇴 처리 API
+// 4. 정회원 탈퇴 처리 API (수정본)
 app.post('/api/member/withdraw', async (req, res) => {
     try {
-        const { phone, name } = req.body; // 식별을 위해 전화번호나 이름 사용
+        const { phone, name } = req.body;
 
         if (!phone) {
             return res.status(400).json({ success: false, message: '회원 정보를 확인할 수 없습니다.' });
         }
 
-        // regular_members 테이블에서 해당 회원 삭제
+        // 1. regular_members 테이블에서 삭제
         db.run(`DELETE FROM regular_members WHERE phone = ?`, [phone], function(err) {
             if (err) {
-                console.error('회원 탈퇴 처리 오류:', err.message);
+                console.error('회원 탈퇴 처리 오류 (regular_members):', err.message);
                 return res.status(500).json({ success: false, message: '탈퇴 처리 중 서버 오류가 발생했습니다.' });
             }
 
-            if (this.changes === 0) {
-                return res.status(404).json({ success: false, message: '해당하는 회원 정보를 찾을 수 없습니다.' });
-            }
+            // 2. 혹시 남아있을 수 있는 pending_registrations 대기/신청 데이터도 함께 깔끔하게 삭제
+            db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], (pendingErr) => {
+                if (pendingErr) {
+                    console.error('대기 테이블 정리 오류:', pendingErr.message);
+                }
 
-            console.log(`🗑️ [회원 탈퇴 완료]: 전화번호 ${phone}`);
-            res.json({ success: true, message: '정상적으로 탈퇴 처리되었습니다.' });
+                console.log(`🗑️ [회원 탈퇴 및 이력 정리 완료]: 전화번호 ${phone}`);
+                res.json({ success: true, message: '정상적으로 탈퇴 처리되었습니다.' });
+            });
         });
     } catch (error) {
         console.error('회원 탈퇴 오류:', error);
@@ -427,28 +438,39 @@ app.get('/notice', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'notice.html'));
 });
 
-// 정회원 목록 조회 API
+// 1. 회원 목록 조회 API (어드민 드롭다운 및 게임방 연동용)
 app.get('/api/members', (req, res) => {
-    db.all(`SELECT id, username, name, gender, ageGroup, grade, address FROM regular_members`, (err, rows) => {
+    // 📌 ageGroup 계산을 위해 birthDate 컬럼을 함께 조회합니다.
+    db.all(`SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address FROM regular_members`, (err, rows) => {
         if (err) {
             console.error('❌ 회원 목록 조회 실패:', err.message);
-            res.status(500).json({ error: '데이터베이스 조회 실패' });
-        } else {
-            res.json(rows);
+            return res.status(500).json({ success: false, error: '데이터베이스 조회 실패', message: '회원 목록을 불러오지 못했습니다.' });
         }
+
+        // 📌 DB에 ageGroup이 누락되어 있거나 비어 있는 경우 생년월일(birthDate)로 실시간 계산
+        const processedRows = rows.map(member => {
+            if ((!member.ageGroup || member.ageGroup.trim() === '' || member.ageGroup === '/ /') && member.birthDate) {
+                member.ageGroup = calculateAgeGroup(member.birthDate);
+            }
+            return member;
+        });
+
+        res.json(processedRows);
     });
 });
 
-// 1. 회원 목록 조회 API (어드민 드롭다운 연동용)
-app.get('/api/members', (req, res) => {
-    db.all(`SELECT id, username, name, gender, ageGroup, grade, phone, address FROM regular_members`, (err, rows) => {
-        if (err) {
-            console.error('❌ 어드민 회원 목록 조회 실패:', err.message);
-            return res.status(500).json({ success: false, message: '회원 목록을 불러오지 못했습니다.' });
-        }
-        res.json(rows);
-    });
-});
+// 📌 연령대 계산 헬퍼 함수 (서버 내에 없다면 이 함수도 함께 추가해주세요)
+function calculateAgeGroup(birthDate) {
+    if (!birthDate) return '';
+    const birthYear = parseInt(birthDate.split('-')[0], 10);
+    if (isNaN(birthYear)) return '';
+
+    const currentYear = new Date().getFullYear();
+    const age = currentYear - birthYear;
+    const decade = Math.floor(age / 10) * 10;
+
+    return `${decade}대`; // 📌 반드시 뒤에 '대'가 붙어 있어야 합니다!
+}
 
 // 2. 로그인 처리 API
 app.post('/api/login', (req, res) => {
@@ -516,6 +538,20 @@ app.post('/api/register-request', (req, res) => {
             console.log(`📝 [가입신청] ${name} (${phone}) 님이 가입을 신청했습니다.`);
             res.status(200).json({ success: true, message: '가입 신청이 성공적으로 접수되었습니다.' });
         });
+    });
+});
+
+// 회원 정보 수정 API
+app.post('/api/member/update', (req, res) => {
+    const { id, phone, grade, address } = req.body;
+
+    const query = `UPDATE regular_members SET phone = ?, grade = ?, address = ? WHERE id = ?`;
+    db.run(query, [phone, grade, address], function(err) {
+        if (err) {
+            console.error('❌ 회원 정보 수정 실패:', err.message);
+            return res.status(500).json({ success: false, message: '수정 중 오류가 발생했습니다.' });
+        }
+        res.json({ success: true, message: '회원 정보가 수정되었습니다.' });
     });
 });
 
@@ -1657,6 +1693,88 @@ socket.on('registerTV', () => {
                 broadcastState();
             }
         }
+    });
+});
+
+// 파일 하단 (기존 API 라우트들 아래)
+app.get('/api/admin/members/export', (req, res) => {
+    db.all("SELECT * FROM regular_members", [], (err, rows) => {
+        if (err) {
+            console.error('회원 조회 에러:', err);
+            return res.json({ success: false, message: '데이터 조회 실패' });
+        }
+        res.json({ success: true, members: rows });
+    });
+});
+
+app.post('/api/admin/members/import', upload.single('csvFile'), async (req, res) => {
+    if (!req.file) {
+        return res.json({ success: false, message: '파일이 업로드되지 않았습니다.' });
+    }
+
+    const filePath = req.file.path;
+    const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+
+    let lineCount = 0;
+    let successCount = 0;
+
+    db.serialize(() => {
+        db.run("BEGIN TRANSACTION");
+        
+        // phone을 기준으로 충돌(Conflict)이 나면 기존 데이터를 UPDATE하는 강력한 문법
+        const stmt = db.prepare(`
+            INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, grade, phone, address, joinedAt) 
+            VALUES (?, 'regular', ?, '1234', ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+            ON CONFLICT(phone) DO UPDATE SET 
+                name = excluded.name,
+                gender = excluded.gender,
+                birthDate = excluded.birthDate,
+                grade = excluded.grade,
+                address = excluded.address
+        `);
+
+        rl.on('line', (line) => {
+            lineCount++;
+            if (lineCount === 1) return; // 첫 줄(제목 행) 건너뜀
+
+            const cols = line.split(',').map(val => val.replace(/^["']|["']$/g, '').trim());
+            if (cols.length >= 2 && cols[0] && cols[1]) {
+                const [name, phone, gender = '', birthDate = '', grade = '초심', address = ''] = cols;
+                
+                // 전화번호 숫자만 남긴 후, 앞의 0이 잘렸다면 복구
+                let cleanPhone = phone.replace(/[^0-9]/g, '');
+                if (cleanPhone.length === 10 && cleanPhone.startsWith('10')) {
+                    cleanPhone = '0' + cleanPhone;
+                }
+
+                // 고유 ID와 로그인용 username 생성 (전화번호 뒷자리나 타임스탬프 활용)
+                const uniqueId = 'reg_' + cleanPhone;
+                const username = 'user_' + cleanPhone;
+
+                stmt.run(uniqueId, username, name, gender, birthDate, grade, cleanPhone, address, (err) => {
+                    if (!err) {
+                        successCount++;
+                    } else {
+                        console.error('회원 일괄 등록 중 개별 행 에러:', err);
+                    }
+                });
+            }
+        });
+
+        rl.on('close', () => {
+            stmt.finalize();
+            db.run("COMMIT", (err) => {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+
+                if (err) {
+                    return res.json({ success: false, message: 'DB 저장 중 오류가 발생했습니다.' });
+                }
+                res.json({ success: true, message: `총 ${successCount}명의 회원이 등록(갱신)되었습니다.` });
+            });
+        });
     });
 });
 
