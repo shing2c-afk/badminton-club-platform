@@ -929,16 +929,16 @@ async function handleLogout() {
 
         if (rawUser) {
             try {
-                let username = rawUser;
+                let userData = rawUser;
                 try {
                     const parsed = JSON.parse(rawUser);
-                    if (parsed && parsed.username) username = parsed.username;
+                    if (parsed) userData = parsed; // 객체 전체를 전달하여 서버가 id와 name을 정확히 쓰도록 함
                 } catch (e) {}
 
                 await fetch('/api/logout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username })
+                    body: JSON.stringify({ user: userData }) // 키 이름을 user로 변경하여 명확히 전달
                 });
             } catch (err) {
                 console.error("❌ 로그아웃 서버 통신 에러:", err);
@@ -951,6 +951,8 @@ async function handleLogout() {
         }
 
         localStorage.removeItem("currentUser");
+        localStorage.removeItem("username");
+        sessionStorage.clear();
         location.reload(); 
     }
 }

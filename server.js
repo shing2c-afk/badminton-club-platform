@@ -563,13 +563,13 @@ async function cleanupUser(usernameOrObj) {
     let targetName = '';
 
     if (typeof usernameOrObj === 'object' && usernameOrObj !== null) {
-        targetId = usernameOrObj.id || '';
+        targetId = usernameOrObj.id || usernameOrObj.phone || '';
         targetName = usernameOrObj.name || '';
     } else if (typeof usernameOrObj === 'string') {
         if (usernameOrObj.trim().startsWith('{')) {
             try {
                 const parsed = JSON.parse(usernameOrObj);
-                targetId = parsed.id || '';
+                targetId = parsed.id || parsed.phone || '';
                 targetName = parsed.name || '';
             } catch (e) {
                 targetId = usernameOrObj;
@@ -583,26 +583,29 @@ async function cleanupUser(usernameOrObj) {
 
     console.log(`🧹 [청소 타겟 분석] 입력값:`, usernameOrObj);
 
-    // DB에서 해당 유저의 정확한 정보를 확실하게 조회 (존재하지 않는 username 컬럼 제거)
+    // DB에서 해당 유저의 정확한 정보(이름, ID 등)를 확실하게 조회
     let dbRow = null;
-    try {
-        dbRow = await new Promise((resolve, reject) => {
-            db.get(
-                `SELECT id, name FROM regular_members WHERE id = ? OR name = ?`, 
-                [targetId, targetName], 
-                (err, row) => {
-                    if (err) reject(err);
-                    else resolve(row || null);
-                }
-            );
-        });
-    } catch (e) {
-        console.error('❌ [청소 DB 조회 에러]:', e.message);
+    if (targetId === '010-0000-0000' || targetName === '관리자' || targetId === '관리자') {
+        dbRow = { id: '010-0000-0000', name: '관리자' };
+    } else {
+        try {
+            dbRow = await new Promise((resolve, reject) => {
+                db.get(
+                    `SELECT id, name FROM regular_members WHERE id = ? OR phone = ? OR name = ?`, 
+                    [targetId, targetId, targetName], 
+                    (err, row) => {
+                        if (err) reject(err);
+                        else resolve(row || null);
+                    }
+                );
+            });
+        } catch (e) {
+            console.error('❌ [청소 DB 조회 에러]:', e.message);
+        }
     }
 
     const realId = dbRow ? dbRow.id : targetId;
     const realName = dbRow ? dbRow.name : targetName;
-    const realUsername = realId; // 호환성 유지
 
     console.log(`🎯 [확정된 청소 대상] ID: "${realId}", Name: "${realName}"`);
 
@@ -689,10 +692,11 @@ async function cleanupUser(usernameOrObj) {
 
 // 4. 로그아웃 API
 app.post('/api/logout', async (req, res) => {
-    const { username } = req.body;
-    console.log(`🧹 [로그아웃 요청 수신] 유저 데이터 정리 중...`);
-    if (username) {
-        await cleanupUser(username);
+    const { username, user } = req.body;
+    const target = user || username;
+    console.log(`🧹 [로그아웃 요청 수신] 유저 데이터 정리 중...`, target);
+    if (target) {
+        await cleanupUser(target);
     }
     res.json({ success: true });
 });
@@ -1214,7 +1218,7 @@ socket.on('registerTV', () => {
             // 3. 타이머 및 매핑 정리
             delete disconnectTimers[userKey];
             delete userSockets[currentSocketId];
-        }, 30 * 60 * 1000); // 30분 유예 시간(정해진 시간동안 웹 동작이 없으면 자동 로그아웃처리)
+        }, 3 * 60 * 1000); // 3분 유예 시간(정해진 시간동안 웹 동작이 없으면 자동 로그아웃처리)
         
     } else {
         console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
