@@ -41,6 +41,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .card.danger-zone { border-color: rgba(239, 68, 68, 0.4); }
+        .card.cleaning-zone { border-color: rgba(56, 189, 248, 0.4); }
         
         .card-title { 
             font-size: 13.5px; 
@@ -71,6 +72,41 @@
         }
         .form-group input:focus, .form-group select:focus { border-color: #3b82f6; }
         .form-desc { font-size: 12px; color: #94a3b8; margin-bottom: 8px; line-height: 1.4; }
+
+        /* 청소 시간 입력 스타일 */
+        .cleaning-time-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #1f2937;
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            gap: 6px;
+        }
+        .time-select {
+            background: #111827;
+            border: 1px solid #374151;
+            color: #ffffff;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            outline: none;
+            cursor: pointer;
+        }
+        .cleaning-time-row span { font-size: 12px; color: #94a3b8; }
+        .cleaning-time-row input[type="time"] {
+            background: #111827;
+            border: 1px solid #374151;
+            color: #ffffff;
+            padding: 5px;
+            border-radius: 4px;
+            font-size: 12.5px;
+            outline: none;
+            width: 100px;
+            text-align: center;
+        }
 
         /* 코트 아이템 설정 */
         .court-item { 
@@ -145,13 +181,13 @@
             border-radius: 8px; 
             font-size: 13.5px; 
             margin-top: 14px; 
-            margin-bottom: 20px;
+            margin-bottom: 20px; 
             font-weight: bold; 
-            border: 1px solid #374151;
+            border: 1px solid #374151; 
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
-        .select-box {
+        .select-box { 
             width: 100%; 
             text-align: left; 
             padding: 9px; 
@@ -159,8 +195,8 @@
             background: #1f2937; 
             border: 1px solid #374151; 
             color: white; 
-            border-radius: 6px;
-            outline: none;
+            border-radius: 6px; 
+            outline: none; 
         }
         .select-box:focus { border-color: #3b82f6; }
     </style>
@@ -171,6 +207,7 @@
         <h1>⚙️ 운정배드민턴클럽 관리자 모드</h1>
     </div>
 
+    <!-- 1. 기본 환경 설정 카드 -->
     <div class="card">
         <div class="card-title"><span>⏰ 타이머 및 관리자 보안 설정</span></div>
         <div class="form-group">
@@ -188,6 +225,65 @@
         <button class="btn-primary" onclick="saveConfig()">환경 설정 저장</button>
     </div>
 
+    <!-- 🧹 2. 구장 청소 시간 & 자동 방송 설정 카드 (드롭다운 방식) -->
+    <div class="card cleaning-zone">
+        <div class="card-title"><span>🧹 구장 청소 시간 & 자동 방송 설정</span></div>
+        <p class="form-desc">설정된 청소 시간 동안에는 <strong>입장 및 난타 코트 타이머가 일시 정지</strong>되며, 시작과 종료 시점에 자동 안내방송이 송출됩니다. (사용하지 않는 슬롯은 '미사용' 선택)</p>
+        
+        <!-- 1차 청소 시간 -->
+        <div class="cleaning-time-row">
+            <span style="color: #38bdf8; font-weight: bold; min-width: 50px;">1차 청소</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <select id="clean-start-h-1" class="time-select"></select> :
+                <select id="clean-start-m-1" class="time-select"></select>
+            </div>
+            <span>~</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <select id="clean-end-h-1" class="time-select"></select> :
+                <select id="clean-end-m-1" class="time-select"></select>
+            </div>
+        </div>
+
+        <!-- 2차 청소 시간 -->
+        <div class="cleaning-time-row">
+            <span style="color: #38bdf8; font-weight: bold; min-width: 50px;">2차 청소</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <select id="clean-start-h-2" class="time-select"></select> :
+                <select id="clean-start-m-2" class="time-select"></select>
+            </div>
+            <span>~</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <select id="clean-end-h-2" class="time-select"></select> :
+                <select id="clean-end-m-2" class="time-select"></select>
+            </div>
+        </div>
+
+        <!-- 3차 청소 시간 -->
+        <div class="cleaning-time-row">
+            <span style="color: #38bdf8; font-weight: bold; min-width: 50px;">3차 청소</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <select id="clean-start-h-3" class="time-select"></select> :
+                <select id="clean-start-m-3" class="time-select"></select>
+            </div>
+            <span>~</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <select id="clean-end-h-3" class="time-select"></select> :
+                <select id="clean-end-m-3" class="time-select"></select>
+            </div>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <label style="font-size: 12px; color: #aaa; display: block; margin-bottom: 4px;">시작 안내 멘트</label>
+            <input type="text" id="clean-start-msg" style="width: 100%; background: #1f2937; border: 1px solid #374151; color: white; padding: 7px; border-radius: 6px; font-size: 12px; outline: none; margin-bottom: 8px;" placeholder="구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.">
+
+            <label style="font-size: 12px; color: #aaa; display: block; margin-bottom: 4px;">종료 안내 멘트</label>
+            <input type="text" id="clean-end-msg" style="width: 100%; background: #1f2937; border: 1px solid #374151; color: white; padding: 7px; border-radius: 6px; font-size: 12px; outline: none;" placeholder="구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.">
+        </div>
+
+        <button class="btn-primary" style="background: #0284c7; margin-top: 10px;" onclick="saveCleaningConfig()">청소 시간 및 방송 설정 저장</button>
+    </div>
+
+    <!-- 3. 코트 운영 현황 설정 카드 -->
     <div class="card">
         <div class="card-title">
             <span>🏸 코트 운영 현황 설정</span>
@@ -197,6 +293,7 @@
         <button class="btn-success" onclick="saveCourtsConfig()">코트 구성 저장 및 현장에 적용</button>
     </div>
 
+    <!-- 4. 강제 퇴장 위험 구역 -->
     <div class="card danger-zone">
         <div class="card-title danger"><span>🚨 회원 강제 퇴장 (대기열/참여 일괄 정리)</span></div>
         <div class="form-group" style="justify-content: stretch;">
@@ -207,6 +304,7 @@
         <button class="btn-danger" onclick="executeKickUser()">선택 회원 강제 퇴장 조치</button>
     </div>
 
+    <!-- 5. 방 폭파 위험 구역 -->
     <div class="card danger-zone">
         <div class="card-title danger"><span>💥 게임방 / 난타방 강제 종료 (폭파)</span></div>
         <div class="form-group" style="justify-content: stretch;">
@@ -217,6 +315,7 @@
         <button class="btn-danger" onclick="executeDeleteRoom()">선택한 방 강제 종료</button>
     </div>
 
+    <!-- 6. 코트 강제 비우기 -->
     <div class="card danger-zone">
         <div class="card-title danger"><span>🏸 코트 강제 비우기 (게임 / 난타)</span></div>
         <p class="form-desc">현재 진행 중이거나 점유된 코트를 강제 초기화하여 빈 코트로 만듭니다. (레슨 코트는 제외됩니다)</p>
@@ -228,7 +327,7 @@
         <button class="btn-danger" onclick="handleClearCourt()">선택한 코트 강제 비우기</button>
     </div>
 
-    <!-- 📢 관리자 공지사항 등록 섹션 -->
+    <!-- 7. 관리자 공지사항 등록 섹션 -->
     <div class="admin-card" style="background: #1e1e1e; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #333; color: white;">
         <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #f59e0b;">📢 새 공지사항 등록</h3>
         <form id="noticeForm">
@@ -245,21 +344,20 @@
         <div id="notice-msg" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
     </div>
 
-    <!-- 정회원 가입 승인 대기 관리 섹션 -->
-<div class="admin-section" style="margin-top: 20px; background: #1a1a1a; padding: 15px; border-radius: 8px; color: white;">
-    <h3 style="margin-bottom: 10px; font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 8px;">👥 정회원 가입 승인 대기 목록</h3>
-    <div id="pending-member-list" style="margin-top: 10px;">
-        <!-- 동적으로 대기 목록이 렌더링되는 영역 -->
-        <div style="font-size: 12px; color: #888; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>
+    <!-- 8. 정회원 가입 승인 대기 관리 섹션 -->
+    <div class="admin-section" style="margin-top: 20px; background: #1a1a1a; padding: 15px; border-radius: 8px; color: white;">
+        <h3 style="margin-bottom: 10px; font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 8px;">👥 정회원 가입 승인 대기 목록</h3>
+        <div id="pending-member-list" style="margin-top: 10px;">
+            <div style="font-size: 12px; color: #888; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>
+        </div>
     </div>
-</div>
 
-<!-- admin.html에 배치할 회원 관리 페이지 이동 카드 -->
-<div class="admin-menu-card" style="background: #1e1e1e; padding: 25px; border-radius: 8px; margin-top: 20px; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
-    <h3 style="margin-top: 0; color: #fff; font-size: 18px;">👥 회원 통합 관리 시스템</h3>
-    <p style="color: #aaa; font-size: 14px; margin-bottom: 20px;">회원 명부 엑셀 업로드 및 다운로드, 전체 회원 목록 조회, 검색 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
-    <a href="/admin-member.html" style="display: inline-block; padding: 10px 20px; background: #0275d8; color: #fff; text-decoration: none; border-radius: 4px; font-weight: bold; transition: background 0.2s;">회원 관리 페이지로 이동 ➡</a>
-</div>
+    <!-- 9. 회원 관리 페이지 이동 카드 -->
+    <div class="admin-menu-card" style="background: #1e1e1e; padding: 25px; border-radius: 8px; margin-top: 20px; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+        <h3 style="margin-top: 0; color: #fff; font-size: 18px;">👥 회원 통합 관리 시스템</h3>
+        <p style="color: #aaa; font-size: 14px; margin-bottom: 20px;">회원 명부 엑셀 업로드 및 다운로드, 전체 회원 목록 조회, 검색 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
+        <a href="/admin-member.html" style="display: inline-block; padding: 10px 20px; background: #0275d8; color: #fff; text-decoration: none; border-radius: 4px; font-weight: bold; transition: background 0.2s;">회원 관리 페이지로 이동 ➡</a>
+    </div>
 
     <a href="/" class="btn-link">📱 사용자 메인 화면으로 돌아가기</a>
 
@@ -284,11 +382,52 @@
             const nantaSec = data.config.NANTA_COURT_LIMIT_SEC || 900;
             
             if (!isInitialized) {
+                // 기존 기본 타이머 및 비밀번호 세팅
                 document.getElementById('entry-timeout').value = entrySec / 60;
                 document.getElementById('nanta-timeout').value = nantaSec / 60;
                 document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
+
+                // 🧹 드롭다운 옵션(00~23시, 00~59분) 먼저 생성
+                if (typeof initTimeSelectOptions === 'function') {
+                    initTimeSelectOptions();
+                }
+
+                // 🧹 청소 시간 드롭다운 값 매핑 세팅 (1차 ~ 3차)
+                const schedules = data.config.cleaningSchedules || [];
+                for (let i = 0; i < 3; i++) {
+                    const idx = i + 1;
+                    const startHEl = document.getElementById(`clean-start-h-${idx}`);
+                    const startMEl = document.getElementById(`clean-start-m-${idx}`);
+                    const endHEl = document.getElementById(`clean-end-h-${idx}`);
+                    const endMEl = document.getElementById(`clean-end-m-${idx}`);
+
+                    if (schedules[i] && schedules[i].start && schedules[i].end) {
+                        const [sH, sM] = schedules[i].start.split(':');
+                        const [eH, eM] = schedules[i].end.split(':');
+                        if (startHEl) startHEl.value = sH || '';
+                        if (startMEl) startMEl.value = sM || '';
+                        if (endHEl) endHEl.value = eH || '';
+                        if (endMEl) endMEl.value = eM || '';
+                    } else {
+                        if (startHEl) startHEl.value = '';
+                        if (startMEl) startMEl.value = '';
+                        if (endHEl) endHEl.value = '';
+                        if (endMEl) endMEl.value = '';
+                    }
+                }
+
+                // 📢 청소 시작/종료 안내 멘트 세팅
+                const startMsgEl = document.getElementById('clean-start-msg');
+                const endMsgEl = document.getElementById('clean-end-msg');
+                if (startMsgEl) {
+                    startMsgEl.value = data.config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+                }
+                if (endMsgEl) {
+                    endMsgEl.value = data.config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+                }
             }
         }
+
         if (data.courtsData && !isInitialized) {
             localCourts = JSON.parse(JSON.stringify(data.courtsData));
             renderCourtConfig();
@@ -297,6 +436,68 @@
         updateAdminDropdowns(data);
         isInitialized = true; 
     });
+
+    // 🧹 청소 시간 및 방송 멘트 저장 함수 (드롭다운 조합형)
+function saveCleaningConfig() {
+    const schedules = [];
+    
+    for (let i = 1; i <= 3; i++) {
+        const sH = document.getElementById(`clean-start-h-${i}`).value;
+        const sM = document.getElementById(`clean-start-m-${i}`).value;
+        const eH = document.getElementById(`clean-end-h-${i}`).value;
+        const eM = document.getElementById(`clean-end-m-${i}`).value;
+        
+        // 시작 시/분, 종료 시/분이 모두 선택된 슬롯만 저장 목록에 포함
+        if (sH && sM && eH && eM) {
+            const start = `${sH}:${sM}`;
+            const end = `${eH}:${eM}`;
+
+            if (start >= end) {
+                alert(`${i}차 청소 종료 시각(${end})은 시작 시각(${start})보다 늦어야 합니다.`);
+                return;
+            }
+            schedules.push({ start, end });
+        }
+    }
+
+    const startMsg = document.getElementById('clean-start-msg').value.trim();
+    const endMsg = document.getElementById('clean-end-msg').value.trim();
+
+    // 서버로 설정 전송 (기존 설정은 유지되고 청소 항목만 갱신됨)
+    socket.emit('updateConfig', {
+        cleaningSchedules: schedules,
+        cleaningStartMsg: startMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+        cleaningEndMsg: endMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
+    });
+
+    alert(`🧹 구장 청소 설정이 저장되었습니다. (등록된 청소: ${schedules.length}건)`);
+}
+
+   // 시(00~23)와 분(00~59) 셀렉트 박스 옵션 초기화 함수
+    function initTimeSelectOptions() {
+        for (let i = 1; i <= 3; i++) {
+            ['start', 'end'].forEach(type => {
+                const hourEl = document.getElementById(`clean-${type}-h-${i}`);
+                const minEl = document.getElementById(`clean-${type}-m-${i}`);
+
+                if (hourEl && hourEl.options.length === 0) {
+                    hourEl.innerHTML = '<option value="">--</option>';
+                    for (let h = 0; h < 24; h++) {
+                        const val = String(h).padStart(2, '0');
+                        hourEl.innerHTML += `<option value="${val}">${val}시</option>`;
+                    }
+                }
+
+                if (minEl && minEl.options.length === 0) {
+                    minEl.innerHTML = '<option value="">--</option>';
+                    for (let m = 0; m < 60; m += 1) { // 1분 단위 (또는 5분 단위: m += 5)
+                        const val = String(m).padStart(2, '0');
+                        minEl.innerHTML += `<option value="${val}">${val}분</option>`;
+                    }
+                }
+            });
+        }
+    }
 
     function updateAdminDropdowns(data) {
         const userSelect = document.getElementById('kick-user-select');
@@ -630,7 +831,6 @@
                 msgDiv.textContent = '✅ 공지사항이 성공적으로 등록되었습니다!';
                 document.getElementById('noticeForm').reset();
 
-                // 3초 뒤 메시지 초기화
                 setTimeout(() => { msgDiv.textContent = ''; }, 3000);
             } else {
                 msgDiv.style.color = '#ff4d4f';
@@ -643,148 +843,129 @@
         }
     });
 
-    // ==========================================
-// 정회원 가입 신청 대기 목록 불러오기
-// ==========================================
-async function loadPendingMembers() {
-    try {
-        const response = await fetch('/api/admin/pending-members');
-        const result = await response.json();
-        
-        const container = document.getElementById('pending-member-list');
-        if (!container) return;
+    async function loadPendingMembers() {
+        try {
+            const response = await fetch('/api/admin/pending-members');
+            const result = await response.json();
+            
+            const container = document.getElementById('pending-member-list');
+            if (!container) return;
 
-        if (!result.success || !result.data || result.data.length === 0) {
-            container.innerHTML = '<div style="font-size: 12px; color: #888; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>';
-            return;
-        }
+            if (!result.success || !result.data || result.data.length === 0) {
+                container.innerHTML = '<div style="font-size: 12px; color: #888; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>';
+                return;
+            }
 
-        // 대기 목록을 순회하며 HTML 카드 생성
-        container.innerHTML = result.data.map(member => `
-            <div style="display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #333;">
-                <div>
-                    <strong style="font-size: 14px; color: #fff;">${member.name}</strong> 
-                    <span style="font-size: 12px; color: #aaa;">(${member.gender}, ${member.grade})</span><br>
-                    <span style="font-size: 11px; color: #888;">📞 ${member.phone} | 생년월일: ${member.birthDate}</span>
+            container.innerHTML = result.data.map(member => `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; margin-bottom: 8px; border-radius: 4px; border: 1px solid #333;">
+                    <div>
+                        <strong style="font-size: 14px; color: #fff;">${member.name}</strong> 
+                        <span style="font-size: 12px; color: #aaa;">(${member.gender}, ${member.grade})</span><br>
+                        <span style="font-size: 11px; color: #888;">📞 ${member.phone} | 생년월일: ${member.birthDate}</span>
+                    </div>
+                    <div style="display: flex; gap: 6px;">
+                        <button type="button" onclick="processApproval('${member.phone}', 'approve')" style="background: #10b981; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">승인</button>
+                        <button type="button" onclick="processApproval('${member.phone}', 'reject')" style="background: #ef4444; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">반려</button>
+                    </div>
                 </div>
-                <div style="display: flex; gap: 6px;">
-                    <button type="button" onclick="processApproval('${member.phone}', 'approve')" style="background: #10b981; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">승인</button>
-                    <button type="button" onclick="processApproval('${member.phone}', 'reject')" style="background: #ef4444; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">반려</button>
-                </div>
-            </div>
-        `).join('');
-    } catch (error) {
-        console.error('대기 목록 로드 실패:', error);
-    }
-}
-
-// ==========================================
-// 가입 신청 승인 또는 반려 처리 함수
-// ==========================================
-async function processApproval(phone, action) {
-    const actionText = action === 'approve' ? '승인' : '반려';
-    if (!confirm(`정말 이 가입 신청을 ${actionText}하시겠습니까?`)) return;
-
-    try {
-        const response = await fetch('/api/admin/approve-member', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, action })
-        });
-        
-        const result = await response.json();
-        alert(result.message);
-        
-        if (result.success) {
-            loadPendingMembers(); // 처리가 성공하면 목록 즉시 새로고침
+            `).join('');
+        } catch (error) {
+            console.error('대기 목록 로드 실패:', error);
         }
-    } catch (error) {
-        console.error('승인 처리 통신 오류:', error);
-        alert('처리 중 오류가 발생했습니다.');
     }
-}
 
-// ==========================================
-// 페이지 로드 시 초기화 및 3초 주기 자동 실시간 갱신 설정
-// ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-    loadPendingMembers(); // 최초 진입 시 실행
+    async function processApproval(phone, action) {
+        const actionText = action === 'approve' ? '승인' : '반려';
+        if (!confirm(`정말 이 가입 신청을 ${actionText}하시겠습니까?`)) return;
 
-    // 3초마다 자동으로 대기 목록 새로고침
-    setInterval(() => {
+        try {
+            const response = await fetch('/api/admin/approve-member', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, action })
+            });
+            
+            const result = await response.json();
+            alert(result.message);
+            
+            if (result.success) {
+                loadPendingMembers();
+            }
+        } catch (error) {
+            console.error('승인 처리 통신 오류:', error);
+            alert('처리 중 오류가 발생했습니다.');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
         loadPendingMembers();
-    }, 3000);
-});
+        setInterval(() => {
+            loadPendingMembers();
+        }, 3000);
+    });
 
-// ==========================================
-// 1. 전체 회원 명부 CSV 다운로드 기능
-// ==========================================
-async function downloadMemberCSV() {
-    try {
-        const response = await fetch('/api/admin/members/export');
-        const result = await response.json();
+    async function downloadMemberCSV() {
+        try {
+            const response = await fetch('/api/admin/members/export');
+            const result = await response.json();
 
-        if (!result.success || !result.members.length) {
-            alert('다운로드할 회원 데이터가 없습니다.');
+            if (!result.success || !result.members.length) {
+                alert('다운로드할 회원 데이터가 없습니다.');
+                return;
+            }
+
+            let csvContent = '\uFEFF이름,전화번호,성별,생년월일,급수,주소\n';
+            result.members.forEach(m => {
+                csvContent += `"${m.name}","${m.phone}","${m.gender || ''}","${m.birthDate || ''}","${m.grade || ''}","${m.address || ''}"\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `badminton_members_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            alert('회원 명부가 다운로드되었습니다.');
+        } catch (error) {
+            console.error('다운로드 오류:', error);
+            alert('다운로드 중 오류가 발생했습니다.');
+        }
+    }
+
+    async function uploadMemberExcel() {
+        const fileInput = document.getElementById('memberCsvFile');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('업로드할 파일을 먼저 선택해 주세요!');
             return;
         }
 
-        let csvContent = '\uFEFF이름,전화번호,성별,생년월일,급수,주소\n';
-        
-        result.members.forEach(m => {
-            csvContent += `"${m.name}","${m.phone}","${m.gender || ''}","${m.birthDate || ''}","${m.grade || ''}","${m.address || ''}"\n`;
-        });
+        const formData = new FormData();
+        formData.append('csvFile', file);
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', `badminton_members_${new Date().toISOString().slice(0,10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+            const response = await fetch('/api/admin/members/import', {
+                method: 'POST',
+                body: formData
+            });
 
-        alert('회원 명부가 다운로드되었습니다.');
-    } catch (error) {
-        console.error('다운로드 오류:', error);
-        alert('다운로드 중 오류가 발생했습니다.');
-    }
-}
+            const result = await response.json();
 
-// ==========================================
-// 2. 엑셀(CSV) 파일 일괄 업로드 기능
-// ==========================================
-async function uploadMemberExcel() {
-    const fileInput = document.getElementById('memberCsvFile');
-    const file = fileInput.files[0];
-
-    if (!file) {
-        alert('업로드할 파일을 먼저 선택해 주세요!');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('csvFile', file);
-
-    try {
-        const response = await fetch('/api/admin/members/import', {
-            method: 'POST',
-            body: formData
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            alert(result.message || '회원이 성공적으로 일괄 등록되었습니다.');
-            fileInput.value = ''; // 파일 선택창 초기화
-        } else {
-            alert(result.message || '업로드에 실패했습니다.');
+            if (result.success) {
+                alert(result.message || '회원이 성공적으로 일괄 등록되었습니다.');
+                fileInput.value = '';
+            } else {
+                alert(result.message || '업로드에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('업로드 통신 오류:', error);
+            alert('서버 통신 중 오류가 발생했습니다.');
         }
-    } catch (error) {
-        console.error('업로드 통신 오류:', error);
-        alert('서버 통신 중 오류가 발생했습니다.');
     }
-}
 </script>
 </body>
 </html>

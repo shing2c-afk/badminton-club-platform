@@ -24,8 +24,38 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
 .noti-badge { background: #ef4444; color: white; font-size: 10px; font-weight: bold; border-radius: 10px; padding: 1px 5px; margin-left: 2px; }
 
-#toast-container { position: fixed; top: 55px; left: 50%; transform: translateX(-50%); z-index: 2000; display: flex; flex-direction: column; gap: 8px; width: 90%; max-width: 400px; pointer-events: none; }
-.toast-msg { background: rgba(30, 41, 59, 0.95); border: 1px solid #38bdf8; color: #ffffff; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: bold; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); text-align: center; animation: fadeInOut 3.5s forwards; }
+#toast-container {
+    position: fixed;
+    top: 25px; /* 모바일 상단 바 아래 보기 편한 위치로 소폭 조정 */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 95%;          /* 스마트폰 가로 폭의 95%를 시원하게 채움 */
+    max-width: 520px;     /* 가로 모드나 큰 화면에서도 균형 유지 */
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.toast-msg {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(26, 18, 11, 0.95); /* 묵직한 다크 브라운/앰버 */
+    border: 1.5px solid #f59e0b;         /* 경고/알림 골드 라인 */
+    color: #fef3c7;                      /* 부드러운 밝은 크림색 텍스트 */
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-size: 14.5px;
+    font-weight: 600;
+    line-height: 1.45;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(245, 158, 11, 0.3);
+    text-align: center;
+    word-break: keep-all;
+    animation: fadeInOut 10s forwards;
+}
+
 @keyframes fadeInOut {
     0% { opacity: 0; transform: translateY(-10px); }
     15% { opacity: 1; transform: translateY(0); }

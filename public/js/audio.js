@@ -19,7 +19,7 @@ window.cancelVoiceAnnouncement = function(announcementId) {
 
 /**
  * 음성 안내 요청 함수
- * @param {string} message - 안내 메시지
+ * @param {string|object} message - 안내 메시지 또는 안내 객체
  * @param {number} delaySeconds - 지연 시간 (초)
  * @param {string|number} announcementId - 코트 번호 등 타이머 구분을 위한 고유 ID (취소용)
  */
@@ -27,6 +27,12 @@ function playVoiceAnnouncement(message, delaySeconds = 0, announcementId = null)
     if (!('speechSynthesis' in window)) {
         console.warn('이 브라우저는 음성 합성을 지원하지 않는 브라우저입니다.');
         return;
+    }
+
+    // 💡 [수정 부분] 청소/공지 객체이거나 메시지가 객체로 넘어온 경우 순수 멘트만 추출
+    let actualMessage = message;
+    if (typeof message === 'object' && message !== null) {
+        actualMessage = message.message || message.text || '';
     }
 
     // 동일한 ID(코트)로 이미 대기 중인 타이머가 있다면 기존 타이머 초기화 (중복 예약 방지)
@@ -38,7 +44,7 @@ function playVoiceAnnouncement(message, delaySeconds = 0, announcementId = null)
     // 딜레이가 있는 경우 지정된 시간(초)만큼 대기한 후 큐에 등록
     if (delaySeconds > 0) {
         const timerId = setTimeout(() => {
-            audioQueue.push({ message });
+            audioQueue.push({ message: actualMessage });
             if (announcementId) pendingAnnouncements.delete(announcementId);
             processAudioQueue();
         }, delaySeconds * 1000);
@@ -50,7 +56,7 @@ function playVoiceAnnouncement(message, delaySeconds = 0, announcementId = null)
     }
 
     // 딜레이가 없는 즉시 재생인 경우 바로 큐에 등록
-    audioQueue.push({ message });
+    audioQueue.push({ message: actualMessage });
     processAudioQueue();
 }
 
@@ -80,7 +86,7 @@ function executeSpeech(message, onComplete) {
         window.speechSynthesis.resume();
     }
 
-    let cleanMessage = message
+    let cleanMessage = String(message || '')
         .replace(/안내\s*말씀\s*드립니다[\.!]?\s*/g, '')
         .trim();
 

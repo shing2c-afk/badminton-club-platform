@@ -43,6 +43,57 @@
         
         .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 5px 8px; border-radius: 4px; font-size: 18px; font-weight: bold; color: #ffffff; }
         .empty-queue-text { color: #52607d; font-size: 15px; font-weight: bold; padding: 4px; }
+        /* 🖥️ TV 전광판 전용 와이드 팝업 스타일 */
+#tv-cleaning-popup {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 86vw;               /* TV 가로 폭의 86%를 차지하는 널찍한 크기 */
+    max-width: 1650px;
+    background: rgba(15, 23, 42, 0.96);
+    border: 5px solid #38bdf8; /* 청소 시작 기본 테두리 */
+    border-radius: 28px;
+    padding: 45px 50px;
+    text-align: center;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(56, 189, 248, 0.4);
+    z-index: 99999;
+    animation: tvPopupFadeIn 0.35s ease-out;
+}
+
+#tv-cleaning-popup.cleaning-start {
+    border-color: #f59e0b; /* 시작은 주황/골드 강조 */
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 50px rgba(245, 158, 11, 0.5);
+}
+
+#tv-cleaning-popup.cleaning-end {
+    border-color: #10b981; /* 종료는 산뜻한 에메랄드 그린 */
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 50px rgba(16, 185, 129, 0.5);
+}
+
+.tv-popup-title {
+    font-size: 3.4rem;
+    font-weight: 900;
+    margin-bottom: 25px;
+    letter-spacing: -1px;
+}
+
+.cleaning-start .tv-popup-title { color: #f59e0b; }
+.cleaning-end .tv-popup-title { color: #34d399; }
+
+.tv-popup-desc {
+    font-size: 2.3rem;
+    font-weight: 700;
+    color: #f8fafc;
+    line-height: 1.5;
+    word-break: keep-all;
+}
+
+@keyframes tvPopupFadeIn {
+    from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
     </style>
     <script src="/js/audio.js"></script>
 </head>
@@ -319,18 +370,50 @@ if (typeof socket !== 'undefined') {
         }
     });
 
+    let tvCleanTimer = null;
+    socket.on('tvCleaningAlert', (data) => {
+        const popup = document.getElementById('tv-cleaning-popup');
+        const titleEl = document.getElementById('tv-clean-title');
+        const descEl = document.getElementById('tv-clean-desc');
+
+        if (!popup || !titleEl || !descEl) return;
+
+        titleEl.textContent = data.title || '🧹 구장 청소 안내';
+        descEl.innerHTML = (data.message || '').replace(/\n/g, '<br>');
+
+        popup.className = (data.type === 'start') ? 'cleaning-start' : 'cleaning-end';
+        popup.style.display = 'block';
+
+        if (tvCleanTimer) clearTimeout(tvCleanTimer);
+        // 설정된 시간(예: 60초) 동안 화면 중앙에 큼직하게 띄운 뒤 자동 종료
+        tvCleanTimer = setTimeout(() => {
+            popup.style.display = 'none';
+        }, data.duration || 60000);
+    });
+
     socket.on('requestVoiceAnnouncement', (data) => {
         console.log('[Socket Debug] 서버로부터 음성 요청 수신됨:', data);
+        if (!data) return;
+
+        // 🧹 [핵심] 공지 / 청소 방송 분기 처리
+        // matchType이 '공지'이거나 message 내용이 있으면 멘트 원문만 단독 방송!
+        if (data.matchType === '공지' || data.isBroadcast || data.message) {
+            const broadcastText = data.message || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+            playVoiceAnnouncement(broadcastText, 0, 'broadcast-cleaning');
+            return; // ⛔ 아래의 "회원님은 ... 코트로 입장해 주세요"로 절대 내려가지 않음!
+        }
+
+        // 🏸 일반 게임 / 난타 입장 안내일 때만 아래 코드가 실행됨
         const { courtNumber, names, matchType } = data;
-        const namesString = names.join(', ');
+        const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
 
         const numMap = {
             '1': '일', '2': '이', '3': '삼', '4': '사', 
             '5': '오', '6': '육', '7': '칠', '8': '팔', '9': '구'
         };
-        const readableCourtNum = numMap[String(courtNumber)] || courtNumber;
+        const readableCourtNum = numMap[String(courtNumber)] || (courtNumber ? `${courtNumber} 번` : '');
 
-        const announcementText = `${namesString} 회원님은, ${readableCourtNum} 번, ${matchType} 코트로, 입장해 주세요.`;
+        const announcementText = `${namesString} 회원님은, ${readableCourtNum}, ${matchType || '게임'} 코트로, 입장해 주세요.`;
         
         playVoiceAnnouncement(announcementText, 0, courtNumber);
     });
@@ -505,5 +588,10 @@ function formatPlayersHorizontal(players) {
     return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join(' ');
 }
 </script>
+<!-- 🖥️ TV 전광판 전용 청소 안내 대형 팝업 -->
+<div id="tv-cleaning-popup">
+    <div id="tv-clean-title" class="tv-popup-title">🧹 구장 청소 시간</div>
+    <div id="tv-clean-desc" class="tv-popup-desc">안내 메시지가 여기에 표시됩니다.</div>
+</div>
 </body>
 </html>

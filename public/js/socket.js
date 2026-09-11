@@ -20,11 +20,30 @@ socket.on('connect', () => {
     }
 });
 
-// 소켓 실시간 이벤트 수신
-socket.on('toastAlert', (msg) => {
-    if (typeof showToast === 'function') {
-        showToast(msg);
+// 📱 스마트폰 토스트 팝업 수신 및 렌더링
+socket.on('toastAlert', (message) => {
+    // 1. 알림 컨테이너가 없으면 동적으로 생성
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
     }
+
+    // 2. 토스트 요소 생성 (style.css의 널찍해진 .toast-msg 스타일 적용)
+    const toast = document.createElement('div');
+    toast.className = 'toast-msg';
+    toast.innerHTML = message;
+
+    // 3. 화면 상단에 띄우기
+    container.appendChild(toast);
+
+    // 4. 애니메이션 종료 시점(10초 뒤)에 화면에서 자동 제거
+    setTimeout(() => {
+        if (toast && toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 10000);
 });
 
 socket.on('stateUpdated', (data) => {

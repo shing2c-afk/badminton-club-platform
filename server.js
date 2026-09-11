@@ -23,6 +23,7 @@ const UserDictionary = require('./userDictionary'); // 파일 경로에 맞게 �
 // 서버 전용 음성 안내 큐 및 상태 관리 변수
 let serverAudioQueue = [];
 let isVoicePlayingOnServer = false;
+let isCleaningTime = false;
 // ==========================================
 // 🔊 서버 음성 큐 처리 프로세서 (약 10초 간격 순차 발송)
 // ==========================================
@@ -876,6 +877,111 @@ function getValidPlayers(playersArr) {
 setInterval(() => {
     const now = Date.now();
 
+    // -------------------------------------------------------------
+    // 🧹 [신규] 구장 청소 시간 감지, 음성 안내 송출 및 타이머 동결 처리
+    // -------------------------------------------------------------
+    const nowObj = new Date();
+    const currentHHMM = `${String(nowObj.getHours()).padStart(2, '0')}:${String(nowObj.getMinutes()).padStart(2, '0')}`;
+
+    const schedules = config.cleaningSchedules || [];
+    // 현재 시각이 등록된 청소 구간(start <= 현재 < end)에 속하는지 판별
+    const activeSchedule = schedules.find(s => currentHHMM >= s.start && currentHHMM < s.end);
+
+    // 1) 청소 시작 시점 감지
+    if (activeSchedule && !isCleaningTime) {
+        isCleaningTime = true;
+
+        // 관리자가 설정한 시작 멘트 가져오기 (없으면 기본값)
+        const startMsg = config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+
+        // 음성 큐
+        serverAudioQueue.push({
+            matchType: '공지',
+            names: [],
+            message: startMsg
+        });
+
+        // 📱 [수정] 스마트폰 팝업에도 관리자가 수정한 멘트(startMsg)를 전송
+        io.emit('toastAlert', `🧹 ${startMsg}`);
+
+        // 🖥️ TV 전광판 대형 팝업 전송
+        io.to('tv-room').emit('tvCleaningAlert', {
+            type: 'start',
+            title: '🧹 구장 청소 및 코트 정비 시간',
+            message: startMsg,
+            duration: 10000
+        });
+
+        if (typeof addNotification === 'function') {
+            addNotification(`🧹 [구장 청소 시작] ${startMsg}`);
+        }
+    }
+
+    // 2) 청소 종료 시점 감지
+    if (!activeSchedule && isCleaningTime) {
+        isCleaningTime = false;
+
+        // 관리자가 설정한 종료 멘트 가져오기 (없으면 기본값)
+        const endMsg = config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+
+        // 음성 큐
+        serverAudioQueue.push({
+            matchType: '공지',
+            names: [],
+            message: endMsg
+        });
+
+        // 📱 [수정] 스마트폰 팝업에도 관리자가 수정한 멘트(endMsg)를 전송
+        io.emit('toastAlert', `🏸 ${endMsg}`);
+
+        // 🖥️ TV 전광판 대형 팝업 전송
+        io.to('tv-room').emit('tvCleaningAlert', {
+            type: 'end',
+            title: '🏸 구장 청소 완료 안내',
+            message: endMsg,
+            duration: 8000
+        });
+
+        if (typeof addNotification === 'function') {
+            addNotification(`✅ [구장 청소 종료] ${endMsg}`);
+        }
+    }
+
+    // 3) 청소 진행 중: 모든 타이머의 기준 시각을 매초 1초씩 뒤로 밀어 카운트다운 완전 동결
+    if (isCleaningTime) {
+        // 게임 대기방 입장 타이머 동결
+        if (Array.isArray(gameQueue)) {
+            gameQueue.forEach(slot => {
+                if (slot.fullAt) slot.fullAt += 1000;
+            });
+        }
+
+        // 난타 대기방 입장 타이머 동결
+        if (Array.isArray(nantaQueue)) {
+            nantaQueue.forEach(slot => {
+                if (slot.fullAt) slot.fullAt += 1000;
+            });
+        }
+
+        // 진행 중인 난타 코트 이용시간 동결
+        if (Array.isArray(courtsData)) {
+            courtsData.forEach(court => {
+                if (court.type === 'nanta') {
+                    ['sideA', 'sideB'].forEach(side => {
+                        if (court[side] && !court[side].isEmpty && court[side].startTime) {
+                            court[side].startTime += 1000;
+                        }
+                    });
+                }
+            });
+        }
+
+        // 전광판 화면에 동결된 잔여시간 그대로 상태 전송 후 아래 카운트다운 로직은 스킵
+        broadcastState();
+        return;
+    }
+    // -------------------------------------------------------------
+
     const emptyGameCourtsCount = courtsData.filter(c => c.type === 'game' && c.isEmpty).length;
     let activeTimerCount = 0;
 
@@ -911,7 +1017,7 @@ setInterval(() => {
                     matchType: '게임'
                 });
 
-                // 📱 [추가] 해당 대기방 회원들에게 입장 촉구 팝업 전송
+                // 📱 해당 대기방 회원들에게 입장 촉구 팝업 전송
                 io.emit('entryPopupAlert', {
                     matchType: '게임',
                     courtNumber: courtNum,
@@ -1000,7 +1106,7 @@ setInterval(() => {
                     matchType: '난타'
                 });
 
-                // 📱 [추가] 해당 대기방 회원들에게 입장 촉구 팝업 전송
+                // 📱 해당 대기방 회원들에게 입장 촉구 팝업 전송
                 io.emit('entryPopupAlert', {
                     matchType: '난타',
                     courtNumber: targetCourtNum,
@@ -1223,7 +1329,7 @@ socket.on('disconnect', () => {
             // 3. 타이머 및 매핑 정리
             delete disconnectTimers[userKey];
             delete userSockets[currentSocketId];
-        }, 3 * 60 * 1000); // 3분 유예 시간(정해진 시간동안 웹 동작이 없으면 자동 로그아웃처리)
+        }, 30 * 60 * 1000); // 30분 유예 시간(정해진 시간동안 웹 동작이 없으면 자동 로그아웃처리)
         
     } else {
         console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
@@ -1247,6 +1353,17 @@ socket.on('disconnect', () => {
                 if (newConfig.NANTA_COURT_LIMIT_SEC !== undefined) config.NANTA_COURT_LIMIT_SEC = newConfig.NANTA_COURT_LIMIT_SEC;
                 if (newConfig.ADMIN_PASSWORD !== undefined && newConfig.ADMIN_PASSWORD.trim() !== '') {
                     config.ADMIN_PASSWORD = newConfig.ADMIN_PASSWORD;
+                }
+
+                // 🧹 구장 청소 스케줄 및 안내 방송 멘트 저장
+                if (newConfig.cleaningSchedules !== undefined) {
+                    config.cleaningSchedules = newConfig.cleaningSchedules;
+                }
+                if (newConfig.cleaningStartMsg !== undefined) {
+                    config.cleaningStartMsg = newConfig.cleaningStartMsg;
+                }
+                if (newConfig.cleaningEndMsg !== undefined) {
+                    config.cleaningEndMsg = newConfig.cleaningEndMsg;
                 }
             }
             broadcastState();
