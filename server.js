@@ -6,7 +6,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-
+// 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
+const activeUserSockets = new Map();
 const fs = require('fs');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
@@ -1154,46 +1155,36 @@ socket.on('registerTV', () => {
         notifications: notifications
     });
 
-   socket.on('registerUserSession', (userData) => {
-        if (userData) {
-            // 객체든 문자열이든 안전한 문자열 식별자(userKey) 추출
-            let userKey = '';
-            if (typeof userData === 'object' && userData !== null) {
-                userKey = userData.id || userData.username || userData.name || '';
-            } else {
-                userKey = String(userData);
-            }
+   socket.on('registerUserSession', (username) => {
+    if (!username) return;
 
-            if (!userKey) {
-                console.log(`❌ [세션 등록 실패] 유효한 유저 식별자를 찾을 수 없습니다.`);
-                return;
-            }
+    const cleanUsername = String(username).split('/')[0].trim();
 
-            // 만약 유예 시간이 지나서 만료된 유저 명단에 있는 아이디라면?
-            if (expiredUsers[userKey]) {
-                console.log(`🚫 [세션 만료 차단] 유저 [${userKey}]님은 유예 시간 초과로 만료되어 강제 로그아웃됩니다.`);
-                
-                // 클라이언트로 강제 로그아웃 신호 전송
-                socket.emit('forceLogout', { username: userKey, reason: 'timeout' });
-                
-                // 만료 명단에서 제거
-                delete expiredUsers[userKey];
-                return; // 로그인 등록을 더 이상 진행하지 않음
-            }
+    // 💡 이미 다른 브라우저/기기에서 접속 중인 소켓이 있는 경우
+    if (activeUserSockets.has(cleanUsername)) {
+        const oldSocketId = activeUserSockets.get(cleanUsername);
 
-            socket.username = userData;
-            userSockets[socket.id] = userKey;
-            
-            // 정상적인 재접속인 경우 타이머 취소
-            if (disconnectTimers[userKey]) {
-                clearTimeout(disconnectTimers[userKey]);
-                delete disconnectTimers[userKey];
-                console.log(`🔄 [재접속 성공] 유저 [${userKey}]님이 유예 시간 내에 돌아와 대기열 유지가 확정되었습니다.`);
-            }
-
-            console.log(`👤 [소켓 등록] 유저 ${userKey}의 소켓(ID: ${socket.id})이 매핑되었습니다.`);
+        // 이전 소켓이 지금 접속한 소켓과 다를 때만 이전 브라우저 강제 로그아웃
+        if (oldSocketId !== socket.id) {
+            io.to(oldSocketId).emit('forceLogout', {
+                username: cleanUsername,
+                reason: 'duplicate_login',
+                message: '다른 기기 또는 브라우저에서 로그인하여 현재 세션이 종료되었습니다.'
+            });
         }
-    });
+    }
+
+    // 현재 접속한 소켓 ID로 갱신
+    activeUserSockets.set(cleanUsername, socket.id);
+    socket.username = cleanUsername;
+});
+
+// 연결 종료 시 맵에서 정리
+socket.on('disconnect', () => {
+    if (socket.username && activeUserSockets.get(socket.username) === socket.id) {
+        activeUserSockets.delete(socket.username);
+    }
+});
 
     socket.on('disconnect', () => {
     const rawUser = userSockets[socket.id] || socket.username;

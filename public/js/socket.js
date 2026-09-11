@@ -225,41 +225,48 @@ window.requestClearNantaCourt = function(courtId, side) {
     }
 };
 
-// 서버로부터 강제 로그아웃 신호를 받았을 때
+// 서버로부터 강제 로그아웃 신호를 받았을 때 (중복 로그인 차단 및 세션 만료 공용)
 if (typeof socket !== 'undefined' && socket) {
     socket.on('forceLogout', (data) => {
         const savedUser = localStorage.getItem("currentUser");
-        
         let targetMatch = false;
+
+        const targetUser = (data.username || '').split('/')[0].trim();
+
         if (savedUser) {
             try {
                 const parsedUser = JSON.parse(savedUser);
-                if (
-                    parsedUser.username === data.username || 
-                    parsedUser.name === data.username || 
-                    parsedUser.id === data.username || 
-                    parsedUser.phone === data.username
-                ) {
+                const localName = (parsedUser.name || parsedUser.username || parsedUser.id || '').split('/')[0].trim();
+                const localPhone = (parsedUser.phone || '').trim();
+
+                if (localName === targetUser || localPhone === targetUser || parsedUser.username === targetUser) {
                     targetMatch = true;
                 }
             } catch (e) {
-                if (savedUser === data.username) {
+                const rawClean = savedUser.split('/')[0].trim();
+                if (rawClean === targetUser) {
                     targetMatch = true;
                 }
             }
         } else {
+            // 로컬스토리지에 정보가 없다면 안전하게 대상 일치로 간주
             targetMatch = true;
         }
 
         if (targetMatch) {
-            console.warn('⚠️ [강제 로그아웃] 유예 시간 초과로 세션이 만료되었습니다.');
+            console.warn('⚠️ [강제 로그아웃]', data.reason || '세션 만료');
             
+            // 1. 세션 및 로컬 저장소 완전 초기화
             localStorage.removeItem("currentUser");
             localStorage.removeItem("username");
+            localStorage.removeItem("userName");
             sessionStorage.clear();
             
-            alert('장시간 미접속으로 인해 세션이 만료되었습니다. 처음 화면으로 이동합니다.');
+            // 2. 사유에 따른 맞춤 안내 (중복 로그인 안내 또는 기본 세션 만료 안내)
+            const alertText = data.message || '다른 기기 또는 브라우저에서 로그인되어 현재 연결이 종료되었습니다.';
+            alert(alertText);
             
+            // 3. 페이지 새로고침하여 로그인 화면으로 리셋
             window.location.reload(); 
         }
     });
