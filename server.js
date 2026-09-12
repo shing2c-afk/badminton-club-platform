@@ -1145,22 +1145,44 @@ setInterval(() => {
                 if (court[side] && !court[side].isEmpty && court[side].startTime) {
                     const elapsed = Math.floor((now - court[side].startTime) / 1000);
                     court[side].remainingSeconds = Math.max(0, config.NANTA_COURT_LIMIT_SEC - elapsed);
+                    
+      // 💡 난타 종료 임박(60초 전) 처리 부분
+if (court[side].remainingSeconds === 60 && !court[side].warned1Min) {
+    court[side].warned1Min = true; // 중복 방송 방지 플래그
+    
+    const sideName = (side === 'sideA') ? 'A면' : 'B면';
+    
+    // 🚀 서버 음성 큐에 안내 푸시 (이 안에서 음성과 팝업이 순서대로 함께 처리됨)
+    serverAudioQueue.push({
+        courtNumber: court.id,
+        names: [], 
+        matchType: '난타1분전',
+        message: `${court.id}번 코트 ${sideName} 난타 이용 시간이 잠시 후 종료됩니다. 다음 대기자를 위해 정리를 준비해 주시기 바랍니다.`
+    });
 
-                    if (court[side].remainingSeconds === 0) {
-                        const exitedPlayers = court[side].players;
-                        court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
-                        addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`);
+    // ❌ (삭제) 중복 팝업을 유발하던 직접 emit 코드는 제거합니다!
+    // io.to('tv-room').emit('tvPopupAlert', { ... });
 
-                        const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
-                        if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
-                            const applyType = court.nextType;
-                            court.type = applyType;
-                            court.isEmpty = (applyType !== 'lesson');
-                            court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
-                            delete court.sideA;
-                            delete court.sideB;
-                        }
-                    }
+    addNotification(`⏰ [난타 임박] ${court.id}번 코트 (${sideName}) 이용 시간 1분 전 (종료 준비 안내 송출)`);
+}
+
+if (court[side].remainingSeconds === 0) {
+    const exitedPlayers = court[side].players;
+    // 💡 초기화할 때 warned1Min도 반드시 false로 리셋되도록 설정
+    court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0, warned1Min: false };
+    
+    addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`);
+}
+
+const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
+if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
+    const applyType = court.nextType;
+    court.type = applyType;
+    court.isEmpty = (applyType !== 'lesson');
+    court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
+    delete court.sideA;
+    delete court.sideB;
+}
                 }
             });
         }
