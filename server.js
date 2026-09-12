@@ -1962,6 +1962,8 @@ app.post('/api/admin/members/import', upload.single('csvFile'), async (req, res)
 // ==========================
 // 7. 서버 실행
 // ==========================
+const PORT = process.env.PORT || 3000; // 👉 이 줄이 있는지 확인 및 추가해주세요!
+
 server.listen(PORT, () => {
-    console.log(`🚀 배드민턴 클럽 서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
+    console.log(`🚀 배드민턴 클럽 서버가 포트 ${PORT} 에서 실행 중입니다.`);
 });
