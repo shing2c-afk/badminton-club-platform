@@ -409,6 +409,39 @@ app.get('/api/notices', (req, res) => {
     });
 });
 
+// 2. 공지사항 수정 API
+app.put('/api/notices/:id', (req, res) => {
+    const noticeId = req.params.id;
+    const { title, content } = req.body;
+
+    db.run(`UPDATE notices SET title = ?, content = ? WHERE id = ?`, [title, content, noticeId], function(err) {
+        if (err) {
+            console.error('❌ 공지사항 수정 실패:', err.message);
+            return res.status(500).json({ success: false, message: '공지사항 수정에 실패했습니다.' });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ success: false, message: '해당 공지사항을 찾을 수 없습니다.' });
+        }
+        res.json({ success: true, message: '공지사항이 수정되었습니다.' });
+    });
+});
+
+// 3. 공지사항 삭제 API
+app.delete('/api/notices/:id', (req, res) => {
+    const noticeId = req.params.id;
+
+    db.run(`DELETE FROM notices WHERE id = ?`, [noticeId], function(err) {
+        if (err) {
+            console.error('❌ 공지사항 삭제 실패:', err.message);
+            return res.status(500).json({ success: false, message: '공지사항 삭제에 실패했습니다.' });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ success: false, message: '해당 공지사항을 찾을 수 없습니다.' });
+        }
+        res.json({ success: true, message: '공지사항이 삭제되었습니다.' });
+    });
+});
+
 // 2. 관리자용 공지사항 등록 API
 app.post('/api/admin/notice', (req, res) => {
     const { title, content, author } = req.body;

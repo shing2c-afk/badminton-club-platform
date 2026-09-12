@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>배드민턴 클럽 - 공지사항</title>
-    <!-- Tailwind CSS (프로젝트에서 사용 중인 스타일 프레임워크에 맞게 적용) -->
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -15,7 +14,7 @@
             <a href="/" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm">메인으로 돌아가기</a>
         </div>
 
-        <!-- 공지사항 리스트 영역 -->
+        <!-- 공지사항 리스트 영역 (조회 전용) -->
         <div id="notice-container" class="space-y-4">
             <div class="text-center py-10 text-gray-500">공지사항을 불러오는 중입니다...</div>
         </div>
@@ -28,19 +27,20 @@
                 const notices = await response.json();
                 
                 const container = document.getElementById('notice-container');
-                if (notices.length === 0) {
+                if (!notices || notices.length === 0) {
                     container.innerHTML = '<div class="bg-white p-6 rounded-lg shadow text-center text-gray-500">등록된 공지사항이 없습니다.</div>';
                     return;
                 }
 
+                // 회원 전용: 수정/삭제 버튼 없이 깔끔하게 출력
                 container.innerHTML = notices.map(notice => `
                     <div class="bg-white p-6 rounded-lg shadow hover:shadow-md transition">
                         <div class="flex justify-between items-start mb-2">
                             <h2 class="text-xl font-semibold text-gray-800">${escapeHtml(notice.title)}</h2>
-                            <span class="text-sm text-gray-400">${notice.createdAt}</span>
+                            <span class="text-sm text-gray-400">${notice.createdAt || ''}</span>
                         </div>
                         <p class="text-gray-600 whitespace-pre-line mt-3">${escapeHtml(notice.content)}</p>
-                        <div class="mt-4 text-right text-xs text-gray-400">작성자: ${escapeHtml(notice.author)}</div>
+                        <div class="mt-4 text-right text-xs text-gray-400">작성자: ${escapeHtml(notice.author || '관리자')}</div>
                     </div>
                 `).join('');
             } catch (error) {
@@ -49,9 +49,9 @@
             }
         }
 
-        // XSS 방지용 이스케이프 함수
         function escapeHtml(str) {
-            return str.replace(/[&<>'"]/g, 
+            if (!str) return '';
+            return String(str).replace(/[&<>'"]/g, 
                 tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
             );
         }
