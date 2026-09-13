@@ -1,6 +1,6 @@
 {
-  "name": "오늘민턴",
-  "short_name": "배드민턴클럽",
+  "name": "스마트민턴클럽",
+  "short_name": "오늘민턴",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0f19",
