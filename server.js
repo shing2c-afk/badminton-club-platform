@@ -236,9 +236,18 @@ app.post('/api/member/withdraw', async (req, res) => {
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
 const path = require('path');
+const fs = require('fs');
 
 // Render 환경이면 /data/badminton.db, 로컬이면 기존 경로 사용
 const dbPath = process.env.RENDER ? '/data/badminton.db' : path.resolve(__dirname, 'badminton.db');
+
+// Render 환경에서 /data 폴더가 없으면 자동으로 생성
+if (process.env.RENDER) {
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+}
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
