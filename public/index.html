@@ -8,8 +8,30 @@
     <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="css/auth.css">
     <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#0b0f19">
-<link rel="apple-touch-icon" href="/img/icon-192.png">
+    <meta name="theme-color" content="#0b0f19">
+    <link rel="apple-touch-icon" href="/img/icon-192.png">
+
+    <!-- 📌 [핵심] 다른 스크립트보다 먼저 실행되도록 head에 배치한 세련된 커스텀 알림 오버라이딩 -->
+    <script>
+      window.alert = function(message) {
+          const modal = document.getElementById('custom-alert-modal');
+          const msgEl = document.getElementById('custom-alert-message');
+          if (modal && msgEl) {
+              msgEl.innerText = message;
+              modal.style.display = 'flex';
+          } else {
+              // 모달이 아직 DOM에 로드되기 전 호출될 경우를 대비한 안전 장치
+              console.log("Alert:", message);
+          }
+      };
+
+      function closeCustomAlert() {
+          const modal = document.getElementById('custom-alert-modal');
+          if (modal) {
+              modal.style.display = 'none';
+          }
+      }
+    </script>
 </head>
 <body>
 <div id="court-alert-banner" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: white; padding: 15px 30px; border-radius: 8px; font-weight: bold; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 9999; text-align: center; transition: background-color 0.3s;">
@@ -46,7 +68,7 @@
         <button type="submit" class="btn-auth-submit" style="width: 100%; padding: 12px; background: #ff6600; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">정회원 로그인</button>
       </form>
       
-      <!-- 정회원 가입 안내 및 버튼 영역 (텍스트 한 줄, 아래에 더 큰 버튼 배치) -->
+      <!-- 정회원 가입 안내 및 버튼 영역 -->
       <div style="margin-top: 15px; text-align: center; position: relative; z-index: 2147483647;">
         <div style="color: #999; font-size: 12px; margin-bottom: 8px;">아직 정회원이 아니신가요?</div>
         <button type="button" id="register-btn" style="background: none; border: 1px solid #3b82f6; color: #3b82f6; font-size: 14px; font-weight: bold; padding: 8px 16px; border-radius: 4px; cursor: pointer; transition: background 0.2s, color 0.2s;">
@@ -54,7 +76,7 @@
         </button>
       </div>
 
-      <!-- 2. 일일회원 입장 폼 (초기 숨김) -->
+      <!-- 2. 일일회원 입장 폼 -->
       <form id="guestLoginForm" style="display: none;">
         <div class="input-group" style="margin-bottom: 12px; text-align: left;">
           <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">이름</label>
@@ -82,15 +104,15 @@
         <!-- 헤더 -->
       <div class="header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: #121212; border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
  
- <div class="header-left" style="font-size: 13px; font-weight: bold; color: #ffffff;">
+<div class="header-left" style="font-size: 13px; font-weight: bold; color: #ffffff;">
     <span id="user-display-name" style="color: #ffffff;">로그인 중...</span>
- </div>
-
- <div class="header-center" onclick="handleHome()" style="cursor: pointer; display: flex; align-items: center; justify-content: center; flex: 1; margin-left: 22px;">
- <span style="color: #f59e0b; font-size: 15px; font-weight: 900; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">운정배드민턴클럽</span>
 </div>
 
- <div class="header-right" style="display: flex; align-items: center; gap: 8px;">
+<div class="header-center" onclick="handleHome()" style="cursor: pointer; display: flex; align-items: center; justify-content: center; flex: 1; margin-left: 22px;">
+<span style="color: #f59e0b; font-size: 15px; font-weight: 900; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">운정배드민턴클럽</span>
+</div>
+
+<div class="header-right" style="display: flex; align-items: center; gap: 8px;">
     <button class="header-btn" onclick="openNotiModal()" style="position: relative; background: none; border: none; font-size: 14px; color: #ffffff; cursor: pointer;">
       🔔 <span class="noti-badge" id="noti-count" style="background: #ff4d4f; color: #ffffff; border-radius: 50%; padding: 2px 5px; font-size: 10px;">0</span>
     </button>
@@ -98,7 +120,7 @@
     <button class="header-btn" onclick="handleLogout()" style="font-size: 11px; padding: 4px 8px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; background: transparent; color: #ffffff; cursor: pointer;">
       로그아웃
     </button>
- </div>
+</div>
 
 </div>
 
@@ -156,7 +178,6 @@
 
 <!-- 정회원 가입 신청 모달 팝업 창 -->
 <div class="modal-overlay" id="register-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 2147483647; align-items: center; justify-content: center;">
-    <!-- 📌 padding을 20px에서 16px로 살짝 줄여서 상하 공간 최적화 -->
     <div class="modal-card" style="background: #1a1a1a; padding: 16px 20px; border-radius: 8px; width: 90%; max-width: 400px; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
         <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;">
             <span style="font-weight: bold; font-size: 16px;">📝 정회원 가입 신청</span>
@@ -206,37 +227,16 @@
 
             <button type="submit" style="width: 100%; padding: 10px; background: #10b981; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">가입 신청하기</button>
         </form>
-        <!-- 기존 고정 메시지 영역은 제거하고 아래의 깔끔한 팝업 토스트 기능 사용 -->
     </div>
 </div>
 
-<!-- 커스텀 알림 모달창 -->
-<div id="custom-alert-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; justify-content: center; align-items: center;">
-    <div style="background: #111827; border: 1px solid #374151; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
-        <p id="custom-alert-message" style="color: #f3f4f6; font-size: 16px; margin-bottom: 20px; word-break: keep-all;"></p>
-        <button onclick="closeCustomAlert()" style="background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">확인</button>
-    </div>
-</div>
-
-<!-- 세련된 커스텀 알림 모달 HTML -->
+<!-- 📌 중복을 제거하고 하나만 깔끔하게 남긴 세련된 커스텀 알림 모달 HTML -->
 <div id="custom-alert-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; justify-content: center; align-items: center;">
     <div style="background: #111827; border: 1px solid #374151; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
         <p id="custom-alert-message" style="color: #f3f4f6; font-size: 16px; margin-bottom: 20px; word-break: keep-all; line-height: 1.5;"></p>
         <button onclick="closeCustomAlert()" style="background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">확인</button>
     </div>
 </div>
-
-<script>
-  // 기존의 투박한 alert 함수를 세련된 모달로 자동 교체
-  window.alert = function(message) {
-      document.getElementById('custom-alert-message').innerText = message;
-      document.getElementById('custom-alert-modal').style.display = 'flex';
-  };
-
-  function closeCustomAlert() {
-      document.getElementById('custom-alert-modal').style.display = 'none';
-  }
-</script>
 
 <script>
     // 전역 함수 선언
@@ -316,6 +316,7 @@
     });
   }
 </script>
+
 <!-- 오른쪽 하단 플로팅 공유 버튼 -->
 <button id="share-btn" style="
   position: fixed;
@@ -358,13 +359,11 @@
             url: window.location.origin
           });
         } catch (err) {
-          // 사용자가 취소 창을 닫은 경우는 에러로 처리하지 않음
           if (err.name !== 'AbortError') {
             console.error('공유 실패:', err);
           }
         }
       } else {
-        // 스마트폰 기본 공유 창을 지원하지 않는 브라우저/PC 환경 대비
         try {
           await navigator.clipboard.writeText(window.location.origin);
           alert('웹사이트 주소가 복사되었습니다!\n카카오톡 단톡방이나 문자에 붙여넣어 공유하세요.');
