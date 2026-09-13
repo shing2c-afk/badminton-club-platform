@@ -13,15 +13,18 @@
 
     <!-- 📌 [핵심] 다른 스크립트보다 먼저 실행되도록 head에 배치한 세련된 커스텀 알림 오버라이딩 -->
     <script>
+      // 기존 alert을 확실하게 가로채도록 수정
       window.alert = function(message) {
+          console.log("커스텀 alert 호출됨:", message);
           const modal = document.getElementById('custom-alert-modal');
           const msgEl = document.getElementById('custom-alert-message');
           if (modal && msgEl) {
               msgEl.innerText = message;
               modal.style.display = 'flex';
           } else {
-              // 모달이 아직 DOM에 로드되기 전 호출될 경우를 대비한 안전 장치
-              console.log("Alert:", message);
+              // 혹시 모달 요소를 못 찾았을 경우 브라우저 기본 창으로 fallback
+              console.warn("custom-alert-modal 요소를 찾지 못해 기본 alert을 사용합니다.");
+              alert(message);
           }
       };
 
