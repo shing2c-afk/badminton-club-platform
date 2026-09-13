@@ -235,12 +235,16 @@ app.post('/api/member/withdraw', async (req, res) => {
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
-const dbPath = path.resolve(__dirname, 'badminton.db');
+const path = require('path');
+
+// Render 환경이면 /data/badminton.db, 로컬이면 기존 경로 사용
+const dbPath = process.env.RENDER ? '/data/badminton.db' : path.resolve(__dirname, 'badminton.db');
+
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('❌ 데이터베이스 연결 실패:', err.message);
     } else {
-        console.log('✅ SQLite 데이터베이스(badminton.db) 연결 성공');
+        console.log('✅ SQLite 데이터베이스 연결 성공:', dbPath);
         initDatabase();
         insertDefaultDummyData(); 
     }
