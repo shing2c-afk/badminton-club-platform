@@ -235,7 +235,6 @@ app.post('/api/member/withdraw', async (req, res) => {
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
-const path = require('path');
 const fs = require('fs');
 
 // Render 환경이면 /data/badminton.db, 로컬이면 기존 경로 사용
