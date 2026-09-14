@@ -558,12 +558,17 @@ function updateAvailableCourtCounts() {
     if (nantaAvail) nantaAvail.innerText = getAvailableNantaCourtsCount();
 }
 
-function createNewGameSlot() {
+async function createNewGameSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
+
+    // 💡 핵심: await을 붙여서 사용자가 모달에서 결정을 내릴 때까지 코드 실행을 멈춤
+    const confirmed = await confirm("게임 대기 방을 개설하시겠습니까?");
+    if (!confirmed) return; // '취소'를 누르면 여기서 종료되므로 소켓이 절대 안 나감!
+
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -573,16 +578,20 @@ function createNewGameSlot() {
         return;
     }
 
-    // 서버 및 socket.js의 확인 흐름(confirmFirstSlot)과 연동되도록 바로 소켓 전송
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
-function createNewNantaSlot() {
+async function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
+
+    // 💡 핵심: await을 붙여서 사용자가 모달에서 결정을 내릴 때까지 코드 실행을 멈춤
+    const confirmed = await confirm("난타 대기 방을 개설하시겠습니까?");
+    if (!confirmed) return; // '취소'를 누르면 여기서 종료되므로 소켓이 절대 안 나감!
+
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -592,7 +601,6 @@ function createNewNantaSlot() {
         return;
     }
 
-    // 서버 및 socket.js의 확인 흐름과 연동되도록 바로 소켓 전송
     activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
 }
 
