@@ -213,8 +213,8 @@
     .select-box { 
         width: 100%; 
         text-align: left; 
-        padding: 10px; 
-        font-size: 13.5px; 
+        padding: 8px 10px; 
+        font-size: 13px; /* 모바일에서 투박하지 않게 폰트 크기 조정 */
         background: #1f2937; 
         border: 1px solid #374151; 
         color: white; 
@@ -649,13 +649,24 @@
         let uniqueUsersMap = new Map();
         let rooms = [];
 
-        const collectUser = (id, name) => {
+        // 회원 정보를 수집할 때 이름과 상세 정보가 깔끔하게 조합되도록 개선
+        const collectUser = (id, name, extraInfo = {}) => {
             if (!id) return;
             if (!uniqueUsersMap.has(id)) {
                 uniqueUsersMap.set(id, {
                     username: id,
-                    displayName: (name && name !== id) ? name : id
+                    displayName: (name && name !== id) ? name : id,
+                    gender: extraInfo.gender || '',
+                    grade: extraInfo.grade || '',
+                    ageGroup: extraInfo.ageGroup || ''
                 });
+            } else if (name && name !== id) {
+                // 이름 정보가 나중에 들어오면 업데이트
+                let existing = uniqueUsersMap.get(id);
+                existing.displayName = name;
+                if (extraInfo.gender) existing.gender = extraInfo.gender;
+                if (extraInfo.grade) existing.grade = extraInfo.grade;
+                if (extraInfo.ageGroup) existing.ageGroup = extraInfo.ageGroup;
             }
         };
 
@@ -697,6 +708,7 @@
             });
         }
 
+        // 만약 전체 회원 명부 데이터가 있다면 이름/급수 등을 더 정확하게 매칭하기 위해 활용 가능
         if (data.courtsData && Array.isArray(data.courtsData) && courtSelect) {
             data.courtsData.forEach(court => {
                 if (court.type === 'game') {
@@ -729,8 +741,21 @@
         if (userSelect) {
             uniqueUsersMap.forEach((user) => {
                 const opt = document.createElement('option');
-                opt.value = user.id || user.username; 
-                opt.textContent = `${user.name || user.displayName || user.username} (${user.username || user.id})`;
+                opt.value = user.username; // 서버 전송용 고유값 (ID/Username)
+                
+                // 화면에는 ID 대신 "이름 / 성별 / 연령대 / 급수" 형태로 보기 쉽게 출력
+                let displayName = user.displayName;
+                let details = [];
+                if (user.gender) details.push(user.gender);
+                if (user.ageGroup) details.push(user.ageGroup);
+                if (user.grade) details.push(user.grade);
+
+                if (details.length > 0) {
+                    opt.textContent = `${displayName} (${details.join(' / ')})`;
+                } else {
+                    opt.textContent = `${displayName} (${user.username})`;
+                }
+
                 if (user.username === selectedUser || user.id === selectedUser) opt.selected = true;
                 userSelect.appendChild(opt);
             });
@@ -748,13 +773,17 @@
     }
 
     async function executeKickUser() {
-        const targetUsername = document.getElementById('kick-user-select').value;
+        const userSelect = document.getElementById('kick-user-select');
+        const targetUsername = userSelect.value;
         if (!targetUsername) {
             await alert('강제 퇴장시킬 회원을 선택해주세요.');
             return;
         }
 
-        const confirmed = await confirm(`[${targetUsername}]님을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
+        // 선택된 옵션의 텍스트(예: "신혜인 (여 / 10대 / 초심)")를 가져와서 확인창에 예쁘게 표시
+        const selectedOptionText = userSelect.options[userSelect.selectedIndex].text;
+
+        const confirmed = await confirm(`[${selectedOptionText}] 회원을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
         if (!confirmed) return;
 
         try {
