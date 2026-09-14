@@ -907,7 +907,6 @@
             return;
         }
 
-        // 선택된 텍스트(예: "신혜인 (여 / 10대 / 초심)")를 가져와서 확인창에 예쁘게 표시
         const selectedOptionText = document.getElementById('kick-user-selected-text').textContent;
 
         const confirmed = await confirm(`[${selectedOptionText}] 회원을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
@@ -922,6 +921,9 @@
             const result = await response.json();
             if (result.success) {
                 await alert(result.message);
+                // 성공 시 선택값 초기화 및 화면 표시 문구 리셋
+                userSelect.value = '';
+                document.getElementById('kick-user-selected-text').textContent = '-- 회원을 선택하세요 --';
             } else {
                 await alert('퇴장 처리 실패: ' + result.message);
             }
@@ -953,6 +955,9 @@
             const result = await response.json();
             if (result.success) {
                 await alert(result.message);
+                // 성공 시 선택값 초기화 및 화면 표시 문구 리셋
+                document.getElementById('delete-room-select').value = '';
+                document.getElementById('delete-room-selected-text').textContent = '-- 활성화된 방을 선택하세요 --';
             } else {
                 await alert('방 강제 종료 실패: ' + result.message);
             }
