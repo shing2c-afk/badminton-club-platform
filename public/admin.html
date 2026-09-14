@@ -222,6 +222,53 @@
         outline: none; 
     }
     .select-box:focus { border-color: #3b82f6; }
+
+    /* 📱 스마트폰 네이티브 팝업 대안용 컴팩트 커스텀 드롭다운 스타일 */
+    .custom-dropdown {
+        position: relative;
+        width: 100%;
+    }
+    .custom-dropdown-toggle {
+        width: 100%;
+        background: #1f2937;
+        border: 1px solid #374151;
+        color: white;
+        padding: 8px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        outline: none;
+    }
+    .custom-dropdown-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        width: 100%;
+        background: #111827;
+        border: 1.5px solid #3b82f6;
+        border-radius: 8px;
+        margin-top: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 999;
+        display: none;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+    }
+    .custom-dropdown-item {
+        padding: 8px 12px;
+        font-size: 10px; /* 📱 스마트폰에서 보기 좋게 텍스트 크기를 대폭 축소 */
+        color: #f3f4f6;
+        cursor: pointer;
+        border-bottom: 1px solid #1f2937;
+    }
+    .custom-dropdown-item:hover {
+        background: #2563eb;
+        color: white;
+    }
     </style>
 
     <!-- 🌐 URL 노출 없는 커스텀 모달 오버라이딩 스크립트 -->
@@ -410,9 +457,16 @@
     <div class="card danger-zone">
         <div class="card-title danger"><span>🚨 회원 강제 퇴장 (대기열/참여 일괄 정리)</span></div>
         <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
-            <select id="kick-user-select" class="select-box">
-                <option value="">-- 회원을 선택하세요 --</option>
-            </select>
+            <div class="custom-dropdown" id="kick-user-dropdown">
+                <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('kick-user-menu')">
+                    <span id="kick-user-selected-text">-- 회원을 선택하세요 --</span>
+                    <span>▼</span>
+                </button>
+                <div class="custom-dropdown-menu" id="kick-user-menu">
+                    <div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '-- 회원을 선택하세요 --')">-- 회원을 선택하세요 --</div>
+                </div>
+                <input type="hidden" id="kick-user-select" value="">
+            </div>
         </div>
         <button class="btn-danger" onclick="executeKickUser()">선택 회원 강제 퇴장 조치</button>
     </div>
@@ -421,9 +475,16 @@
     <div class="card danger-zone">
         <div class="card-title danger"><span>💥 게임방 / 난타방 강제 종료 (폭파)</span></div>
         <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
-            <select id="delete-room-select" class="select-box">
-                <option value="">-- 활성화된 방을 선택하세요 --</option>
-            </select>
+            <div class="custom-dropdown" id="delete-room-dropdown">
+                <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('delete-room-menu')">
+                    <span id="delete-room-selected-text">-- 활성화된 방을 선택하세요 --</span>
+                    <span>▼</span>
+                </button>
+                <div class="custom-dropdown-menu" id="delete-room-menu">
+                    <div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '-- 활성화된 방을 선택하세요 --')">-- 활성화된 방을 선택하세요 --</div>
+                </div>
+                <input type="hidden" id="delete-room-select" value="">
+            </div>
         </div>
         <button class="btn-danger" onclick="executeDeleteRoom()">선택한 방 강제 종료</button>
     </div>
@@ -433,9 +494,16 @@
         <div class="card-title danger"><span>🏸 코트 강제 비우기 (게임 / 난타)</span></div>
         <p class="form-desc">현재 진행 중이거나 점유된 코트를 강제 초기화하여 빈 코트로 만듭니다. (레슨 코트는 제외됩니다)</p>
         <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
-            <select id="clear-court-select" class="select-box">
-                <option value="">-- 비울 코트를 선택하세요 --</option>
-            </select>
+            <div class="custom-dropdown" id="clear-court-dropdown">
+                <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('clear-court-menu')">
+                    <span id="clear-court-selected-text">-- 비울 코트를 선택하세요 --</span>
+                    <span>▼</span>
+                </button>
+                <div class="custom-dropdown-menu" id="clear-court-menu">
+                    <div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '-- 비울 코트를 선택하세요 --')">-- 비울 코트를 선택하세요 --</div>
+                </div>
+                <input type="hidden" id="clear-court-select" value="">
+            </div>
         </div>
         <button class="btn-danger" onclick="handleClearCourt()">선택한 코트 강제 비우기</button>
     </div>
@@ -629,6 +697,31 @@
         }
     }
 
+    // 공통 커스텀 드롭다운 토글 제어 (하나를 열면 다른 것은 닫힘)
+    function toggleCustomDropdown(menuId) {
+        ['kick-user-menu', 'delete-room-menu', 'clear-court-menu'].forEach(id => {
+            const m = document.getElementById(id);
+            if (m) m.style.display = (id === menuId && m.style.display !== 'block') ? 'block' : 'none';
+        });
+    }
+
+    // 항목 선택 공통 처리
+    function selectCustomOption(targetType, value, displayText) {
+        document.getElementById(`${targetType}-select`).value = value;
+        document.getElementById(`${targetType}-selected-text`).textContent = displayText;
+        document.getElementById(`${targetType}-menu`).style.display = 'none';
+    }
+
+    // 화면 빈 곳 클릭 시 모든 커스텀 드롭다운 닫기
+    window.addEventListener('click', function(e) {
+        if (!e.target.closest('.custom-dropdown')) {
+            ['kick-user-menu', 'delete-room-menu', 'clear-court-menu'].forEach(id => {
+                const m = document.getElementById(id);
+                if (m) m.style.display = 'none';
+            });
+        }
+    });
+
     function updateAdminDropdowns(data) {
         const userSelect = document.getElementById('kick-user-select');
         const roomSelect = document.getElementById('delete-room-select');
@@ -642,133 +735,167 @@
         const selectedRoom = roomSelect ? roomSelect.value : '';
         const selectedCourt = courtSelect ? courtSelect.value : '';
 
-        if (userSelect) userSelect.innerHTML = '<option value="">-- 회원을 선택하세요 --</option>';
-        if (roomSelect) roomSelect.innerHTML = '<option value="">-- 활성화된 방을 선택하세요 --</option>';
-        if (courtSelect) courtSelect.innerHTML = '<option value="">-- 비울 코트를 선택하세요 --</option>';
-
-        let uniqueUsersMap = new Map();
-        let rooms = [];
-
-        // 회원 정보를 수집할 때 이름과 상세 정보가 깔끔하게 조합되도록 개선
-        const collectUser = (id, name, extraInfo = {}) => {
-            if (!id) return;
-            if (!uniqueUsersMap.has(id)) {
-                uniqueUsersMap.set(id, {
-                    username: id,
-                    displayName: (name && name !== id) ? name : id,
-                    gender: extraInfo.gender || '',
-                    grade: extraInfo.grade || '',
-                    ageGroup: extraInfo.ageGroup || ''
-                });
-            } else if (name && name !== id) {
-                // 이름 정보가 나중에 들어오면 업데이트
-                let existing = uniqueUsersMap.get(id);
-                existing.displayName = name;
-                if (extraInfo.gender) existing.gender = extraInfo.gender;
-                if (extraInfo.grade) existing.grade = extraInfo.grade;
-                if (extraInfo.ageGroup) existing.ageGroup = extraInfo.ageGroup;
-            }
-        };
-
-        if (data.gameQueue && Array.isArray(data.gameQueue)) {
-            data.gameQueue.forEach((slot, index) => {
-                const roomId = slot.id !== undefined ? slot.id : index;
-                const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
-                const roomTitle = `게임 코트방 #${index + 1} (참여자: ${participants})`;
-                
-                rooms.push({ type: 'game', id: roomId, label: roomTitle });
-
-                if (slot.userIds && Array.isArray(slot.userIds)) {
-                    slot.userIds.forEach((id, idx) => {
-                        const name = slot.players ? slot.players[idx] : '';
-                        collectUser(id, name);
-                    });
-                } else if (slot.players && Array.isArray(slot.players)) {
-                    slot.players.forEach(p => { if (p) collectUser(p, p); });
-                }
-            });
-        }
-
-        if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
-            data.nantaQueue.forEach((slot, index) => {
-                const roomId = slot.id !== undefined ? slot.id : index;
-                const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
-                const roomTitle = `난타 코트방 #${index + 1} (참여자: ${participants})`;
-                
-                rooms.push({ type: 'nanta', id: roomId, label: roomTitle });
-
-                if (slot.userIds && Array.isArray(slot.userIds)) {
-                    slot.userIds.forEach((id, idx) => {
-                        const name = slot.players ? slot.players[idx] : '';
-                        collectUser(id, name);
-                    });
-                } else if (slot.players && Array.isArray(slot.players)) {
-                    slot.players.forEach(p => { if (p) collectUser(p, p); });
-                }
-            });
-        }
-
-        // 만약 전체 회원 명부 데이터가 있다면 이름/급수 등을 더 정확하게 매칭하기 위해 활용 가능
-        if (data.courtsData && Array.isArray(data.courtsData) && courtSelect) {
-            data.courtsData.forEach(court => {
-                if (court.type === 'game') {
-                    if (!court.isEmpty && court.players) {
-                        const opt = document.createElement('option');
-                        opt.value = court.id;
-                        opt.textContent = `[게임코트 #${court.id}] ${court.players}`;
-                        if (String(court.id) === selectedCourt) opt.selected = true;
-                        courtSelect.appendChild(opt);
-                    }
-                } else if (court.type === 'nanta') {
-                    if (court.sideA && !court.sideA.isEmpty && court.sideA.players) {
-                        const optA = document.createElement('option');
-                        optA.value = `${court.id}:A`;
-                        optA.textContent = `[난타코트 #${court.id} A구역] ${court.sideA.players}`;
-                        if (`${court.id}:A` === selectedCourt) optA.selected = true;
-                        courtSelect.appendChild(optA);
-                    }
-                    if (court.sideB && !court.sideB.isEmpty && court.sideB.players) {
-                        const optB = document.createElement('option');
-                        optB.value = `${court.id}:B`;
-                        optB.textContent = `[난타코트 #${court.id} B구역] ${court.sideB.players}`;
-                        if (`${court.id}:B` === selectedCourt) optB.selected = true;
-                        courtSelect.appendChild(optB);
-                    }
-                }
-            });
-        }
-
+        // 1. 회원 강제 퇴장 드롭다운 렌더링
         if (userSelect) {
+            const menu = document.getElementById('kick-user-menu');
+            menu.innerHTML = `<div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '회원을 선택하세요')">회원을 선택하세요</div>`;
+            
+            let uniqueUsersMap = new Map();
+            const collectUser = (id, name, extraInfo = {}) => {
+                if (!id) return;
+                if (!uniqueUsersMap.has(id)) {
+                    uniqueUsersMap.set(id, { username: id, displayName: (name && name !== id) ? name : id, ...extraInfo });
+                } else if (name && name !== id) {
+                    let existing = uniqueUsersMap.get(id);
+                    existing.displayName = name;
+                }
+            };
+
+            if (data.gameQueue && Array.isArray(data.gameQueue)) {
+                data.gameQueue.forEach(slot => {
+                    if (slot.userIds && Array.isArray(slot.userIds)) {
+                        slot.userIds.forEach((id, idx) => collectUser(id, slot.players ? slot.players[idx] : ''));
+                    } else if (slot.players && Array.isArray(slot.players)) {
+                        slot.players.forEach(p => { if (p) collectUser(p, p); });
+                    }
+                });
+            }
+            if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
+                data.nantaQueue.forEach(slot => {
+                    if (slot.userIds && Array.isArray(slot.userIds)) {
+                        slot.userIds.forEach((id, idx) => collectUser(id, slot.players ? slot.players[idx] : ''));
+                    } else if (slot.players && Array.isArray(slot.players)) {
+                        slot.players.forEach(p => { if (p) collectUser(p, p); });
+                    }
+                });
+            }
+
+            let hasSelected = false;
             uniqueUsersMap.forEach((user) => {
-                const opt = document.createElement('option');
-                opt.value = user.username; // 서버 전송용 고유값 (ID/Username)
-                
-                // 화면에는 ID 대신 "이름 / 성별 / 연령대 / 급수" 형태로 보기 쉽게 출력
-                let displayName = user.displayName;
                 let details = [];
                 if (user.gender) details.push(user.gender);
                 if (user.ageGroup) details.push(user.ageGroup);
                 if (user.grade) details.push(user.grade);
 
-                if (details.length > 0) {
-                    opt.textContent = `${displayName} (${details.join(' / ')})`;
-                } else {
-                    opt.textContent = `${displayName} (${user.username})`;
-                }
+                let textContent = details.length > 0 ? `${user.displayName} (${details.join(' / ')})` : `${user.displayName} (${user.username})`;
+                let usernameVal = user.username;
 
-                if (user.username === selectedUser || user.id === selectedUser) opt.selected = true;
-                userSelect.appendChild(opt);
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'custom-dropdown-item';
+                itemDiv.textContent = textContent;
+                itemDiv.setAttribute('onclick', `selectCustomOption('kick-user', '${usernameVal}', \`${textContent}\`)`);
+                menu.appendChild(itemDiv);
+
+                if (usernameVal === selectedUser) {
+                    document.getElementById('kick-user-selected-text').textContent = textContent;
+                    hasSelected = true;
+                }
             });
+
+            if (!hasSelected && !selectedUser) {
+                document.getElementById('kick-user-selected-text').textContent = '회원을 선택하세요';
+                userSelect.value = '';
+            }
         }
 
+        // 2. 방 폭파 드롭다운 렌더링
         if (roomSelect) {
+            const menu = document.getElementById('delete-room-menu');
+            menu.innerHTML = `<div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '활성화된 방을 선택하세요')">활성화된 방을 선택하세요</div>`;
+            
+            let rooms = [];
+            if (data.gameQueue && Array.isArray(data.gameQueue)) {
+                data.gameQueue.forEach((slot, index) => {
+                    const roomId = slot.id !== undefined ? slot.id : index;
+                    const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
+                    rooms.push({ type: 'game', id: roomId, label: `게임 코트방 #${index + 1} (참여자: ${participants})` });
+                });
+            }
+            if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
+                data.nantaQueue.forEach((slot, index) => {
+                    const roomId = slot.id !== undefined ? slot.id : index;
+                    const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
+                    rooms.push({ type: 'nanta', id: roomId, label: `난타 코트방 #${index + 1} (참여자: ${participants})` });
+                });
+            }
+
+            let hasSelectedRoom = false;
             rooms.forEach(room => {
-                const opt = document.createElement('option');
-                opt.value = `${room.type}:${room.id}`;
-                opt.textContent = room.label;
-                if (opt.value === selectedRoom) opt.selected = true;
-                roomSelect.appendChild(opt);
+                const val = `${room.type}:${room.id}`;
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'custom-dropdown-item';
+                itemDiv.textContent = room.label;
+                itemDiv.setAttribute('onclick', `selectCustomOption('delete-room', '${val}', \`${room.label}\`)`);
+                menu.appendChild(itemDiv);
+
+                if (val === selectedRoom) {
+                    document.getElementById('delete-room-selected-text').textContent = room.label;
+                    hasSelectedRoom = true;
+                }
             });
+
+            if (!hasSelectedRoom && !selectedRoom) {
+                document.getElementById('delete-room-selected-text').textContent = '활성화된 방을 선택하세요';
+                roomSelect.value = '';
+            }
+        }
+
+        // 3. 코트 강제 비우기 드롭다운 렌더링
+        if (courtSelect && data.courtsData && Array.isArray(data.courtsData)) {
+            const menu = document.getElementById('clear-court-menu');
+            menu.innerHTML = `<div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '비울 코트를 선택하세요')">비울 코트를 선택하세요</div>`;
+            
+            let hasSelectedCourt = false;
+            data.courtsData.forEach(court => {
+                if (court.type === 'game' && !court.isEmpty && court.players) {
+                    const val = String(court.id);
+                    const label = `[게임코트 #${court.id}] ${court.players}`;
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'custom-dropdown-item';
+                    itemDiv.textContent = label;
+                    itemDiv.setAttribute('onclick', `selectCustomOption('clear-court', '${val}', \`${label}\`)`);
+                    menu.appendChild(itemDiv);
+
+                    if (val === selectedCourt) {
+                        document.getElementById('clear-court-selected-text').textContent = label;
+                        hasSelectedCourt = true;
+                    }
+                } else if (court.type === 'nanta') {
+                    if (court.sideA && !court.sideA.isEmpty && court.sideA.players) {
+                        const val = `${court.id}:A`;
+                        const label = `[난타코트 #${court.id} A구역] ${court.sideA.players}`;
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'custom-dropdown-item';
+                        itemDiv.textContent = label;
+                        itemDiv.setAttribute('onclick', `selectCustomOption('clear-court', '${val}', \`${label}\`)`);
+                        menu.appendChild(itemDiv);
+
+                        if (val === selectedCourt) {
+                            document.getElementById('clear-court-selected-text').textContent = label;
+                            hasSelectedCourt = true;
+                        }
+                    }
+                    if (court.sideB && !court.sideB.isEmpty && court.sideB.players) {
+                        const val = `${court.id}:B`;
+                        const label = `[난타코트 #${court.id} B구역] ${court.sideB.players}`;
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'custom-dropdown-item';
+                        itemDiv.textContent = label;
+                        itemDiv.setAttribute('onclick', `selectCustomOption('clear-court', '${val}', \`${label}\`)`);
+                        menu.appendChild(itemDiv);
+
+                        if (val === selectedCourt) {
+                            document.getElementById('clear-court-selected-text').textContent = label;
+                            hasSelectedCourt = true;
+                        }
+                    }
+                }
+            });
+
+            if (!hasSelectedCourt && !selectedCourt) {
+                document.getElementById('clear-court-selected-text').textContent = '비울 코트를 선택하세요';
+                courtSelect.value = '';
+            }
         }
     }
 
@@ -780,8 +907,8 @@
             return;
         }
 
-        // 선택된 옵션의 텍스트(예: "신혜인 (여 / 10대 / 초심)")를 가져와서 확인창에 예쁘게 표시
-        const selectedOptionText = userSelect.options[userSelect.selectedIndex].text;
+        // 선택된 텍스트(예: "신혜인 (여 / 10대 / 초심)")를 가져와서 확인창에 예쁘게 표시
+        const selectedOptionText = document.getElementById('kick-user-selected-text').textContent;
 
         const confirmed = await confirm(`[${selectedOptionText}] 회원을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
         if (!confirmed) return;
@@ -868,6 +995,7 @@
                 if (result.success) {
                     await alert(`✅ ${result.message}`);
                     courtSelect.value = '';
+                    document.getElementById('clear-court-selected-text').textContent = '비울 코트를 선택하세요';
                 } else {
                     await alert(`❌ 실패: ${result.message}`);
                 }
