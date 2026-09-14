@@ -558,12 +558,16 @@ function updateAvailableCourtCounts() {
     if (nantaAvail) nantaAvail.innerText = getAvailableNantaCourtsCount();
 }
 
-function createNewGameSlot() {
+async function createNewGameSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
+
+    const confirmed = await confirm("게임 대기 방을 개설하시겠습니까?");
+    if (!confirmed) return;
+
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -576,12 +580,16 @@ function createNewGameSlot() {
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
-function createNewNantaSlot() {
+async function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
+
+    const confirmed = await confirm("난타 대기 방을 개설하시겠습니까?");
+    if (!confirmed) return;
+
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
