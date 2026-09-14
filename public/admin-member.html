@@ -28,6 +28,62 @@
         tr:hover { background: #252525; }
         .text-center { text-align: center; }
     </style>
+
+    <!-- 🌐 URL 노출 없는 커스텀 모달 오버라이딩 스크립트 -->
+    <script>
+        window.showAlert = function(message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('custom-modal');
+                const msgEl = document.getElementById('custom-modal-message');
+                const cancelBtn = document.getElementById('custom-modal-cancel');
+                const okBtn = document.getElementById('custom-modal-ok');
+
+                msgEl.innerText = message;
+                cancelBtn.style.display = 'none'; // alert은 확인 버튼만
+                modal.style.display = 'flex';
+
+                // 기존 이벤트 제거 후 새로 등록
+                const newOkBtn = okBtn.cloneNode(true);
+                okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+
+                newOkBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    resolve(true);
+                };
+            });
+        };
+
+        window.showConfirm = function(message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('custom-modal');
+                const msgEl = document.getElementById('custom-modal-message');
+                const cancelBtn = document.getElementById('custom-modal-cancel');
+                const okBtn = document.getElementById('custom-modal-ok');
+
+                msgEl.innerText = message;
+                cancelBtn.style.display = 'inline-block'; // confirm은 취소 버튼 표시
+                modal.style.display = 'flex';
+
+                const newOkBtn = okBtn.cloneNode(true);
+                const newCancelBtn = cancelBtn.cloneNode(true);
+                okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+                newOkBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    resolve(true);
+                };
+                newCancelBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    resolve(false);
+                };
+            });
+        };
+
+        // 기존 시스템 호환을 위한 alert/confirm 래핑
+        window.alert = function(msg) { window.showAlert(msg); };
+        window.confirm = function(msg) { return window.showConfirm(msg); };
+    </script>
 </head>
 <body>
 
@@ -73,6 +129,17 @@
                     <tr><td colspan="7" class="text-center" style="color: #888;">데이터를 불러오는 중...</td></tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+</div>
+
+<!-- 🌐 커스텀 모달 UI 구조 (화면 최하단 고정) -->
+<div id="custom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 999999; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box;">
+    <div style="background: #1e1e1e; border: 1.5px solid #444; border-radius: 12px; padding: 24px 20px; width: 100%; max-width: 400px; box-sizing: border-box; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 20px;">
+        <p id="custom-modal-message" style="color: #fff; font-size: 16px; font-weight: 500; line-height: 1.5; word-break: keep-all; margin: 0;"></p>
+        <div style="display: flex; gap: 10px;">
+            <button id="custom-modal-cancel" style="flex: 1; background: #555; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; display: none;">취소</button>
+            <button id="custom-modal-ok" style="flex: 1; background: #0275d8; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">확인</button>
         </div>
     </div>
 </div>
@@ -208,7 +275,8 @@
 
     // 회원 탈퇴 처리
     async function withdrawMember(phone, name) {
-        if (!confirm(`정말로 '${name}' 회원을 탈퇴 처리하시겠습니까?`)) return;
+        const confirmed = await confirm(`정말로 '${name}' 회원을 탈퇴 처리하시겠습니까?`);
+        if (!confirmed) return;
 
         try {
             const res = await fetch('/api/member/withdraw', {
