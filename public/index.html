@@ -28,6 +28,9 @@
       };
 
       window.confirm = function(message) {
+        // 🔍 디버깅용: 누가 confirm을 불렀는지 추적
+          console.warn("🔔 confirm 호출됨! 메시지:", message);
+          console.trace("호출 경로 추적:");
           return new Promise((resolve) => {
               const modal = document.getElementById('custom-alert-modal');
               const msgEl = document.getElementById('custom-alert-message');

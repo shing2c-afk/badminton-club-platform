@@ -561,6 +561,7 @@ function updateAvailableCourtCounts() {
 let isCreatingSlot = false; // 중복 실행 방지 플래그
 
 async function createNewGameSlot() {
+    console.log("👉 [ui.js] createNewGameSlot 버튼 함수 실행됨!");
     if (isCreatingSlot) return; // 이미 실행 중이면 무시
     
     const savedUser = localStorage.getItem("currentUser");
@@ -571,9 +572,6 @@ async function createNewGameSlot() {
 
     isCreatingSlot = true;
     try {
-        const confirmed = await confirm("게임 대기 방을 개설하시겠습니까?");
-        if (!confirmed) return;
-
         const user = JSON.parse(savedUser);
         const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -583,9 +581,10 @@ async function createNewGameSlot() {
             return;
         }
 
+        // 💡 서버(socket.js)에서 확인창(confirmFirstSlot)을 띄우므로 바로 소켓 전송
         activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
     } finally {
-        // 모달창이 닫히거나 처리가 끝난 후 잠시 뒤에 중복 방지 해제
+        // 연속 클릭 방지 해제 (0.5초 뒤)
         setTimeout(() => { isCreatingSlot = false; }, 500);
     }
 }
@@ -601,9 +600,6 @@ async function createNewNantaSlot() {
 
     isCreatingSlot = true;
     try {
-        const confirmed = await confirm("난타 대기 방을 개설하시겠습니까?");
-        if (!confirmed) return;
-
         const user = JSON.parse(savedUser);
         const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -613,6 +609,7 @@ async function createNewNantaSlot() {
             return;
         }
 
+        // 💡 서버(socket.js)에서 확인창(confirmFirstSlot)을 띄우므로 바로 소켓 전송
         activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
     } finally {
         setTimeout(() => { isCreatingSlot = false; }, 500);
