@@ -72,8 +72,8 @@ function closeNotiModal() {
     if (modal) modal.style.display = 'none'; 
 }
 
-function accessAdmin() {
-    const inputPw = prompt('🔐 관리자 비밀번호를 입력해 주세요:');
+async function accessAdmin() {
+    const inputPw = await prompt('🔐 관리자 비밀번호를 입력해 주세요:');
     if (inputPw === null) return;
 
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
