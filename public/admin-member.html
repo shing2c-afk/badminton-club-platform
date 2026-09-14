@@ -93,17 +93,17 @@
         <a href="/admin.html" class="back-btn">⬅ 관리자 메인으로</a>
     </h2>
 
-    <!-- 1. 엑셀 업로드 / 다운로드 영역 -->
+   <!-- 1. 엑셀 업로드 / 다운로드 영역 -->
     <div class="section-box">
         <h3>📊 회원 명부 엑셀(CSV) 관리</h3>
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
             <!-- 왼쪽: 다운로드 그룹 -->
-            <button id="downloadCsvBtn" class="btn btn-blue">📥 전체 회원명부 다운로드</button>
+            <button id="downloadCsvBtn" class="btn btn-blue">📥 전체 회원 명부 다운로드</button>
             
-            <!-- 오른쪽: 파일 선택 + 업로드 그룹 -->
+            <!-- 오른쪽: 업로드 버튼 + 파일 선택 그룹 -->
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button id="uploadExcelBtn" class="btn btn-green">📤 전체 회원 명부 업로드</button>
                 <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" style="color: #ccc; font-size: 13px;">
-                <button id="uploadExcelBtn" class="btn btn-green">📤 전체 회원명부 업로드</button>
             </div>
         </div>
     </div>
