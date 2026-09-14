@@ -1888,17 +1888,29 @@ socket.on('disconnect', () => {
 });
 
 // 파일 하단 (기존 API 라우트들 아래)
-app.get('/api/admin/members/export', (req, res) => {
+
+// 1. 전체 회원 명부 CSV 다운로드 라우트 (프론트엔드 경로 /api/admin/download-excel와 일치시킴)
+app.get('/api/admin/download-excel', (req, res) => {
     db.all("SELECT * FROM regular_members", [], (err, rows) => {
         if (err) {
             console.error('회원 조회 에러:', err);
-            return res.json({ success: false, message: '데이터 조회 실패' });
+            return res.status(500).send('데이터 조회 실패');
         }
-        res.json({ success: true, members: rows });
+
+        // CSV 파일 형식 생성 (UTF-8 BOM 추가하여 엑셀에서 한글 깨짐 방지)
+        let csvContent = '\uFEFF이름,연락처,성별,연령대,급수,주소\n';
+        rows.forEach(m => {
+            csvContent += `"${m.name || ''}","${m.phone || ''}","${m.gender || ''}","${m.birthDate || ''}","${m.grade || ''}","${m.address || ''}"\n`;
+        });
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename=member_list.csv');
+        res.status(200).send(csvContent);
     });
 });
 
-app.post('/api/admin/members/import', upload.single('csvFile'), async (req, res) => {
+// 2. 회원 명부 일괄 업로드(엑셀/CSV) 라우트 (프론트엔드 경로 /api/admin/upload-excel와 일치시킴)
+app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res) => {
     if (!req.file) {
         return res.json({ success: false, message: '파일이 업로드되지 않았습니다.' });
     }
@@ -1913,7 +1925,8 @@ app.post('/api/admin/members/import', upload.single('csvFile'), async (req, res)
     db.serialize(() => {
         db.run("BEGIN TRANSACTION");
         
-        // phone을 기준으로 충돌(Conflict)이 나면 기존 데이터를 UPDATE하는 강력한 문법
+        // phone을 기준으로 충돌(Conflict)이 나면 기존 데이터를 UPDATE하는 문법 
+        // (※ 주의: regular_members 테이블의 phone 컬럼에 UNIQUE 제약조건이 걸려있어야 정상 동작합니다)
         const stmt = db.prepare(`
             INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, grade, phone, address, joinedAt) 
             VALUES (?, 'regular', ?, '1234', ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
@@ -1939,7 +1952,7 @@ app.post('/api/admin/members/import', upload.single('csvFile'), async (req, res)
                     cleanPhone = '0' + cleanPhone;
                 }
 
-                // 고유 ID와 로그인용 username 생성 (전화번호 뒷자리나 타임스탬프 활용)
+                // 고유 ID와 로그인용 username 생성
                 const uniqueId = 'reg_' + cleanPhone;
                 const username = 'user_' + cleanPhone;
 
