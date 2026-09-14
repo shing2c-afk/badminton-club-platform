@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>운정배드민턴클럽 - 관리자 모드</title>
     <script src="/socket.io/socket.io.js"></script>
-   <style>
+    <style>
     /* 🎨 디자인 시스템 & 공통 스타일 통일 */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { 
@@ -86,45 +86,55 @@
         align-items: center;
         justify-content: space-between;
         background: #1f2937;
-        padding: 9px 12px;
+        padding: 10px 12px;
         border-radius: 8px;
         margin-bottom: 8px;
+    }
+    .cleaning-label {
+        color: #38bdf8;
+        font-weight: 700;
+        font-size: 13px;
+        flex-shrink: 0;
+    }
+    .cleaning-time-group {
+        display: flex;
+        align-items: center;
         gap: 6px;
+        justify-content: flex-end;
+    }
+    .time-box-wrap {
+        display: flex;
+        align-items: center;
+        gap: 3px;
     }
     .time-select {
         background: #111827;
         border: 1px solid #374151;
         color: #ffffff;
-        padding: 5px 8px;
+        padding: 4px 6px;
         border-radius: 6px;
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
         outline: none;
         cursor: pointer;
     }
-    .cleaning-time-row span { font-size: 12px; color: #9ca3af; }
-    .cleaning-time-row input[type="time"] {
-        background: #111827;
-        border: 1px solid #374151;
-        color: #ffffff;
-        padding: 6px;
-        border-radius: 6px;
+    .tilde {
         font-size: 13px;
-        outline: none;
-        width: 100px;
-        text-align: center;
+        color: #9ca3af;
+        font-weight: bold;
+        padding: 0 2px;
     }
 
     /* 📱 모바일 화면(스마트폰) 대응 반응형 스타일 추가 */
     @media (max-width: 768px) {
         .cleaning-zone .cleaning-time-row {
-            flex-wrap: wrap; /* 공간 부족 시 자연스럽게 줄바꿈 */
+            flex-wrap: wrap; 
             gap: 6px;
         }
         .cleaning-zone .cleaning-time-row select.time-select {
             padding: 4px 2px;
             font-size: 11px;
-            max-width: 55px; /* 모바일에서 박스가 너무 넓어지지 않도록 조절 */
+            max-width: 55px;
         }
     }
 
@@ -212,51 +222,61 @@
         outline: none; 
     }
     .select-box:focus { border-color: #3b82f6; }
-    /* 청소 시간 행 구조 개선 */
-.cleaning-time-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: #1f2937;
-    padding: 10px 12px;
-    border-radius: 8px;
-    margin-bottom: 8px;
-}
-.cleaning-label {
-    color: #38bdf8;
-    font-weight: 700;
-    font-size: 13px;
-    flex-shrink: 0;
-}
-.cleaning-time-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    justify-content: flex-end;
-}
-.time-box-wrap {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-}
-.time-select {
-    background: #111827;
-    border: 1px solid #374151;
-    color: #ffffff;
-    padding: 4px 6px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    outline: none;
-    cursor: pointer;
-}
-.tilde {
-    font-size: 13px;
-    color: #9ca3af;
-    font-weight: bold;
-    padding: 0 2px;
-}
-</style>
+    </style>
+
+    <!-- 🌐 URL 노출 없는 커스텀 모달 오버라이딩 스크립트 -->
+    <script>
+        window.showAlert = function(message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('custom-modal');
+                const msgEl = document.getElementById('custom-modal-message');
+                const cancelBtn = document.getElementById('custom-modal-cancel');
+                const okBtn = document.getElementById('custom-modal-ok');
+
+                msgEl.innerText = message;
+                cancelBtn.style.display = 'none';
+                modal.style.display = 'flex';
+
+                const newOkBtn = okBtn.cloneNode(true);
+                okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+
+                newOkBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    resolve(true);
+                };
+            });
+        };
+
+        window.showConfirm = function(message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('custom-modal');
+                const msgEl = document.getElementById('custom-modal-message');
+                const cancelBtn = document.getElementById('custom-modal-cancel');
+                const okBtn = document.getElementById('custom-modal-ok');
+
+                msgEl.innerText = message;
+                cancelBtn.style.display = 'inline-block';
+                modal.style.display = 'flex';
+
+                const newOkBtn = okBtn.cloneNode(true);
+                const newCancelBtn = cancelBtn.cloneNode(true);
+                okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+
+                newOkBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    resolve(true);
+                };
+                newCancelBtn.onclick = () => {
+                    modal.style.display = 'none';
+                    resolve(false);
+                };
+            });
+        };
+
+        window.alert = function(msg) { window.showAlert(msg); };
+        window.confirm = function(msg) { return window.showConfirm(msg); };
+    </script>
 </head>
 <body>
 
@@ -356,7 +376,7 @@
         <button class="btn-success" onclick="saveCourtsConfig()">코트 구성 저장 및 현장에 적용</button>
     </div>
 
-    <!-- 📢 4. 공지사항 등록 및 토글형 목록 관리 카드 (스크롤 압박 해소) -->
+    <!-- 📢 4. 공지사항 등록 및 토글형 목록 관리 카드 -->
     <div class="card notice-zone">
         <div class="card-title notice">
             <span>📢 공지사항 관리</span>
@@ -377,7 +397,7 @@
             <button type="submit" class="btn-primary" style="background: #d97706; margin-top: 0;">공지사항 등록하기</button>
         </form>
 
-        <!-- 평소에는 숨겨져 있다가 토글 버튼을 누르면 펼쳐지는 스크롤 목록 박스 -->
+        <!-- 목록 박스 -->
         <div id="noticeListWrapper" style="display: none; margin-top: 16px; border-top: 1px solid #1f2937; padding-top: 14px;">
             <div style="font-size: 13px; font-weight: 600; color: #d1d5db; margin-bottom: 8px;">📋 등록된 공지사항 목록</div>
             <div id="admin-notice-list" style="max-height: 280px; overflow-y: auto; padding-right: 4px;">
@@ -457,6 +477,17 @@
         </div>
     </div>
 
+    <!-- 🌐 전역 커스텀 모달 UI 구조 (화면 최하단 고정) -->
+    <div id="custom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 999999; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box;">
+        <div style="background: #1e1e1e; border: 1.5px solid #444; border-radius: 12px; padding: 24px 20px; width: 100%; max-width: 400px; box-sizing: border-box; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 20px;">
+            <p id="custom-modal-message" style="color: #fff; font-size: 16px; font-weight: 500; line-height: 1.5; word-break: keep-all; margin: 0;"></p>
+            <div style="display: flex; gap: 10px;">
+                <button id="custom-modal-cancel" style="flex: 1; background: #555; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; display: none;">취소</button>
+                <button id="custom-modal-ok" style="flex: 1; background: #0275d8; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">확인</button>
+            </div>
+        </div>
+    </div>
+
 <script>
     const socket = io();
     let localCourts = [];
@@ -467,7 +498,7 @@
         const wrapper = document.getElementById('noticeListWrapper');
         if (wrapper.style.display === 'none') {
             wrapper.style.display = 'block';
-            fetchAdminNotices(); // 목록을 열 때 최신 데이터 로드
+            fetchAdminNotices(); 
         } else {
             wrapper.style.display = 'none';
         }
@@ -540,7 +571,7 @@
         isInitialized = true; 
     });
 
-    function saveCleaningConfig() {
+    async function saveCleaningConfig() {
         const schedules = [];
         
         for (let i = 1; i <= 3; i++) {
@@ -554,7 +585,7 @@
                 const end = `${eH}:${eM}`;
 
                 if (start >= end) {
-                    alert(`${i}차 청소 종료 시각(${end})은 시작 시각(${start})보다 늦어야 합니다.`);
+                    await alert(`${i}차 청소 종료 시각(${end})은 시작 시각(${start})보다 늦어야 합니다.`);
                     return;
                 }
                 schedules.push({ start, end });
@@ -570,7 +601,7 @@
             cleaningEndMsg: endMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
         });
 
-        alert(`🧹 구장 청소 설정이 저장되었습니다. (등록된 청소: ${schedules.length}건)`);
+        await alert(`🧹 구장 청소 설정이 저장되었습니다. (등록된 청소: ${schedules.length}건)`);
     }
 
     function initTimeSelectOptions() {
@@ -719,11 +750,12 @@
     async function executeKickUser() {
         const targetUsername = document.getElementById('kick-user-select').value;
         if (!targetUsername) {
-            alert('강제 퇴장시킬 회원을 선택해주세요.');
+            await alert('강제 퇴장시킬 회원을 선택해주세요.');
             return;
         }
 
-        if (!confirm(`[${targetUsername}]님을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`)) return;
+        const confirmed = await confirm(`[${targetUsername}]님을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
+        if (!confirmed) return;
 
         try {
             const response = await fetch('/api/admin/kick-user', {
@@ -733,27 +765,28 @@
             });
             const result = await response.json();
             if (result.success) {
-                alert(result.message);
+                await alert(result.message);
             } else {
-                alert('퇴장 처리 실패: ' + result.message);
+                await alert('퇴장 처리 실패: ' + result.message);
             }
         } catch (err) {
             console.error('강제 퇴장 에러:', err);
-            alert('서버 통신 중 오류가 발생했습니다.');
+            await alert('서버 통신 중 오류가 발생했습니다.');
         }
     }
 
     async function executeDeleteRoom() {
         const roomVal = document.getElementById('delete-room-select').value;
         if (!roomVal) {
-            alert('강제 종료할 방을 선택해주세요.');
+            await alert('강제 종료할 방을 선택해주세요.');
             return;
         }
 
         const [roomType, roomIdStr] = roomVal.split(':');
         const roomId = isNaN(roomIdStr) ? roomIdStr : Number(roomIdStr);
 
-        if (!confirm(`선택한 ${roomType === 'game' ? '게임방' : '난타방'}을 즉시 강제 종료(폭파)하시겠습니까?`)) return;
+        const confirmed = await confirm(`선택한 ${roomType === 'game' ? '게임방' : '난타방'}을 즉시 강제 종료(폭파)하시겠습니까?`);
+        if (!confirmed) return;
 
         try {
             const response = await fetch('/api/admin/delete-room', {
@@ -763,13 +796,13 @@
             });
             const result = await response.json();
             if (result.success) {
-                alert(result.message);
+                await alert(result.message);
             } else {
-                alert('방 강제 종료 실패: ' + result.message);
+                await alert('방 강제 종료 실패: ' + result.message);
             }
         } catch (err) {
             console.error('방 강제 종료 에러:', err);
-            alert('서버 통신 중 오류가 발생했습니다.');
+            await alert('서버 통신 중 오류가 발생했습니다.');
         }
     }
 
@@ -778,7 +811,7 @@
         const val = courtSelect.value;
 
         if (!val) {
-            alert('⚠️ 강제로 비울 코트를 선택해 주세요.');
+            await alert('⚠️ 강제로 비울 코트를 선택해 주세요.');
             return;
         }
 
@@ -793,7 +826,8 @@
 
         let confirmMsg = side ? `정말 ${courtId}번 난타 코트 ${side}구역을 강제 초기화(비우기) 하시겠습니까?` : `정말 ${courtId}번 코트를 강제 초기화(비우기) 하시겠습니까?`;
 
-        if (confirm(confirmMsg)) {
+        const confirmed = await confirm(confirmMsg);
+        if (confirmed) {
             try {
                 const response = await fetch('/api/admin/clear-court', {
                     method: 'POST',
@@ -803,14 +837,14 @@
 
                 const result = await response.json();
                 if (result.success) {
-                    alert(`✅ ${result.message}`);
+                    await alert(`✅ ${result.message}`);
                     courtSelect.value = '';
                 } else {
-                    alert(`❌ 실패: ${result.message}`);
+                    await alert(`❌ 실패: ${result.message}`);
                 }
             } catch (err) {
                 console.error('코트 강제 비우기 통신 에러:', err);
-                alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
+                await alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
             }
         }
     }
@@ -869,7 +903,7 @@
         renderCourtConfig();
     }
 
-    function saveConfig() {
+    async function saveConfig() {
         const entryMin = parseFloat(document.getElementById('entry-timeout').value);
         const nantaMin = parseFloat(document.getElementById('nanta-timeout').value);
         const password = document.getElementById('admin-password').value.trim();
@@ -882,10 +916,10 @@
             NANTA_COURT_LIMIT_SEC: nantaSec,
             ADMIN_PASSWORD: password || '1234'
         });
-        alert('설정이 성공적으로 저장되었습니다.');
+        await alert('설정이 성공적으로 저장되었습니다.');
     }
 
-    function saveCourtsConfig() {
+    async function saveCourtsConfig() {
         let newCourts = [];
         for (let i = 0; i < localCourts.length; i++) {
             const typeSelect = document.getElementById(`select-type-${i}`);
@@ -899,7 +933,7 @@
         }
 
         socket.emit('updateCourtsConfig', newCourts);
-        alert('코트 구성 설정이 현장에 즉시 반영되었습니다.');
+        await alert('코트 구성 설정이 현장에 즉시 반영되었습니다.');
     }
 
     document.getElementById('noticeForm').addEventListener('submit', async function(e) {
@@ -997,7 +1031,7 @@
         const content = document.getElementById('editNoticeContent').value;
 
         if (!title.trim() || !content.trim()) {
-            alert('제목과 내용을 모두 입력해 주세요.');
+            await alert('제목과 내용을 모두 입력해 주세요.');
             return;
         }
 
@@ -1010,11 +1044,11 @@
             const result = await response.json();
 
             if (result.success) {
-                alert('공지사항이 수정되었습니다.');
+                await alert('공지사항이 수정되었습니다.');
                 closeEditModal();
                 fetchAdminNotices();
             } else {
-                alert('수정에 실패했습니다.');
+                await alert('수정에 실패했습니다.');
             }
         } catch (error) {
             console.error('공지 수정 오류:', error);
@@ -1022,7 +1056,8 @@
     }
 
     async function deleteNotice(id) {
-        if (!confirm('정말 이 공지사항을 삭제하시겠습니까?')) return;
+        const confirmed = await confirm('정말 이 공지사항을 삭제하시겠습니까?');
+        if (!confirmed) return;
 
         try {
             const response = await fetch(`/api/notices/${id}`, {
@@ -1031,10 +1066,10 @@
             const result = await response.json();
 
             if (result.success) {
-                alert('공지사항이 삭제되었습니다.');
+                await alert('공지사항이 삭제되었습니다.');
                 fetchAdminNotices();
             } else {
-                alert('삭제에 실패했습니다.');
+                await alert('삭제에 실패했습니다.');
             }
         } catch (error) {
             console.error('공지 삭제 오류:', error);
@@ -1086,7 +1121,8 @@
 
     async function processApproval(phone, action) {
         const actionText = action === 'approve' ? '승인' : '반려';
-        if (!confirm(`정말 이 가입 신청을 ${actionText}하시겠습니까?`)) return;
+        const confirmed = await confirm(`정말 이 가입 신청을 ${actionText}하시겠습니까?`);
+        if (!confirmed) return;
 
         try {
             const response = await fetch('/api/admin/approve-member', {
@@ -1096,14 +1132,14 @@
             });
             
             const result = await response.json();
-            alert(result.message);
+            await alert(result.message);
             
             if (result.success) {
                 loadPendingMembers();
             }
         } catch (error) {
             console.error('승인 처리 통신 오류:', error);
-            alert('처리 중 오류가 발생했습니다.');
+            await alert('처리 중 오류가 발생했습니다.');
         }
     }
 
