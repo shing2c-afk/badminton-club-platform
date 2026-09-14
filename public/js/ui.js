@@ -558,62 +558,42 @@ function updateAvailableCourtCounts() {
     if (nantaAvail) nantaAvail.innerText = getAvailableNantaCourtsCount();
 }
 
-let isCreatingSlot = false; // 중복 실행 방지 플래그
-
-async function createNewGameSlot() {
-    console.log("👉 [ui.js] createNewGameSlot 버튼 함수 실행됨!");
-    if (isCreatingSlot) return; // 이미 실행 중이면 무시
-    
+function createNewGameSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
+    const user = JSON.parse(savedUser);
+    const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
-    isCreatingSlot = true;
-    try {
-        const user = JSON.parse(savedUser);
-        const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
-
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (!activeSocket) {
-            alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
-            return;
-        }
-
-        // 💡 서버(socket.js)에서 확인창(confirmFirstSlot)을 띄우므로 바로 소켓 전송
-        activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
-    } finally {
-        // 연속 클릭 방지 해제 (0.5초 뒤)
-        setTimeout(() => { isCreatingSlot = false; }, 500);
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (!activeSocket) {
+        alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
+        return;
     }
+
+    // 서버 및 socket.js의 확인 흐름(confirmFirstSlot)과 연동되도록 바로 소켓 전송
+    activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
-async function createNewNantaSlot() {
-    if (isCreatingSlot) return; // 이미 실행 중이면 무시
-
+function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
+    const user = JSON.parse(savedUser);
+    const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
-    isCreatingSlot = true;
-    try {
-        const user = JSON.parse(savedUser);
-        const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
-
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (!activeSocket) {
-            alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
-            return;
-        }
-
-        // 💡 서버(socket.js)에서 확인창(confirmFirstSlot)을 띄우므로 바로 소켓 전송
-        activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
-    } finally {
-        setTimeout(() => { isCreatingSlot = false; }, 500);
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (!activeSocket) {
+        alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
+        return;
     }
+
+    // 서버 및 socket.js의 확인 흐름과 연동되도록 바로 소켓 전송
+    activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
 }
 
 async function joinGameCell(slotId, idx) {
