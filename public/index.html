@@ -11,105 +11,21 @@
     <meta name="theme-color" content="#0b0f19">
     <link rel="apple-touch-icon" href="/img/icon-192.png">
 
-    <!-- 📌 alert, confirm, prompt 전역 오버라이딩 스크립트 -->
+    <!-- 📌 [핵심] 다른 스크립트보다 먼저 실행되도록 head에 배치한 세련된 커스텀 알림 오버라이딩 -->
     <script>
+      // 기존 alert을 확실하게 가로채도록 수정
       window.alert = function(message) {
+          console.log("커스텀 alert 호출됨:", message);
           const modal = document.getElementById('custom-alert-modal');
           const msgEl = document.getElementById('custom-alert-message');
-          const cancelBtn = document.getElementById('custom-alert-cancel-btn');
-          const promptInput = document.getElementById('custom-prompt-input');
-          
           if (modal && msgEl) {
               msgEl.innerText = message;
-              if (cancelBtn) cancelBtn.style.display = 'none';
-              if (promptInput) promptInput.style.display = 'none';
               modal.style.display = 'flex';
+          } else {
+              // 혹시 모달 요소를 못 찾았을 경우 브라우저 기본 창으로 fallback
+              console.warn("custom-alert-modal 요소를 찾지 못해 기본 alert을 사용합니다.");
+              alert(message);
           }
-      };
-
-      window.confirm = function(message) {
-        // 🔍 디버깅용: 누가 confirm을 불렀는지 추적
-          console.warn("🔔 confirm 호출됨! 메시지:", message);
-          console.trace("호출 경로 추적:");
-          return new Promise((resolve) => {
-              const modal = document.getElementById('custom-alert-modal');
-              const msgEl = document.getElementById('custom-alert-message');
-              const cancelBtn = document.getElementById('custom-alert-cancel-btn');
-              const okBtn = document.getElementById('custom-alert-ok-btn');
-              const promptInput = document.getElementById('custom-prompt-input');
-
-              if (modal && msgEl) {
-                  msgEl.innerText = message;
-                  if (cancelBtn) cancelBtn.style.display = 'inline-block';
-                  if (promptInput) promptInput.style.display = 'none';
-                  modal.style.display = 'flex';
-
-                  const newOkBtn = okBtn.cloneNode(true);
-                  const newCancelBtn = cancelBtn.cloneNode(true);
-                  okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-                  cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-
-                  newOkBtn.onclick = () => {
-                      modal.style.display = 'none';
-                      resolve(true);
-                  };
-                  newCancelBtn.onclick = () => {
-                      modal.style.display = 'none';
-                      resolve(false);
-                  };
-              } else {
-                  resolve(confirm(message));
-              }
-          });
-      };
-
-      window.prompt = function(message) {
-          return new Promise((resolve) => {
-              const modal = document.getElementById('custom-alert-modal');
-              const msgEl = document.getElementById('custom-alert-message');
-              const cancelBtn = document.getElementById('custom-alert-cancel-btn');
-              const okBtn = document.getElementById('custom-alert-ok-btn');
-              const promptInput = document.getElementById('custom-prompt-input');
-
-              if (modal && msgEl) {
-                  msgEl.innerText = message;
-                  if (cancelBtn) cancelBtn.style.display = 'inline-block';
-                  if (promptInput) {
-                      promptInput.style.display = 'block';
-                      promptInput.value = '';
-                      setTimeout(() => promptInput.focus(), 100); // 모달 뜨면서 바로 입력 가능하게 포커스
-                  }
-                  modal.style.display = 'flex';
-
-                  const newOkBtn = okBtn.cloneNode(true);
-                  const newCancelBtn = cancelBtn.cloneNode(true);
-                  okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-                  cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-
-                  const handleOk = () => {
-                      const val = promptInput ? promptInput.value : '';
-                      modal.style.display = 'none';
-                      if (promptInput) promptInput.style.display = 'none';
-                      resolve(val);
-                  };
-
-                  const handleCancel = () => {
-                      modal.style.display = 'none';
-                      if (promptInput) promptInput.style.display = 'none';
-                      resolve(null);
-                  };
-
-                  newOkBtn.onclick = handleOk;
-                  newCancelBtn.onclick = handleCancel;
-                  
-                  // 엔터키 입력 시에도 확인 버튼 누른 것과 동일하게 작동
-                  promptInput.onkeydown = (e) => {
-                      if (e.key === 'Enter') handleOk();
-                  };
-              } else {
-                  resolve(null);
-              }
-          });
       };
 
       function closeCustomAlert() {
@@ -317,16 +233,11 @@
     </div>
 </div>
 
-<!-- 📌 alert, confirm, prompt를 모두 지원하는 세련된 통합 커스텀 모달 HTML -->
+<!-- 📌 중복을 제거하고 하나만 깔끔하게 남긴 세련된 커스텀 알림 모달 HTML -->
 <div id="custom-alert-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; justify-content: center; align-items: center;">
-    <div style="background: #111827; border: 1px solid #374151; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 16px;">
-        <p id="custom-alert-message" style="color: #f3f4f6; font-size: 16px; margin: 0; word-break: keep-all; line-height: 1.5;"></p>
-        <!-- prompt 입력용 인풋 필드 (평소엔 숨김) -->
-        <input type="password" id="custom-prompt-input" placeholder="비밀번호 입력" style="display: none; width: 100%; padding: 10px; background: #1f2937; border: 1px solid #374151; color: white; border-radius: 6px; font-size: 14px; text-align: center; outline: none;" />
-        <div style="display: flex; gap: 10px;">
-            <button id="custom-alert-cancel-btn" style="flex: 1; background: #555; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; display: none;">취소</button>
-            <button id="custom-alert-ok-btn" style="flex: 1; background: #2563eb; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">확인</button>
-        </div>
+    <div style="background: #111827; border: 1px solid #374151; padding: 24px; border-radius: 12px; width: 320px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+        <p id="custom-alert-message" style="color: #f3f4f6; font-size: 16px; margin-bottom: 20px; word-break: keep-all; line-height: 1.5;"></p>
+        <button onclick="closeCustomAlert()" style="background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">확인</button>
     </div>
 </div>
 

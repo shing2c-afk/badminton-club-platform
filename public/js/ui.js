@@ -72,8 +72,8 @@ function closeNotiModal() {
     if (modal) modal.style.display = 'none'; 
 }
 
-async function accessAdmin() {
-    const inputPw = await prompt('🔐 관리자 비밀번호를 입력해 주세요:');
+function accessAdmin() {
+    const inputPw = prompt('🔐 관리자 비밀번호를 입력해 주세요:');
     if (inputPw === null) return;
 
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
@@ -131,6 +131,7 @@ function renderCourts() {
     if (!courtList) return;
     courtList.innerHTML = '';
 
+    // 현재 로그인한 사용자 이름 가져오기
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
     if (savedUser) {
@@ -140,6 +141,7 @@ function renderCourts() {
         } catch (e) {}
     }
 
+    // 📌 [수정] 슬래시(/) 기준 양옆의 공백을 균일하게 맞춰주고, 일정한 간격으로 출력하는 함수
     function formatPlayersToLines(playersInput) {
         if (!playersInput) return '';
         let pArray = [];
@@ -153,6 +155,8 @@ function renderCourts() {
         return pArray
             .filter(p => p && p.length > 0)
             .map(p => {
+                // 슬래시(/) 기준으로 쪼갠 후 공백을 제거하고, " / " 형태로 예쁘게 다시 조인(Join)해 줍니다.
+                // 이렇게 하면 데이터가 어떻게 들어왔든 항상 "이름 / 성별 / 연령대 / 조" 형태로 띄워쓰기가 통일됩니다.
                 let normalizedStr = p;
                 if (p.includes('/')) {
                     normalizedStr = p.split('/').map(part => part.trim()).join(' / ');
@@ -286,6 +290,7 @@ function renderCourts() {
     });
 }
 
+// 1. 대기열 렌더링 함수 (통합 메뉴 템플릿 포함)
 function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
     if (!container) return;
@@ -300,6 +305,7 @@ function renderGameQueue() {
         } catch (e) {}
     }
 
+    // 📌 [추가] 슬래시(/) 기준 양옆의 공백을 통일해주는 함수
     function formatPlayerText(playerStr) {
         if (!playerStr) return '';
         if (playerStr.includes('/')) {
@@ -308,6 +314,7 @@ function renderGameQueue() {
         return playerStr;
     }
 
+    // 내가 이 게임 대기열 어디든 참여 중인지 확인
     const amIInGameQueue = gameQueue.some(slot => 
         slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
     );
@@ -325,32 +332,42 @@ function renderGameQueue() {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
                 const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
-                const formattedPlayer = formatPlayerText(p);
+                const formattedPlayer = formatPlayerText(p); // 📌 공백 정규화 적용
                 if (isMe) {
+                    // 내 퇴장 버튼: 활성화 (빨간색 계열)
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
                 } else {
+                    // 타인의 퇴장 버튼: 비활성화 (회색 계열)
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
                 }
             } else {
+                // 빈자리 처리: 텍스트는 "게임참여"로 통일하되 활성화/비활성화 상태 구분
                 if (amIInGameQueue) {
+                    // 비활성화된 게임참여 -> 어두운 회색
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">게임참여</span></div>`;
                 } else {
+                    // 활성화된 게임참여 -> 밝은 텍스트 및 클릭 가능
                     playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell" style="color:#fff; font-weight:500;">게임참여</span></div>`;
                 }
             }
         }
 
+        // 공통으로 사용할 유효 인원 및 본인 방 여부 체크 변수
         const validPlayersCount = getValidPlayers(slot.players).length;
         const isMySlotGame = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
 
+        // 1. 코트 입장 버튼 활성/비활성화 판별 로직
         const isFullGame = (validPlayersCount === 4);
         let gameEnterBtnHtml = '';
         if (isFullGame && isMySlotGame) {
+            // 4명 꽉 차고 내 방일 때: 초록색 활성화
             gameEnterBtnHtml = `<button class="btn-action btn-enter" onclick="enterGameCourt('${slot.id}')" style="background: #10b981; color: #fff; cursor: pointer; opacity: 1;">코트 입장</button>`;
         } else {
+            // 조건 미달 또는 남의 방일 때: 회색 비활성화
             gameEnterBtnHtml = `<button class="btn-action btn-enter" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">코트 입장</button>`;
         }
 
+        // 2. 게임 통합 버튼 활성/비활성화 판별 로직 (1~3명이고 내 방일 때만 활성화, 4명이면 비활성화)
         const isMergeableCount = (validPlayersCount > 0 && validPlayersCount < 4);
         let gameMergeBtnHtml = '';
         if (isMergeableCount && isMySlotGame) {
@@ -359,6 +376,7 @@ function renderGameQueue() {
             gameMergeBtnHtml = `<button class="btn-action btn-merge" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">게임 통합</button>`;
         }
 
+        // 만약 현재 슬롯이 통합 메뉴를 열어둔 상태라면 리스트 HTML 생성 (상태 변수 연동)
         let mergeMenuHtml = '';
         if (activeMergeSlotId === slot.id) {
             const targetSlots = gameQueue.filter(s => {
@@ -373,7 +391,7 @@ function renderGameQueue() {
             } else {
                 targetSlots.forEach((targetSlot) => {
                     const targetRank = gameQueue.findIndex(s => s.id === targetSlot.id) + 1;
-                    const rawPlayersList = getValidPlayers(targetSlot.players).map(p => formatPlayerText(p));
+                    const rawPlayersList = getValidPlayers(targetSlot.players).map(p => formatPlayerText(p)); // 📌 통합 목록도 공백 정규화 적용
                     const playersStr = rawPlayersList.join(", ");
                     listHtml += `
                         <div class="merge-option-item" onclick="confirmAndExecuteMerge('${slot.id}', '${targetSlot.id}', ${targetRank})" style="padding: 10px 12px; margin-bottom: 6px; background: #1e1e2f; border: 1px solid #7c3aed; border-radius: 6px; cursor: pointer;">
@@ -416,6 +434,7 @@ function renderGameQueue() {
     });
 }
 
+// 2. 게임 통합 버튼 클릭 시 호출되는 함수 (상태값 토글 후 렌더링)
 function mergeGameSlot(slotId) {
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
@@ -433,6 +452,7 @@ function mergeGameSlot(slotId) {
     const isMySlot = currentSlot.players.some(p => p && currentUserName && p.includes(currentUserName));
     if (!isMySlot || currentValidPlayers.length === 0 || currentValidPlayers.length >= 4) return;
 
+    // 합칠 수 있는 대상 슬롯이 있는지 우선 체크
     const targetSlots = gameQueue.filter(s => {
         if (s.id === slotId) return false;
         const targetValid = getValidPlayers(s.players);
@@ -444,25 +464,27 @@ function mergeGameSlot(slotId) {
         return;
     }
 
+    // 이미 열려 있는 방을 다시 누르면 닫고, 다른 방이면 해당 방의 메뉴를 연다.
     if (activeMergeSlotId === slotId) {
         activeMergeSlotId = null;
     } else {
         activeMergeSlotId = slotId;
     }
 
+    // 대기열 화면을 다시 그려서 메뉴를 안정적으로 표시/제거한다.
     renderGameQueue();
 }
 
-async function confirmAndExecuteMerge(mySlotId, targetSlotId, targetRank) {
-    const confirmed = await confirm(`[${targetRank}순위 방]과 통합하시겠습니까?\n(합쳐진 총 인원: 4명)`);
-    if (confirmed) {
+// 3. 실제 통합 실행 함수
+function confirmAndExecuteMerge(mySlotId, targetSlotId, targetRank) {
+    if (confirm(`[${targetRank}순위 방]과 통합하시겠습니까?\n(합쳐진 총 인원: 4명)`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
             activeSocket.emit('mergeSlot', { 
                 mySlotId: mySlotId, 
                 targetSlotId: targetSlotId 
             });
-            activeMergeSlotId = null;
+            activeMergeSlotId = null; // 통합 요청 후 메뉴 닫기
         }
     }
 }
@@ -481,6 +503,7 @@ function renderNantaQueue() {
         } catch (e) {}
     }
 
+    // 📌 [추가] 난타용 슬래시 공백 정규화 함수
     function formatNantaPlayerText(playerStr) {
         if (!playerStr) return '';
         if (playerStr.includes('/')) {
@@ -489,6 +512,7 @@ function renderNantaQueue() {
         return playerStr;
     }
 
+    // 내가 이 난타 대기열 어디든 참여 중인지 확인
     const amIInNantaQueue = nantaQueue.some(slot => 
         slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
     );
@@ -506,29 +530,37 @@ function renderNantaQueue() {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
                 const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
-                const formattedNantaPlayer = formatNantaPlayerText(p);
+                const formattedNantaPlayer = formatNantaPlayerText(p); // 📌 공백 정규화 적용
                 if (isMe) {
+                    // 내 퇴장 버튼: 활성화 (빨간색 계열)
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
                 } else {
+                    // 타인의 퇴장 버튼: 비활성화 (회색 계열)
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
                 }
             } else {
+                // 빈자리 처리: 텍스트는 "난타참여"로 통일하되 활성화/비활성화 상태 구분
                 if (amIInNantaQueue) {
+                    // 비활성화된 난타참여 -> 어두운 회색
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">난타참여</span></div>`;
                 } else {
+                    // 활성화된 난타참여 -> 밝은 텍스트 및 클릭 가능
                     playerCellsHtml += `<div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell" style="color:#fff; font-weight:500;">난타참여</span></div>`;
                 }
             }
         }
 
+        // 난타 코트 입장 버튼 활성/비활성화 판별 로직
         const validNantaCount = getValidPlayers(slot.players).length;
         const isFullNanta = (validNantaCount === 2);
         const isMySlotNanta = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
 
         let nantaEnterBtnHtml = '';
         if (isFullNanta && isMySlotNanta) {
+            // 2명 꽉 차고 내 방일 때: 초록색 활성화
             nantaEnterBtnHtml = `<button class="btn-action btn-enter" onclick="enterNantaCourt('${slot.id}')" style="background: #10b981; color: #fff; cursor: pointer; opacity: 1;">코트 입장</button>`;
         } else {
+            // 조건 미달 또는 남의 방일 때: 회색 비활성화
             nantaEnterBtnHtml = `<button class="btn-action btn-enter" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">코트 입장</button>`;
         }
 
@@ -558,17 +590,12 @@ function updateAvailableCourtCounts() {
     if (nantaAvail) nantaAvail.innerText = getAvailableNantaCourtsCount();
 }
 
-async function createNewGameSlot() {
+function createNewGameSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
-
-    // 💡 핵심: await을 붙여서 사용자가 모달에서 결정을 내릴 때까지 코드 실행을 멈춤
-    const confirmed = await confirm("게임 대기 방을 개설하시겠습니까?");
-    if (!confirmed) return; // '취소'를 누르면 여기서 종료되므로 소켓이 절대 안 나감!
-
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -581,17 +608,12 @@ async function createNewGameSlot() {
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
-async function createNewNantaSlot() {
+function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
-
-    // 💡 핵심: await을 붙여서 사용자가 모달에서 결정을 내릴 때까지 코드 실행을 멈춤
-    const confirmed = await confirm("난타 대기 방을 개설하시겠습니까?");
-    if (!confirmed) return; // '취소'를 누르면 여기서 종료되므로 소켓이 절대 안 나감!
-
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -604,7 +626,7 @@ async function createNewNantaSlot() {
     activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
 }
 
-async function joinGameCell(slotId, idx) {
+function joinGameCell(slotId, idx) {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
@@ -619,6 +641,7 @@ async function joinGameCell(slotId, idx) {
         return;
     }
 
+    // 이름, 성별, 연령대, 급수 추출 (데이터 구조에 맞게 안전하게 가져오기)
     const name = (u.name || u.username || "").trim();
     const gender = (u.gender || "").trim();
     const age = (u.age || u.ageGroup || "").trim();
@@ -629,11 +652,13 @@ async function joinGameCell(slotId, idx) {
         return;
     }
 
+    // 요구하신 순서: 이름 / 성별 / 연령대 / 급수 (예: "김민수 / 남 / 40대 / A조")
+    // 데이터가 없는 항목은 빈 값 대신 자연스럽게 처리되도록 조합합니다.
     const parts = [name, gender, age, level].filter(Boolean);
     const formattedPlayerInfo = parts.join("/");
 
-    const confirmed = await confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`);
-    if (confirmed) {
+    // 확인창 띄우기 (정보 타이핑 없이 참여 여부만 물어봄)
+    if (confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
             activeSocket.emit('joinPlayer', { type: 'game', slotId, index: idx, name: formattedPlayerInfo });
@@ -641,7 +666,7 @@ async function joinGameCell(slotId, idx) {
     }
 }
 
-async function joinNantaCell(slotId, idx) {
+function joinNantaCell(slotId, idx) {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
@@ -666,11 +691,11 @@ async function joinNantaCell(slotId, idx) {
         return;
     }
 
+    // 요구하신 순서: 이름 / 성별 / 연령대 / 급수
     const parts = [name, gender, age, level].filter(Boolean);
     const formattedPlayerInfo = parts.join("/");
 
-    const confirmed = await confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`);
-    if (confirmed) {
+    if (confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`)) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
             activeSocket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: formattedPlayerInfo });
@@ -678,26 +703,25 @@ async function joinNantaCell(slotId, idx) {
     }
 }
 
-async function exitGamePlayer(slotId, idx) {
-    const confirmed = await confirm('해당 회원을 정말 퇴장 처리하시겠습니까?');
-    if (confirmed) {
+function exitGamePlayer(slotId, idx) {
+    if (confirm('해당 회원을 정말 퇴장 처리하시겠습니까?')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('exitPlayer', { type: 'game', slotId, index: idx });
     }
 }
 
-async function exitNantaPlayer(slotId, idx) {
-    const confirmed = await confirm('해당 회원을 정말 퇴장 처리하시겠습니까?');
-    if (confirmed) {
+function exitNantaPlayer(slotId, idx) {
+    if (confirm('해당 회원을 정말 퇴장 처리하시겠습니까?')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('exitPlayer', { type: 'nanta', slotId, index: idx });
     }
 }
 
-async function enterGameCourt(slotId) {
+function enterGameCourt(slotId) {
     const slot = gameQueue.find(s => s.id === slotId);
     if (!slot) return;
 
+    // 💡 [추가] 로그인한 회원이 이 방에 참여 중인지 확인
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
     if (savedUser) {
@@ -712,6 +736,7 @@ async function enterGameCourt(slotId) {
         alert('⚠️ 해당 게임 방에 참여 중인 회원만 코트에 입장할 수 있습니다.');
         return;
     }
+    // ----------------------------------------------------
 
     const validPlayers = getValidPlayers(slot.players);
     if (validPlayers.length < 4) {
@@ -738,8 +763,7 @@ async function enterGameCourt(slotId) {
     const courtIndex = allowedSlots.findIndex(s => s.id === slotId);
     const assignedCourtNumber = (courtIndex !== -1 && emptyGameCourts[courtIndex]) ? emptyGameCourts[courtIndex].id : 1;
 
-    const confirmed = await confirm(`${assignedCourtNumber}번 코트로 입장하시겠습니까?`);
-    if (confirmed) {
+    if (confirm(`${assignedCourtNumber}번 코트로 입장하시겠습니까?`)) {
         if (typeof cancelVoiceAnnouncement === 'function') {
             cancelVoiceAnnouncement(assignedCourtNumber);
         }
@@ -750,10 +774,11 @@ async function enterGameCourt(slotId) {
     }
 }
 
-async function enterNantaCourt(slotId) {
+function enterNantaCourt(slotId) {
     const slot = nantaQueue.find(s => s.id === slotId);
     if (!slot) return;
 
+    // 💡 [추가] 로그인한 회원이 이 난타 방에 참여 중인지 확인
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
     if (savedUser) {
@@ -768,6 +793,7 @@ async function enterNantaCourt(slotId) {
         alert('⚠️ 해당 난타 방에 참여 중인 회원만 코트에 입장할 수 있습니다.');
         return;
     }
+    // ----------------------------------------------------
 
     const validPlayers = getValidPlayers(slot.players);
     if (validPlayers.length < 2) {
@@ -806,8 +832,7 @@ async function enterNantaCourt(slotId) {
         }
     }
 
-    const confirmed = await confirm(`난타 ${assignedCourtNumber}번 코트 (${sideText}반코트)로 입장하시겠습니까?`);
-    if (confirmed) {
+    if (confirm(`난타 ${assignedCourtNumber}번 코트 (${sideText}반코트)로 입장하시겠습니까?`)) {
         if (typeof cancelVoiceAnnouncement === 'function') {
             cancelVoiceAnnouncement(assignedCourtNumber);
         }
@@ -818,26 +843,23 @@ async function enterNantaCourt(slotId) {
     }
 }
 
-async function clickAgain(courtId) {
-    const confirmed = await confirm('동일한 멤버로 한 게임 더 진행하시겠습니까? (대기열 최후순위로 재등록됩니다)');
-    if (confirmed) {
+function clickAgain(courtId) {
+    if (confirm('동일한 멤버로 한 게임 더 진행하시겠습니까? (대기열 최후순위로 재등록됩니다)')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('extendGameCourt', { courtId: courtId });
         switchTab('game');
     }
 }
 
-async function clickEnd(courtId) {
-    const confirmed = await confirm('게임을 종료하고 코트를 비우시겠습니까?');
-    if (confirmed) {
+function clickEnd(courtId) {
+    if (confirm('게임을 종료하고 코트를 비우시겠습니까?')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('endGameCourt', { courtId: courtId });
     }
 }
 
-async function clickNantaEnd(courtId, side) {
-    const confirmed = await confirm('난타를 종료하고 퇴장하시겠습니까?');
-    if (confirmed) {
+function clickNantaEnd(courtId, side) {
+    if (confirm('난타를 종료하고 퇴장하시겠습니까?')) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
             activeSocket.emit('endNantaCourt', { courtId, side });
@@ -847,6 +869,7 @@ async function clickNantaEnd(courtId, side) {
     }
 }
 
+// 핵심 탭 전환 함수 (전역 등록)
 window.switchTab = function(tabName) {
     const tabGame = document.getElementById('tab-game');
     const tabNanta = document.getElementById('tab-nanta');
@@ -901,8 +924,7 @@ function applyUserProfile() {
 }
 
 async function handleLogout() {
-    const confirmed = await confirm("로그아웃 하시겠습니까?");
-    if (confirmed) {
+    if (confirm("로그아웃 하시겠습니까?")) {
         const rawUser = localStorage.getItem("currentUser");
 
         if (rawUser) {
@@ -910,13 +932,13 @@ async function handleLogout() {
                 let userData = rawUser;
                 try {
                     const parsed = JSON.parse(rawUser);
-                    if (parsed) userData = parsed;
+                    if (parsed) userData = parsed; // 객체 전체를 전달하여 서버가 id와 name을 정확히 쓰도록 함
                 } catch (e) {}
 
                 await fetch('/api/logout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: userData })
+                    body: JSON.stringify({ user: userData }) // 키 이름을 user로 변경하여 명확히 전달
                 });
             } catch (err) {
                 console.error("❌ 로그아웃 서버 통신 에러:", err);
@@ -935,6 +957,7 @@ async function handleLogout() {
     }
 }
 
+// 1. 고유한 이름의 메인 탭 전환 함수 (충돌 방지)
 function changeMainTab(tabName) {
     console.log(`[메인 탭 전환] ${tabName} 실행됨`);
     
@@ -967,6 +990,7 @@ function changeMainTab(tabName) {
 }
 window.changeMainTab = changeMainTab;
 
+// 2. 전역 클릭 이벤트 위임 (어떤 상황에서도 탭 클릭을 완벽하게 캐치)
 document.addEventListener('click', (event) => {
     const targetTab = event.target.closest('.tab-btn');
     if (!targetTab) return;

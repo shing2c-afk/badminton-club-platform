@@ -177,29 +177,22 @@ socket.on('entryPopupAlert', async (data) => {
     }
 });
 
-// =================================================================
-// 💡 [수정] 방 개설 확인 창 대기 (async/await 적용)
-// =================================================================
-socket.on('confirmFirstSlot', async ({ type, userId, user }) => {
+// 💡 [신규 추가] 서버가 보낸 첫 방 개설 확인 요청을 받아 브라우저 Confirm 창 띄우기
+socket.on('confirmFirstSlot', ({ type, userId, user }) => {
     const roomTypeName = type === 'game' ? '게임' : '난타';
-    
-    // 모달창이 뜨고 사용자가 선택할 때까지 대기
-    const isConfirmed = await confirm(`${roomTypeName} 대기 방을 개설하시겠습니까?`);
+    const isConfirmed = confirm(`${roomTypeName} 대기 방을 개설하시겠습니까?`);
 
     if (isConfirmed) {
         socket.emit('forceCreateSlot', { type, userId, user });
     }
 });
 
-// =================================================================
-// 💡 [수정] 교차 방 개설(난타/게임 중복) 경고 창 대기 (async/await 적용)
-// =================================================================
-socket.on('confirmCrossSlot', async ({ type, userId, user }) => {
+// 서버가 보낸 교차 개설 확인 요청을 받아 브라우저 Confirm 창 띄우기
+socket.on('confirmCrossSlot', ({ type, userId, user }) => {
     const roomTypeName = type === 'game' ? '게임' : '난타';
     const oppositeTypeName = type === 'game' ? '난타' : '게임';
 
-    // 스크린샷에서 보셨던 경고 메시지 창이 뜨고 대기
-    const isConfirmed = await confirm(`현재 ${oppositeTypeName} 대기 상태입니다. ${roomTypeName} 방을 개설하시면 기존 대기 상태에 영향을 줄 수 있습니다. 계속하시겠습니까?`);
+    const isConfirmed = confirm(`현재 ${oppositeTypeName} 대기 상태입니다. ${roomTypeName} 방을 개설하시면 기존 대기 상태에 영향을 줄 수 있습니다. 계속하시겠습니까?`);
 
     if (isConfirmed) {
         socket.emit('forceCreateSlot', { type, userId, user });
@@ -243,11 +236,10 @@ if (typeof socket !== 'undefined') {
 }
 
 // =================================================================
-// 💡 난타 코트 종료(퇴장) 요청 함수 (버튼 클릭 시 실행) - [수정] async/await 적용
+// 💡 난타 코트 종료(퇴장) 요청 함수 (버튼 클릭 시 실행)
 // =================================================================
-window.requestClearNantaCourt = async function(courtId, side) {
-    const isConfirmed = await confirm("정말로 난타를 종료(퇴장)하시겠습니까?");
-    if (isConfirmed) {
+window.requestClearNantaCourt = function(courtId, side) {
+    if (confirm("정말로 난타를 종료(퇴장)하시겠습니까?")) {
         socket.emit('clearNantaCourt', { courtId, side });
     }
 };
