@@ -235,16 +235,8 @@ app.post('/api/member/withdraw', async (req, res) => {
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
-// Render 환경이면 /data/badminton.db, 로컬이면 기존 경로 사용
-const dbPath = process.env.RENDER ? '/data/badminton.db' : path.resolve(__dirname, 'badminton.db');
-
-// Render 환경에서 /data 폴더가 없으면 자동으로 생성
-if (process.env.RENDER) {
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
+// /data 경로를 쓰지 않고 무조건 프로젝트 내부 경로를 쓰도록 수정
+const dbPath = path.resolve(__dirname, 'badminton.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
@@ -600,9 +592,12 @@ app.post('/api/member/update', (req, res) => {
     });
 });
 
-// 3. 🧹 [안전하고 완벽한 마스터 키 기반 슬롯 청소 함수]
+// 3. 🧹 [디버깅 로그가 강화된 슬롯 청소 및 자동 방 폭파 함수]
 async function cleanupUser(usernameOrObj) {
-    if (!usernameOrObj) return;
+    if (!usernameOrObj) {
+        console.log("⚠️ [청소 중단] 전달된 유저 정보가 없습니다.");
+        return;
+    }
 
     let targetId = '';
     let targetName = '';
@@ -626,7 +621,9 @@ async function cleanupUser(usernameOrObj) {
         }
     }
 
-    console.log(`🧹 [청소 타겟 분석] 입력값:`, usernameOrObj);
+    console.log(`\n========================================`);
+    console.log(`🧹 [청소 시작] 입력받은 원본 데이터:`, usernameOrObj);
+    console.log(`🔍 1차 파싱값 -> targetId: "${targetId}", targetName: "${targetName}"`);
 
     // DB에서 해당 유저의 정확한 정보(이름, ID 등)를 확실하게 조회
     let dbRow = null;
@@ -652,15 +649,23 @@ async function cleanupUser(usernameOrObj) {
     const realId = dbRow ? dbRow.id : targetId;
     const realName = dbRow ? dbRow.name : targetName;
 
-    console.log(`🎯 [확정된 청소 대상] ID: "${realId}", Name: "${realName}"`);
+    console.log(`🎯 [확정된 청소 대상] realId: "${realId}", realName: "${realName}"`);
 
-    // 게임 대기열 정리
+    // 1️⃣ 게임 대기열 디버깅 및 청소
     if (typeof gameQueue !== 'undefined' && Array.isArray(gameQueue)) {
-        const validGameQueue = gameQueue.filter(slot => {
+        console.log(`📋 [게임 대기열 검사 전 상태] 현재 대기 방 개수: ${gameQueue.length}개`);
+        
+        const validGameQueue = [];
+        
+        gameQueue.forEach((slot, index) => {
+            console.log(`\n    - [방 #${index + 1} 검사중] ID: ${slot.id}, 플레이어 목록:`, slot.players);
+            
             const slotStr = JSON.stringify(slot);
             const isMatched = 
                 (realId && slotStr.includes(realId)) ||
                 (realName && slotStr.includes(realName));
+
+            console.log(`     -> 유저 매칭 여부 (isMatched): ${isMatched}`);
 
             if (isMatched) {
                 if (slot.userIds && Array.isArray(slot.userIds)) {
@@ -674,6 +679,7 @@ async function cleanupUser(usernameOrObj) {
                             (realId && pStr.includes(realId)) ||
                             (realName && pStr.includes(realName))
                         ) {
+                            console.log(`     ✂️ 플레이어 칸에서 유저 [${p}] 삭제 완료`);
                             return '';
                         }
                         return p;
@@ -681,17 +687,30 @@ async function cleanupUser(usernameOrObj) {
                 }
             }
 
-            const hasValidPlayers = slot.players && slot.players.some(p => String(p || '').trim() !== '' && String(p) !== 'undefined');
-            const hasValidIds = slot.userIds && slot.userIds.some(id => String(id || '').trim() !== '' && String(id) !== 'undefined');
-            return hasValidPlayers || hasValidIds;
+            // 💡 [수정 완료] hasValidIds 조건을 완전히 제거하고, 오직 실제 플레이어(사람)의 수만 검사합니다.
+            const validPlayers = getValidPlayers(slot.players);
+            
+            console.log(`     -> 유저 삭제 후 남은 유효 인원수 (validPlayers.length): ${validPlayers.length}`);
+
+            if (validPlayers.length > 0) {
+                console.log(`     ✅ 사람이 남아있으므로 방을 유지합니다.`);
+                validGameQueue.push(slot);
+            } else {
+                console.log(`     💥 [방 폭파 성공!] 남은 인원이 0명이므로 게임방(${slot.id})을 대기열에서 삭제합니다.`);
+            }
         });
+
         gameQueue.length = 0;
         gameQueue.push(...validGameQueue);
+        console.log(`📋 [게임 대기열 검사 후 상태] 남은 대기 방 개수: ${gameQueue.length}개`);
     }
 
-    // 난타 대기열 정리
+    // 2️⃣ 난타 대기열 디버깅 및 청소
     if (typeof nantaQueue !== 'undefined' && Array.isArray(nantaQueue)) {
-        const validNantaQueue = nantaQueue.filter(slot => {
+        console.log(`📋 [난타 대기열 검사 전 상태] 현재 대기 방 개수: ${nantaQueue.length}개`);
+        const validNantaQueue = [];
+
+        nantaQueue.forEach((slot, index) => {
             const slotStr = JSON.stringify(slot);
             const isMatched = 
                 (realId && slotStr.includes(realId)) ||
@@ -716,22 +735,26 @@ async function cleanupUser(usernameOrObj) {
                 }
             }
 
-            const hasRemainingPlayers = slot.players && slot.players.some(p => String(p || '').trim() !== '' && String(p) !== 'undefined');
-            const hasRemainingIds = slot.userIds && slot.userIds.some(id => String(id || '').trim() !== '' && String(id) !== 'undefined');
-            return hasRemainingPlayers || hasRemainingIds;
+            // 💡 [수정 완료] 난타 대기열도 동일하게 인원수가 0명일 때만 폭파
+            const validPlayers = getValidPlayers(slot.players);
+
+            if (validPlayers.length > 0) {
+                validNantaQueue.push(slot);
+            } else {
+                console.log(`     💥 [난타 방 폭파 성공!] 난타 방(${slot.id})이 삭제되었습니다.`);
+            }
         });
+
         nantaQueue.length = 0;
         nantaQueue.push(...validNantaQueue);
     }
 
+    console.log(`========================================\n`);
+
     if (typeof broadcastState === 'function') {
         broadcastState();
-        console.log('📢 [디버깅] 대기열 청소 후 broadcastState() 실행 완료');
     } else if (typeof io !== 'undefined') {
         io.emit('updateState', { gameQueue, nantaQueue });
-        console.log('📢 [디버깅] io.emit을 통한 대기열 상태 강제 브로드캐스트 완료');
-    } else {
-        console.log('⚠️ [디버깅 경고] 브로드캐스트 수단을 찾을 수 없습니다!');
     }
 }
 
