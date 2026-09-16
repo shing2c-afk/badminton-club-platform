@@ -8,7 +8,6 @@
     <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     
-    /* 1. 바디 레이아웃: space-between을 풀고 위에서부터 순서대로 밀착 배치 */
     body { 
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
         background-color: #0a0c10; 
@@ -18,8 +17,8 @@
         height: 100vh; 
         display: flex; 
         flex-direction: column; 
-        justify-content: flex-start; /* 상단부터 차곡차곡 쌓이도록 변경 */
-        gap: 8px;                    /* 헤더, 코트판, 대기열 사이의 간격 */
+        justify-content: flex-start; 
+        gap: 8px; 
     }
     
     .header { 
@@ -30,18 +29,16 @@
     }
     .header h1 { color: #66fcf1; font-size: 40px; letter-spacing: 2px; }
 
-    /* 1. 코트 그리드: 행 높이를 늘어난 코트 높이에 맞춰 수정 */
     .court-grid { 
         display: grid; 
         grid-template-columns: repeat(4, 1fr); 
-        grid-template-rows: repeat(2, 145px); /* 👈 110px에서 145px로 변경하여 양면이 다 보이도록 확보 */
+        grid-template-rows: repeat(2, 145px); 
         align-content: start;                    
         gap: 6px; 
         width: 100%; 
         flex-shrink: 0; 
     }
     
-    /* 2. 코트 카드: 높이를 145px로 확장 */
     .court-card { 
         background: #141824; 
         border: 2px solid #232d42; 
@@ -52,8 +49,8 @@
         justify-content: flex-start; 
         gap: 2px; 
         overflow: hidden; 
-        height: 145px;                           /* 👈 110px에서 145px로 변경 */
-        min-height: 145px;                       /* 👈 110px에서 145px로 변경 */
+        height: 145px; 
+        min-height: 145px; 
     }
     
     .court-card.game { border-color: #3498db; }
@@ -75,13 +72,12 @@
     .badge-nanta { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid #ffa500; }
     .badge-lesson { background: rgba(155, 89, 182, 0.15); color: #9b59b6; border: 1px solid #9b59b6; }
 
-    /* 팀 목록 영역도 아래로 늘어나지 않게 위쪽으로 밀착 */
     .team-list { 
         display: flex; 
         flex-direction: column; 
         gap: 2px; 
         justify-content: flex-start; 
-        flex-grow: 0;                /* 남은 공간을 억지로 채우려고 늘어나지 않도록 설정 */
+        flex-grow: 0; 
     }
     
     .team-row { 
@@ -99,12 +95,11 @@
 
     .timer-text { font-size: 11px; color: #00ff66; font-weight: bold; }
 
-    /* 3. 하단 대기열 컨테이너: 남은 화면 아래쪽까지 꽉 차도록 확장 */
     .waiting-container { 
         display: grid; 
         grid-template-columns: 1fr 1fr; 
         gap: 8px; 
-        flex-grow: 1;                         /* 👈 핵심: 남은 세로 공간을 전부 하단 대기열이 독점하여 화면 아래까지 꽉 채움 */
+        flex-grow: 1; 
         min-height: 0; 
         margin-top: 6px; 
     }
@@ -116,7 +111,6 @@
     .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 5px 8px; border-radius: 4px; font-size: 18px; font-weight: bold; color: #ffffff; }
     .empty-queue-text { color: #52607d; font-size: 15px; font-weight: bold; padding: 4px; }
 
-    /* 🖥️ TV 전광판 전용 와이드 팝업 스타일 */
     #tv-cleaning-popup {
         display: none;
         position: fixed;
@@ -172,17 +166,14 @@
 </head>
 <body>
 
-<!-- [수정됨] 코트 비우기 알림 상단 배너 -->
 <div id="court-alert-banner" style="display: none; position: fixed; top: 30px; left: 50%; transform: translateX(-50%); color: white; padding: 35px 70px; border-radius: 16px; font-weight: bold; font-size: 45px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 99999; text-align: center; border: 4px solid rgba(255,255,255,0.3); transition: background-color 0.3s;">
     <span id="court-alert-text">알림 내용</span>
 </div>
 
-<!-- [수정됨] TV 화면 중앙에 띄울 대기방 삭제 알림 모달 팝업 -->
 <div id="popupModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; justify-content:center; align-items:center;">
     <div style="background:#141824; border: 5px solid #3498db; padding:60px 80px; border-radius:20px; text-align:center; max-width:1200px; width:85%; color: #ffffff; box-shadow: 0 25px 50px rgba(0,0,0,0.8);">
         <h2 id="popupTitle" style="color: #ff4d4d; margin-bottom: 30px; font-size: 55px; font-weight: 900;">대기방 삭제 안내</h2>
-        <p id="popupMessage" style="font-size: 42px; color: #ffffff; margin-bottom: 45px; line-height: 1.5; font-weight: bold;"></p>
-        <button onclick="document.getElementById('popupModal').style.display='none'" style="padding: 20px 50px; font-size: 35px; font-weight: bold; background: #3498db; color: white; border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);">확인</button>
+        <p id="popupMessage" style="font-size: 42px; color: #ffffff; margin-bottom: 20px; line-height: 1.5; font-weight: bold;"></p>
     </div>
 </div>
 
@@ -190,7 +181,6 @@
         <h1>🏸 체육관 실시간 종합 현황판</h1>
     </div>
 
-    <!-- 📢 [수정] 인덱스 화면과 동일하게 가로로 꽉 차고 내용이 왼쪽 정렬되는 공지 바 -->
     <div style="width: 100%; background: #161b22; border-bottom: 1px solid #30363d; border-top: 1px solid #30363d; padding: 12px 24px; box-sizing: border-box; margin-bottom: 15px;">
         <div id="tv-notice-text" style="color: #e6edf3; font-size: 20px; font-weight: bold; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
             📢 공지사항을 불러오는 중...
@@ -213,16 +203,13 @@
 <script>
 const socket = io();
 
-    // 외부 audio.js에 선언된 맵이 없을 경우에만 안전하게 생성
     if (typeof window.pendingAnnouncements === 'undefined') {
         window.pendingAnnouncements = new Map();
     }
 
-    // 💡 TV 팝업 순서 제어를 위한 대기열 변수들
     let tvPopupQueue = [];
     let isTvPopupShowing = false;
 
-    // 1. TV 페이지 로드 시 최신 공지 불러오기
     async function loadTvNotice() {
         try {
             const response = await fetch('/api/notices');
@@ -239,10 +226,8 @@ const socket = io();
         }
     }
 
-    // 초기 실행
     loadTvNotice();
 
-    // 2. 실시간 소켓 수신 (관리자가 공지를 올리면 TV 화면에도 즉시 반영)
     if (typeof socket !== 'undefined') {
         socket.on('noticeUpdated', (newNotice) => {
             const noticeElement = document.getElementById('tv-notice-text');
@@ -270,13 +255,12 @@ const socket = io();
         });
     }
 
-    // 💡 팝업을 순서대로 꺼내서 보여주는 큐 처리 함수
     let popupTimer = null;
     function processTvPopupQueue() {
         if (isTvPopupShowing || tvPopupQueue.length === 0) return;
 
         isTvPopupShowing = true;
-        const popupData = tvPopupQueue.shift(); // 대기열에서 가장 먼저 들어온 팝업 꺼내기
+        const popupData = tvPopupQueue.shift();
 
         const modal = document.getElementById('popupModal');
         const title = document.getElementById('popupTitle');
@@ -285,6 +269,9 @@ const socket = io();
         if (modal && title && msg) {
             if (popupData.matchType === '난타임박') {
                 title.innerText = `[난타 이용 시간 임박]`;
+                msg.innerHTML = popupData.message;
+            } else if (popupData.matchType.includes('입장요청')) {
+                title.innerText = `[${popupData.matchType}]`;
                 msg.innerHTML = popupData.message;
             } else {
                 title.innerText = `[${popupData.matchType} 대기방 삭제]`;
@@ -297,28 +284,22 @@ const socket = io();
             popupTimer = setTimeout(() => {
                 modal.style.display = 'none';
                 isTvPopupShowing = false;
-                
-                // 0.5초 쉬었다가 큐에 남은 다음 팝업 실행
                 setTimeout(processTvPopupQueue, 500); 
-            }, 8000
-        ); 
+            }, 10000); 
         } else {
             isTvPopupShowing = false;
         }
     }
 
-    // 외부에서 팝업을 띄우고 싶을 때 호출할 함수 (큐에 집어넣음)
     function enqueueTvPopup(popupObj) {
         tvPopupQueue.push(popupObj);
         processTvPopupQueue();
     }
 
-    // 접속하자마자 TV 전광판 전용 방에 등록
     socket.on('connect', () => {
         socket.emit('registerTV');
     });
 
-    // TV 전광판 클라이언트 - 대기방 삭제 팝업 수신 리스너
     socket.on('tvPopupAlert', (data) => {
         enqueueTvPopup({
             matchType: data.matchType,
@@ -327,7 +308,34 @@ const socket = io();
         });
     });
 
-    // 브라우저 내장 음성 합성(TTS) 함수
+    socket.off('entryPopupAlert').on('entryPopupAlert', (data) => {
+        const targetNames = (data.targetPlayers && Array.isArray(data.targetPlayers)) ? data.targetPlayers.join(', ') : '';
+        
+        enqueueTvPopup({
+            matchType: `${data.matchType || '게임'} 코트 입장요청`,
+            names: data.targetPlayers || [],
+            message: `<strong>${targetNames}</strong> 회원님!<br>지금 <strong>[${data.courtNumber}번 ${data.matchType} 코트]</strong>로 입장해 주세요!`
+        });
+    });
+
+    // 💡 1~9번 및 10번 이후 코트 번호까지 '번' 누락 없이 완벽하게 읽어주는 변환 함수
+    function getReadableCourtName(courtNum) {
+        if (!courtNum) return '';
+        const num = parseInt(courtNum, 10);
+        const baseMap = { 1: '일', 2: '이', 3: '삼', 4: '사', 5: '오', 6: '육', 7: '칠', 8: '팔', 9: '구' };
+        
+        if (num >= 1 && num <= 9) {
+            return `${baseMap[num]} 번`;
+        } else if (num >= 10 && num <= 19) {
+            if (num === 10) return '십 번';
+            return `십${baseMap[num - 10]} 번`;
+        } else if (num >= 20 && num <= 29) {
+            if (num === 20) return '이십 번';
+            return `이십${baseMap[num - 20]} 번`;
+        }
+        return `${num} 번`;
+    }
+
     function playVoiceAnnouncement(text, delaySeconds = 0, announcementId = null) {
         if ('speechSynthesis' in window) {
             if (announcementId && window.pendingAnnouncements.has(announcementId)) {
@@ -339,16 +347,7 @@ const socket = io();
                 .replace(/안내\s*말씀\s*드립니다[\.!]?\s*/g, '')
                 .trim();
 
-            let refinedMessage = cleanMessage
-                .replace(/1\s*번/g, '일 번')
-                .replace(/2\s*번/g, '이 번')
-                .replace(/3\s*번/g, '삼 번')
-                .replace(/4\s*번/g, '사 번')
-                .replace(/5\s*번/g, '오 번')
-                .replace(/6\s*번/g, '육 번')
-                .replace(/7\s*번/g, '칠 번')
-                .replace(/8\s*번/g, '팔 번')
-                .replace(/9\s*번/g, '구 번');
+            let refinedMessage = cleanMessage;
 
             if (refinedMessage.includes('회원님은')) {
                 let parts = refinedMessage.split('회원님은');
@@ -507,7 +506,7 @@ const socket = io();
                 enqueueTvPopup({
                     matchType: '난타임박',
                     names: [],
-                    message: `⏰ <strong>${broadcastText}</strong>` // 👈 아래쪽 중복 문구 제거
+                    message: `⏰ <strong>${broadcastText}</strong>`
                 });
             }
 
@@ -517,11 +516,8 @@ const socket = io();
         const { courtNumber, names, matchType } = data;
         const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
 
-        const numMap = {
-            '1': '일', '2': '이', '3': '삼', '4': '사', 
-            '5': '오', '6': '육', '7': '칠', '8': '팔', '9': '구'
-        };
-        const readableCourtNum = numMap[String(courtNumber)] || (courtNumber ? `${courtNumber} 번` : '');
+        // 💡 1번부터 10번 이후까지 번호와 '번'이 절대 누락되지 않도록 함수 적용
+        const readableCourtNum = getReadableCourtName(courtNumber);
 
         const announcementText = `${namesString} 회원님은, ${readableCourtNum}, ${matchType || '게임'} 코트로, 입장해 주세요.`;
         
@@ -672,13 +668,11 @@ function renderTVCourts(courts) {
         nantaContainer.innerHTML = buildQueueHTML(nantaQueue);
     }
 
-   // 📌 슬래시 공백 정규화 및 가로 나열을 처리하는 단일 통합 포맷 함수
 function formatPlayersHorizontal(players) {
     let arr = [];
     if (Array.isArray(players)) {
         arr = players.filter(Boolean).map(p => {
             let item = p.trim();
-            // 슬래시가 포함되어 있다면 양옆 공백을 통일 (" / ")
             if (item.includes('/')) {
                 item = item.split('/').map(part => part.trim()).join(' / ');
             }
@@ -698,7 +692,7 @@ function formatPlayersHorizontal(players) {
     return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join(' ');
 }
 </script>
-<!-- 🖥️ TV 전광판 전용 청소 안내 대형 팝업 -->
+
 <div id="tv-cleaning-popup">
     <div id="tv-clean-title" class="tv-popup-title">🧹 구장 청소 시간</div>
     <div id="tv-clean-desc" class="tv-popup-desc">안내 메시지가 여기에 표시됩니다.</div>

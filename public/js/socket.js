@@ -161,7 +161,7 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
 
         setTimeout(() => {
             popup.remove();
-        }, 5000);
+        }, 8000);
     }
 });
 
