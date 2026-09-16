@@ -1,28 +1,29 @@
-const socket = io();
-window.socket = socket; // 👈 전역으로 공유
+// 중복 소켓 초기화 방지
+const socket = window.socket || io();
+window.socket = socket; 
 
-// 💡 [추가] 서버와 웹소켓 연결이 맺어지자마자 로그인된 유저가 있다면 서버에 자동 등록
-socket.on('connect', () => {
-    console.log("🟢 서버와 웹소켓 연결 성공 (ID:", socket.id, ")");
-    
-    const savedUser = localStorage.getItem("currentUser");
-    if (savedUser) {
-        try {
-            const parsedUser = JSON.parse(savedUser);
-            if (parsedUser.username) {
-                // ⚠️ 서버 코드와 이벤트명을 맞추기 위해 'registerUserSession'으로 수정했습니다.
-                socket.emit('registerUserSession', parsedUser.username);
-                console.log(`👤 [자동 등록] 세션 유지 중인 유저(${parsedUser.username})를 소켓에 등록했습니다.`);
+// 💡 서버와 웹소켓 연결 성공
+if (!socket.hasListeners('connect')) {
+    socket.on('connect', () => {
+        console.log("🟢 서버와 웹소켓 연결 성공 (ID:", socket.id, ")");
+        
+        const savedUser = localStorage.getItem("currentUser");
+        if (savedUser) {
+            try {
+                const parsedUser = JSON.parse(savedUser);
+                if (parsedUser.username) {
+                    socket.emit('registerUserSession', parsedUser.username);
+                    console.log(`👤 [자동 등록] 세션 유지 중인 유저(${parsedUser.username})를 소켓에 등록했습니다.`);
+                }
+            } catch (e) {
+                console.error("세션 유저 파싱 에러:", e);
             }
-        } catch (e) {
-            console.error("세션 유저 파싱 에러:", e);
         }
-    }
-});
+    });
+}
 
 // 📱 스마트폰 토스트 팝업 수신 및 렌더링
-socket.on('toastAlert', (message) => {
-    // 1. 알림 컨테이너가 없으면 동적으로 생성
+socket.off('toastAlert').on('toastAlert', (message) => {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -30,15 +31,12 @@ socket.on('toastAlert', (message) => {
         document.body.appendChild(container);
     }
 
-    // 2. 토스트 요소 생성 (style.css의 널찍해진 .toast-msg 스타일 적용)
     const toast = document.createElement('div');
     toast.className = 'toast-msg';
     toast.innerHTML = message;
 
-    // 3. 화면 상단에 띄우기
     container.appendChild(toast);
 
-    // 4. 애니메이션 종료 시점(10초 뒤)에 화면에서 자동 제거
     setTimeout(() => {
         if (toast && toast.parentNode) {
             toast.parentNode.removeChild(toast);
@@ -46,7 +44,7 @@ socket.on('toastAlert', (message) => {
     }, 10000);
 });
 
-socket.on('stateUpdated', (data) => {
+socket.off('stateUpdated').on('stateUpdated', (data) => {
     if (data.config) CONFIG = data.config;
     courtsData = data.courtsData || [];
     gameQueue = data.gameQueue || [];
@@ -57,21 +55,20 @@ socket.on('stateUpdated', (data) => {
     }
 });
 
-// 서버가 보낸 경고/안내 메시지를 받아서 팝업으로 띄워줌
-socket.on('alertMessage', (msg) => {
+// 서버가 보낸 경고/안내 메시지
+socket.off('alertMessage').on('alertMessage', (msg) => {
     alert(msg);
 });
 
-// 1. 서비스 워커 등록 (모바일 OS 알림 띄우기 위한 필수 선행 작업)
+// 1. 서비스 워커 등록
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').then((reg) => {
         console.log('서비스 워커 등록 성공:', reg.scope);
     }).catch((err) => {
-        console.warn('서비스 워커 등록 실패 (HTTPS 환경인지 확인 필요):', err);
+        console.warn('서비스 워커 등록 실패:', err);
     });
 }
 
-// 2. 알림 권한 요청 함수 (화면 터치/로그인 등의 이벤트에서 호출 권장)
 function requestNotificationPermission() {
     if ('Notification' in window && Notification.permission !== 'granted') {
         Notification.requestPermission().then((permission) => {
@@ -80,15 +77,14 @@ function requestNotificationPermission() {
     }
 }
 
-// 페이지 클릭 1회 시 자연스럽게 알림 권한 팝업 유도 (모바일 정책 통과용)
 document.addEventListener('click', () => {
     if ('Notification' in window && Notification.permission === 'default') {
         requestNotificationPermission();
     }
 }, { once: true });
 
-// 3. 💡 입장 30초 경과 시: 모바일 상단 OS 배너 + 진동 + 인앱 팝업 동시 실행
-socket.on('entryPopupAlert', async (data) => {
+// 3. 💡 입장 30초 경과 시 알림
+socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
     let myName = '';
     const savedUser = localStorage.getItem("currentUser");
     
@@ -106,13 +102,10 @@ socket.on('entryPopupAlert', async (data) => {
     }
 
     if (myName && data.targetPlayers && data.targetPlayers.includes(myName)) {
-
-        // 📳 진동 실행 (안드로이드)
         if ('vibrate' in navigator) {
             navigator.vibrate([500, 200, 500]);
         }
 
-        // 📱 스마트폰 상단 OS 시스템 배너 알림 (모바일 표준 방식)
         if ('Notification' in window && Notification.permission === 'granted') {
             const title = `🏟️ [${data.courtNumber}번 ${data.matchType} 코트]`;
             const options = {
@@ -123,29 +116,24 @@ socket.on('entryPopupAlert', async (data) => {
                 renotify: true
             };
 
-            // 모바일: 서비스 워커를 통해 시스템 배너 호출
             if ('serviceWorker' in navigator) {
                 try {
                     const reg = await navigator.serviceWorker.ready;
                     reg.showNotification(title, options);
-                } catch (e) {
-                    console.warn('서비스 워커 배너 알림 실패:', e);
-                }
+                } catch (e) {}
             } else {
-                // PC 등 일반 데스크톱 브라우저 대비 폴백
                 try {
                     new Notification(title, options);
                 } catch (e) {}
             }
         }
 
-        // 🖥️ 브라우저 화면 내 와이드 팝업 (포그라운드 상태용)
         const popup = document.createElement('div');
         popup.innerHTML = `
-            <div style="font-size: 20px; font-weight: 800; color: #4ade80; margin-bottom: 6px; letter-spacing: -0.3px;">
+            <div style="font-size: 20px; font-weight: 800; color: #4ade80; margin-bottom: 6px;">
                 🏟️ [${data.courtNumber}번 ${data.matchType} 코트]
             </div>
-            <div style="font-size: 16px; font-weight: 600; color: #ffffff; letter-spacing: -0.2px;">
+            <div style="font-size: 16px; font-weight: 600; color: #ffffff;">
                 지금 코트로 입장해 주세요!
             </div>
         `;
@@ -178,41 +166,50 @@ socket.on('entryPopupAlert', async (data) => {
 });
 
 // =================================================================
-// 💡 [수정] 방 개설 확인 창 대기 (async/await 적용)
+// 💡 [핵심 복구] 서버가 보내주는 방 개설 확인 및 교차 방 개설 경고 리스너
 // =================================================================
-socket.on('confirmFirstSlot', async ({ type, userId, user }) => {
-    const roomTypeName = type === 'game' ? '게임' : '난타';
-    
-    // 모달창이 뜨고 사용자가 선택할 때까지 대기
-    const isConfirmed = await confirm(`${roomTypeName} 대기 방을 개설하시겠습니까?`);
+let isProcessingSlot = false;
 
-    if (isConfirmed) {
-        socket.emit('forceCreateSlot', { type, userId, user });
+socket.off('confirmFirstSlot').on('confirmFirstSlot', async ({ type, userId, user }) => {
+    if (isProcessingSlot) return; // 중복 실행 원천 차단
+    isProcessingSlot = true;
+
+    try {
+        const roomTypeName = type === 'game' ? '게임' : '난타';
+        const isConfirmed = await confirm(`${roomTypeName} 대기 방을 개설하시겠습니까?`);
+        if (isConfirmed) {
+            socket.emit('forceCreateSlot', { type, userId, user });
+        }
+    } finally {
+        setTimeout(() => { isProcessingSlot = false; }, 400); // 락 해제 딜레이
+    }
+});
+
+socket.off('confirmCrossSlot').on('confirmCrossSlot', async ({ type, userId, user }) => {
+    if (isProcessingSlot) return; // 중복 실행 원천 차단
+    isProcessingSlot = true;
+
+    try {
+        const roomTypeName = type === 'game' ? '게임' : '난타';
+        const oppositeTypeName = type === 'game' ? '난타' : '게임';
+        
+        // 💡 원하셨던 교차 방 개설 경고창 메시지 출력
+        const isConfirmed = await confirm(`현재 ${oppositeTypeName} 대기 상태입니다. ${roomTypeName} 방을 개설하시면 기존 대기 상태에 영향을 줄 수 있습니다. 계속하시겠습니까?`);
+        if (isConfirmed) {
+            socket.emit('forceCreateSlot', { type, userId, user });
+        }
+    } finally {
+        setTimeout(() => { isProcessingSlot = false; }, 400); // 락 해제 딜레이
     }
 });
 
 // =================================================================
-// 💡 [수정] 교차 방 개설(난타/게임 중복) 경고 창 대기 (async/await 적용)
-// =================================================================
-socket.on('confirmCrossSlot', async ({ type, userId, user }) => {
-    const roomTypeName = type === 'game' ? '게임' : '난타';
-    const oppositeTypeName = type === 'game' ? '난타' : '게임';
-
-    // 스크린샷에서 보셨던 경고 메시지 창이 뜨고 대기
-    const isConfirmed = await confirm(`현재 ${oppositeTypeName} 대기 상태입니다. ${roomTypeName} 방을 개설하시면 기존 대기 상태에 영향을 줄 수 있습니다. 계속하시겠습니까?`);
-
-    if (isConfirmed) {
-        socket.emit('forceCreateSlot', { type, userId, user });
-    }
-});
-
-// =================================================================
-// 💡 관리자가 코트를 강제 종료했을 때 브라우저(메인/TV)에 색상별 맞춤 팝업 띄우기
+// 💡 관리자 코트 강제 종료 공지
 // =================================================================
 if (typeof socket !== 'undefined') {
     let alertTimer = null;
 
-    socket.on('courtClearedNotice', (data) => {
+    socket.off('courtClearedNotice').on('courtClearedNotice', (data) => {
         const banner = document.getElementById('court-alert-banner');
         const alertText = document.getElementById('court-alert-text');
 
@@ -243,7 +240,7 @@ if (typeof socket !== 'undefined') {
 }
 
 // =================================================================
-// 💡 난타 코트 종료(퇴장) 요청 함수 (버튼 클릭 시 실행) - [수정] async/await 적용
+// 💡 난타 코트 종료 요청
 // =================================================================
 window.requestClearNantaCourt = async function(courtId, side) {
     const isConfirmed = await confirm("정말로 난타를 종료(퇴장)하시겠습니까?");
@@ -252,9 +249,9 @@ window.requestClearNantaCourt = async function(courtId, side) {
     }
 };
 
-// 서버로부터 강제 로그아웃 신호를 받았을 때 (중복 로그인 차단 및 세션 만료 공용)
+// 강제 로그아웃 처리
 if (typeof socket !== 'undefined' && socket) {
-    socket.on('forceLogout', (data) => {
+    socket.off('forceLogout').on('forceLogout', (data) => {
         const savedUser = localStorage.getItem("currentUser");
         let targetMatch = false;
 
@@ -276,24 +273,20 @@ if (typeof socket !== 'undefined' && socket) {
                 }
             }
         } else {
-            // 로컬스토리지에 정보가 없다면 안전하게 대상 일치로 간주
             targetMatch = true;
         }
 
         if (targetMatch) {
             console.warn('⚠️ [강제 로그아웃]', data.reason || '세션 만료');
             
-            // 1. 세션 및 로컬 저장소 완전 초기화
             localStorage.removeItem("currentUser");
             localStorage.removeItem("username");
             localStorage.removeItem("userName");
             sessionStorage.clear();
             
-            // 2. 사유에 따른 맞춤 안내 (중복 로그인 안내 또는 기본 세션 만료 안내)
             const alertText = data.message || '다른 기기 또는 브라우저에서 로그인되어 현재 연결이 종료되었습니다.';
             alert(alertText);
             
-            // 3. 페이지 새로고침하여 로그인 화면으로 리셋
             window.location.reload(); 
         }
     });

@@ -565,10 +565,6 @@ async function createNewGameSlot() {
         return;
     }
 
-    // 💡 핵심: await을 붙여서 사용자가 모달에서 결정을 내릴 때까지 코드 실행을 멈춤
-    const confirmed = await confirm("게임 대기 방을 개설하시겠습니까?");
-    if (!confirmed) return; // '취소'를 누르면 여기서 종료되므로 소켓이 절대 안 나감!
-
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -578,6 +574,7 @@ async function createNewGameSlot() {
         return;
     }
 
+    // 💡 직접 팝업을 띄우지 않고, 서버에 검증 및 처리를 요청함 (서버가 상황에 맞는 팝업 신호를 줌)
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
@@ -588,10 +585,6 @@ async function createNewNantaSlot() {
         return;
     }
 
-    // 💡 핵심: await을 붙여서 사용자가 모달에서 결정을 내릴 때까지 코드 실행을 멈춤
-    const confirmed = await confirm("난타 대기 방을 개설하시겠습니까?");
-    if (!confirmed) return; // '취소'를 누르면 여기서 종료되므로 소켓이 절대 안 나감!
-
     const user = JSON.parse(savedUser);
     const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
 
@@ -601,6 +594,7 @@ async function createNewNantaSlot() {
         return;
     }
 
+    // 💡 서버에 검증 및 처리를 요청함
     activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
 }
 
