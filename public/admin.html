@@ -459,11 +459,11 @@
         <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
             <div class="custom-dropdown" id="kick-user-dropdown">
                 <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('kick-user-menu')">
-                    <span id="kick-user-selected-text">-- 회원을 선택하세요 --</span>
+                    <span id="kick-user-selected-text">회원을 선택하세요</span>
                     <span>▼</span>
                 </button>
                 <div class="custom-dropdown-menu" id="kick-user-menu">
-                    <div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '-- 회원을 선택하세요 --')">-- 회원을 선택하세요 --</div>
+                    <div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '-- 회원을 선택하세요 --')">회원을 선택하세요</div>
                 </div>
                 <input type="hidden" id="kick-user-select" value="">
             </div>
@@ -477,11 +477,11 @@
         <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
             <div class="custom-dropdown" id="delete-room-dropdown">
                 <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('delete-room-menu')">
-                    <span id="delete-room-selected-text">-- 활성화된 방을 선택하세요 --</span>
+                    <span id="delete-room-selected-text">활성화된 방을 선택하세요</span>
                     <span>▼</span>
                 </button>
                 <div class="custom-dropdown-menu" id="delete-room-menu">
-                    <div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '-- 활성화된 방을 선택하세요 --')">-- 활성화된 방을 선택하세요 --</div>
+                    <div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '-- 활성화된 방을 선택하세요 --')">활성화된 방을 선택하세요</div>
                 </div>
                 <input type="hidden" id="delete-room-select" value="">
             </div>
@@ -496,11 +496,11 @@
         <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
             <div class="custom-dropdown" id="clear-court-dropdown">
                 <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('clear-court-menu')">
-                    <span id="clear-court-selected-text">-- 비울 코트를 선택하세요 --</span>
+                    <span id="clear-court-selected-text">비울 코트를 선택하세요</span>
                     <span>▼</span>
                 </button>
                 <div class="custom-dropdown-menu" id="clear-court-menu">
-                    <div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '-- 비울 코트를 선택하세요 --')">-- 비울 코트를 선택하세요 --</div>
+                    <div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '-- 비울 코트를 선택하세요 --')">비울 코트를 선택하세요</div>
                 </div>
                 <input type="hidden" id="clear-court-select" value="">
             </div>
@@ -622,10 +622,10 @@
                 const startMsgEl = document.getElementById('clean-start-msg');
                 const endMsgEl = document.getElementById('clean-end-msg');
                 if (startMsgEl) {
-                    startMsgEl.value = data.config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+                    startMsgEl.value = data.config.cleaningStartMsg || '청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
                 }
                 if (endMsgEl) {
-                    endMsgEl.value = data.config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+                    endMsgEl.value = data.config.cleaningEndMsg || '청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
                 }
             }
         }
@@ -665,8 +665,8 @@
 
         socket.emit('updateConfig', {
             cleaningSchedules: schedules,
-            cleaningStartMsg: startMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
-            cleaningEndMsg: endMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
+            cleaningStartMsg: startMsg || '청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+            cleaningEndMsg: endMsg || '청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
         });
 
         await alert(`🧹 구장 청소 설정이 저장되었습니다. (등록된 청소: ${schedules.length}건)`);
@@ -863,7 +863,7 @@
                 } else if (court.type === 'nanta') {
                     if (court.sideA && !court.sideA.isEmpty && court.sideA.players) {
                         const val = `${court.id}:A`;
-                        const label = `[난타코트 #${court.id} A구역] ${court.sideA.players}`;
+                        const label = `[난타코트 #${court.id} A코트] ${court.sideA.players}`;
                         const itemDiv = document.createElement('div');
                         itemDiv.className = 'custom-dropdown-item';
                         itemDiv.textContent = label;
@@ -877,7 +877,7 @@
                     }
                     if (court.sideB && !court.sideB.isEmpty && court.sideB.players) {
                         const val = `${court.id}:B`;
-                        const label = `[난타코트 #${court.id} B구역] ${court.sideB.players}`;
+                        const label = `[난타코트 #${court.id} B코트] ${court.sideB.players}`;
                         const itemDiv = document.createElement('div');
                         itemDiv.className = 'custom-dropdown-item';
                         itemDiv.textContent = label;
@@ -923,7 +923,7 @@
                 await alert(result.message);
                 // 성공 시 선택값 초기화 및 화면 표시 문구 리셋
                 userSelect.value = '';
-                document.getElementById('kick-user-selected-text').textContent = '-- 회원을 선택하세요 --';
+                document.getElementById('kick-user-selected-text').textContent = '회원을 선택하세요';
             } else {
                 await alert('퇴장 처리 실패: ' + result.message);
             }
@@ -957,7 +957,7 @@
                 await alert(result.message);
                 // 성공 시 선택값 초기화 및 화면 표시 문구 리셋
                 document.getElementById('delete-room-select').value = '';
-                document.getElementById('delete-room-selected-text').textContent = '-- 활성화된 방을 선택하세요 --';
+                document.getElementById('delete-room-selected-text').textContent = '활성화된 방을 선택하세요';
             } else {
                 await alert('방 강제 종료 실패: ' + result.message);
             }

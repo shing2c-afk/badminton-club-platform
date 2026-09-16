@@ -172,7 +172,7 @@ function renderCourts() {
                             <span class="court-num">${court.id}번 코트</span>
                             <span class="type-badge badge-game">게임 코트</span>
                         </div>
-                        <div class="empty-court-box">✨ 빈 코트 (입장 대기 가능)</div>
+                        <div class="empty-court-box">✨ 빈 코트</div>
                     </div>`;
             } else {
                 let isUserOnThisCourt = false;
@@ -241,18 +241,18 @@ function renderCourts() {
                 `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
 
             const sideAContent = (court.sideA && court.sideA.isEmpty) ? 
-                `<div class="nanta-empty-text">+ A반코트 (빈 코트)</div>` :
+                `<div class="nanta-empty-text">+ A코트 (반 코트 이용)</div>` :
                 `<div class="nanta-card-head">
-                    <span class="nanta-label">A 반코트</span>
+                    <span class="nanta-label">A코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
                  ${sideABtn}`;
 
             const sideBContent = (court.sideB && court.sideB.isEmpty) ? 
-                `<div class="nanta-empty-text">+ B반코트 (빈 코트)</div>` :
+                `<div class="nanta-empty-text">+ B코트 (반 코트 이용)</div>` :
                 `<div class="nanta-card-head">
-                    <span class="nanta-label">B 반코트</span>
+                    <span class="nanta-label">B코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideB ? court.sideB.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players">${formatPlayersToLines(court.sideB ? court.sideB.players : '')}</div>
@@ -278,7 +278,7 @@ function renderCourts() {
                         <span class="type-badge badge-lesson">레슨 코트</span>
                     </div>
                     <div style="background:#1f2937; padding:10px; border-radius:6px; text-align:center; color:#c084fc; font-size:12px;">
-                        ${escapeHtml(court.players || '코치 전용 레슨 코트')}
+                        ${escapeHtml(court.players || '코치 레슨 전용 코트')}
                     </div>
                 </div>`;
         }
@@ -440,7 +440,7 @@ function mergeGameSlot(slotId) {
     });
 
     if (targetSlots.length === 0) {
-        alert("⚠️ 현재 합쳤을 때 총원이 4명이 되는 다른 대기 방이 없습니다.");
+        alert("현재 인원을 합쳐 4명을 만들 수 있는 대기 방이 없습니다.");
         return;
     }
 
@@ -673,7 +673,7 @@ async function joinNantaCell(slotId, idx) {
 }
 
 async function exitGamePlayer(slotId, idx) {
-    const confirmed = await confirm('해당 회원을 정말 퇴장 처리하시겠습니까?');
+    const confirmed = await confirm('대기 신청을 취소하고 나가시겠습니까?');
     if (confirmed) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('exitPlayer', { type: 'game', slotId, index: idx });
@@ -681,7 +681,7 @@ async function exitGamePlayer(slotId, idx) {
 }
 
 async function exitNantaPlayer(slotId, idx) {
-    const confirmed = await confirm('해당 회원을 정말 퇴장 처리하시겠습니까?');
+    const confirmed = await confirm('대기 신청을 취소하고 나가시겠습니까?');
     if (confirmed) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) activeSocket.emit('exitPlayer', { type: 'nanta', slotId, index: idx });

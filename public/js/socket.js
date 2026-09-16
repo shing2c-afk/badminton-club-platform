@@ -193,8 +193,9 @@ socket.off('confirmCrossSlot').on('confirmCrossSlot', async ({ type, userId, use
         const roomTypeName = type === 'game' ? '게임' : '난타';
         const oppositeTypeName = type === 'game' ? '난타' : '게임';
         
-        // 💡 원하셨던 교차 방 개설 경고창 메시지 출력
-        const isConfirmed = await confirm(`현재 ${oppositeTypeName} 대기 상태입니다. ${roomTypeName} 방을 개설하시면 기존 대기 상태에 영향을 줄 수 있습니다. 계속하시겠습니까?`);
+        // 💡 선택하신 깔끔한 직관적 문구 적용 (게임/난타 양방향 자동 대응)
+        const isConfirmed = await confirm(`이미 ${oppositeTypeName} 대기 중입니다! ${roomTypeName} 방을 개설하시겠습니까?`);
+        
         if (isConfirmed) {
             socket.emit('forceCreateSlot', { type, userId, user });
         }
