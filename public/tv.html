@@ -347,8 +347,22 @@ const socket = io();
                 .replace(/안내\s*말씀\s*드립니다[\.!]?\s*/g, '')
                 .trim();
 
-            let refinedMessage = cleanMessage;
+            // 💡 1번~12번 코트 번호가 "여섯" 등으로 씹히지 않고 "육 번" 등으로 정확히 읽히도록 치환
+            let refinedMessage = cleanMessage
+                .replace(/1\s*번/g, '일 번')
+                .replace(/2\s*번/g, '이 번')
+                .replace(/3\s*번/g, '삼 번')
+                .replace(/4\s*번/g, '사 번')
+                .replace(/5\s*번/g, '오 번')
+                .replace(/6\s*번/g, '육 번')
+                .replace(/7\s*번/g, '칠 번')
+                .replace(/8\s*번/g, '팔 번')
+                .replace(/9\s*번/g, '구 번')
+                .replace(/10\s*번/g, '십 번')
+                .replace(/11\s*번/g, '십일 번')
+                .replace(/12\s*번/g, '십이 번');
 
+            // 💡 회원 이름 한 글자씩 띄워 읽는 로직은 그대로 안전하게 작동합니다!
             if (refinedMessage.includes('회원님은')) {
                 let parts = refinedMessage.split('회원님은');
                 let rawNames = parts[0].trim();

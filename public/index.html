@@ -345,6 +345,18 @@
 </div>
 
 <script>
+    // 💡 [알림 하루 단위 자동 리셋 기능 추가]
+    (function checkDailyNotificationReset() {
+        const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+        const savedDate = localStorage.getItem('app_noti_date');
+        if (savedDate !== today) {
+            // 날짜가 바뀌었거나 첫 접속인 경우 알림 관련 저장소 데이터 초기화
+            localStorage.removeItem('app_notifications'); // 클라이언트 알림 데이터 키
+            localStorage.setItem('app_noti_date', today);
+            console.log('🧹 [알림 초기화 완료] 새로운 날이 시작되어 이벤트 알림 내역이 리셋되었습니다.');
+        }
+    })();
+
     // 전역 함수 선언
     window.openRegisterModal = function() {
         const modal = document.getElementById('register-modal');
@@ -461,7 +473,7 @@
         try {
           await navigator.share({
             title: '스마트민턴클럽 (오늘민턴)',
-            text: '운정 배드민턴 클럽 코트 현황 및 대기열 앱입니다. 접속 후 [앱 설치]를 눌러보세요!',
+            text: '배드민턴 클럽 운영관리 앱입니다. 접속 후 [앱 설치]를 눌러보세요!',
             url: window.location.origin
           });
         } catch (err) {

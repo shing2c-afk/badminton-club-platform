@@ -103,7 +103,7 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
 
     if (myName && data.targetPlayers && data.targetPlayers.includes(myName)) {
         if ('vibrate' in navigator) {
-            navigator.vibrate([500, 200, 500]);
+            navigator.vibrate([1000, 300, 1000, 300, 1000]);
         }
 
         if ('Notification' in window && Notification.permission === 'granted') {
