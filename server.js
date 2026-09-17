@@ -2013,6 +2013,64 @@ app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res)
     });
 });
 
+// ==========================================
+// 🧹 [강제 테스트용] 청소 시작/종료 즉시 실행 라우터
+// ==========================================
+
+// 1. 강제 청소 시작 테스트 (브라우저 주소창에 /test-cleaning-start 입력)
+app.get('/test-cleaning-start', (req, res) => {
+    isCleaningTime = true;
+    const startMsg = config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+
+    // 음성 큐에 추가
+    serverAudioQueue.push({
+        matchType: '공지',
+        names: [],
+        message: startMsg
+    });
+
+    // 스마트폰 팝업 전송
+    io.emit('toastAlert', `🧹 ${startMsg}`);
+
+    // TV 전광판 대형 팝업 전송
+    io.to('tv-room').emit('tvCleaningAlert', {
+        type: 'start',
+        title: '🧹 구장 청소 및 코트 정비 시간',
+        message: startMsg,
+        duration: 10000
+    });
+
+    console.log('🧪 [수동 테스트] 청소 시작 시그널 강제 발송 완료');
+    res.send('🧹 강제 청소 시작 신호가 전송되었습니다! TV 화면과 소리를 확인하세요.');
+});
+
+// 2. 강제 청소 종료 테스트 (브라우저 주소창에 /test-cleaning-end 입력)
+app.get('/test-cleaning-end', (req, res) => {
+    isCleaningTime = false;
+    const endMsg = config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+
+    // 음성 큐에 추가
+    serverAudioQueue.push({
+        matchType: '공지',
+        names: [],
+        message: endMsg
+    });
+
+    // 스마트폰 팝업 전송
+    io.emit('toastAlert', `🏸 ${endMsg}`);
+
+    // TV 전광판 대형 팝업 전송
+    io.to('tv-room').emit('tvCleaningAlert', {
+        type: 'end',
+        title: '🏸 구장 청소 완료 안내',
+        message: endMsg,
+        duration: 8000
+    });
+
+    console.log('🧪 [수동 테스트] 청소 종료 시그널 강제 발송 완료');
+    res.send('🏸 강제 청소 종료 신호가 전송되었습니다! TV 화면과 소리를 확인하세요.');
+});
+
 // ==========================
 // 7. 서버 실행
 // ==========================
