@@ -429,6 +429,60 @@ const socket = io();
 
     socket.on('stateUpdated', (state) => {
         try {
+            // 🧹 서버 설정(config)이 포함되어 함께 오는 경우 처리
+            if (state.config) {
+                const entrySec = state.config.ENTRY_TIMEOUT_SEC || 180;
+                const nantaSec = state.config.NANTA_COURT_LIMIT_SEC || 900;
+                
+                const isUserEditing = document.activeElement && document.activeElement.classList.contains('time-select');
+
+                if (!isInitialized || !isUserEditing) {
+                    const entryEl = document.getElementById('entry-timeout');
+                    const nantaEl = document.getElementById('nanta-timeout');
+                    const pwdEl = document.getElementById('admin-password');
+
+                    if (entryEl) entryEl.value = entrySec / 60;
+                    if (nantaEl) nantaEl.value = nantaSec / 60;
+                    if (pwdEl && pwdEl !== document.activeElement) pwdEl.value = state.config.ADMIN_PASSWORD || '1234';
+
+                    if (!isInitialized && typeof initTimeSelectOptions === 'function') {
+                        initTimeSelectOptions();
+                    }
+
+                    const schedules = state.config.cleaningSchedules || [];
+                    for (let i = 0; i < 3; i++) {
+                        const idx = i + 1;
+                        const startHEl = document.getElementById(`clean-start-h-${idx}`);
+                        const startMEl = document.getElementById(`clean-start-m-${idx}`);
+                        const endHEl = document.getElementById(`clean-end-h-${idx}`);
+                        const endMEl = document.getElementById(`clean-end-m-${idx}`);
+
+                        if (schedules[i] && schedules[i].start && schedules[i].end) {
+                            const [sH, sM] = schedules[i].start.split(':');
+                            const [eH, eM] = schedules[i].end.split(':');
+                            if (startHEl && document.activeElement !== startHEl) startHEl.value = sH || '';
+                            if (startMEl && document.activeElement !== startMEl) startMEl.value = sM || '';
+                            if (endHEl && document.activeElement !== endHEl) endHEl.value = eH || '';
+                            if (endMEl && document.activeElement !== endMEl) endMEl.value = eM || '';
+                        } else {
+                            if (startHEl && document.activeElement !== startHEl) startHEl.value = '';
+                            if (startMEl && document.activeElement !== startMEl) startMEl.value = '';
+                            if (endHEl && document.activeElement !== endHEl) endHEl.value = '';
+                            if (endMEl && document.activeElement !== endMEl) endMEl.value = '';
+                        }
+                    }
+
+                    const startMsgEl = document.getElementById('clean-start-msg');
+                    const endMsgEl = document.getElementById('clean-end-msg');
+                    if (startMsgEl && document.activeElement !== startMsgEl) {
+                        startMsgEl.value = state.config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+                    }
+                    if (endMsgEl && document.activeElement !== endMsgEl) {
+                        endMsgEl.value = state.config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+                    }
+                }
+            }
+
             const courts = state.courtsData || state.courts || [];
             const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
             const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
@@ -464,6 +518,7 @@ const socket = io();
 
             renderTVCourts(courts);
             renderTVQueues(gameQueue, nantaQueue);
+            isInitialized = true;
         } catch (err) {
             console.error("stateUpdated 처리 중 오류 발생:", err);
         }
