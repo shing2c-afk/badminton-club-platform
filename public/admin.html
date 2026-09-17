@@ -599,9 +599,7 @@
             }
         }
 
-        // 💡 [중요] 최초 로딩이 아닐 때(이미 화면이 뜬 후 서버 데이터가 갱신될 때)는
-        // 사용자가 포커스하고 있거나 입력 중인 셀렉트박스가 풀리지 않도록 
-        // 기존에 저장된 설정값들을 화면의 빈 값에만 살짝 채워주는 방식으로 처리합니다.
+        // 💡 [수정 완료] 서버에서 내려온 최신 청소 시간 설정값을 셀렉트박스에 강제로 정확히 반영합니다.
         const schedules = data.config.cleaningSchedules || [];
         for (let i = 0; i < 3; i++) {
             const idx = i + 1;
@@ -614,20 +612,21 @@
                 const [sH, sM] = schedules[i].start.split(':');
                 const [eH, eM] = schedules[i].end.split(':');
                 
-                // 사용자가 값을 고르는 중일 때 튀는 현상을 막기 위해, 값이 비어있거나 초기화 상태일 때만 넣어줍니다.
-                if (startHEl && !startHEl.value) startHEl.value = sH || '';
-                if (startMEl && !startMEl.value) startMEl.value = sM || '';
-                if (endHEl && !endHEl.value) endHEl.value = eH || '';
-                if (endMEl && !endMEl.value) endMEl.value = eM || '';
+                // 기존의 가로막던 '!값' 조건을 제거하여 서버의 진짜 설정값이 무조건 반영되도록 수정
+                if (startHEl) startHEl.value = sH || '';
+                if (startMEl) startMEl.value = sM || '';
+                if (endHEl) endHEl.value = eH || '';
+                if (endMEl) endMEl.value = eM || '';
             }
         }
 
+        // 💡 [수정 완료] 청소 안내 메시지 역시 서버의 최신 값으로 강제 갱신되도록 수정
         const startMsgEl = document.getElementById('clean-start-msg');
         const endMsgEl = document.getElementById('clean-end-msg');
-        if (startMsgEl && !startMsgEl.value) {
+        if (startMsgEl) {
             startMsgEl.value = data.config.cleaningStartMsg || '청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
         }
-        if (endMsgEl && !endMsgEl.value) {
+        if (endMsgEl) {
             endMsgEl.value = data.config.cleaningEndMsg || '청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
         }
     }
