@@ -49,6 +49,36 @@ setInterval(() => {
 
 }, 1000); // 1초마다 큐 상태를 체크
 
+// ==========================================
+// 💾 환경 설정 영구 저장/불러오기 (config.json)
+// ==========================================
+const CONFIG_FILE_PATH = path.join(__dirname, 'config.json');
+
+function loadConfigFromFile() {
+    try {
+        if (fs.existsSync(CONFIG_FILE_PATH)) {
+            const rawData = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
+            const savedData = JSON.parse(rawData);
+            Object.assign(config, savedData);
+            console.log('✅ [설정 로드] config.json 파일에서 설정을 성공적으로 불러왔습니다.');
+        }
+    } catch (err) {
+        console.error('⚠️ [설정 로드 실패]:', err);
+    }
+}
+
+function saveConfigToFile() {
+    try {
+        fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2), 'utf-8');
+        console.log('💾 [설정 저장] config.json 파일에 영구 기록되었습니다.');
+    } catch (err) {
+        console.error('❌ [설정 저장 실패]:', err);
+    }
+}
+
+// 서버 시작 시 파일에서 기존 설정 로드
+loadConfigFromFile();
+
 // ==========================
 // 2. 서버 및 미들웨어 초기화
 // ==========================
@@ -1462,6 +1492,7 @@ socket.on('disconnect', () => {
                     config.cleaningEndMsg = newConfig.cleaningEndMsg;
                 }
             }
+            saveConfigToFile(); // 👈 이 한 줄만 추가!
             broadcastState();
         } catch (err) {
             console.error('환경 설정 변경 에러:', err);

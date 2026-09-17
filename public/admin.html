@@ -643,37 +643,38 @@
 });
 
     async function saveCleaningConfig() {
-        const schedules = [];
+    const schedules = [];
+    
+    for (let i = 1; i <= 3; i++) {
+        const sH = document.getElementById(`clean-start-h-${i}`).value;
+        const sM = document.getElementById(`clean-start-m-${i}`).value;
+        const eH = document.getElementById(`clean-end-h-${i}`).value;
+        const eM = document.getElementById(`clean-end-m-${i}`).value;
         
-        for (let i = 1; i <= 3; i++) {
-            const sH = document.getElementById(`clean-start-h-${i}`).value;
-            const sM = document.getElementById(`clean-start-m-${i}`).value;
-            const eH = document.getElementById(`clean-end-h-${i}`).value;
-            const eM = document.getElementById(`clean-end-m-${i}`).value;
-            
-            if (sH && sM && eH && eM) {
-                const start = `${sH}:${sM}`;
-                const end = `${eH}:${eM}`;
+        if (sH && sM && eH && eM) {
+            const start = `${sH}:${sM}`;
+            const end = `${eH}:${eM}`;
 
-                if (start >= end) {
-                    await alert(`${i}차 청소 종료 시각(${end})은 시작 시각(${start})보다 늦어야 합니다.`);
-                    return;
-                }
-                schedules.push({ start, end });
+            if (start >= end) {
+                alert(`${i}차 청소 종료 시각(${end})은 시작 시각(${start})보다 늦어야 합니다.`);
+                return;
             }
+            schedules.push({ start, end });
         }
-
-        const startMsg = document.getElementById('clean-start-msg').value.trim();
-        const endMsg = document.getElementById('clean-end-msg').value.trim();
-
-        socket.emit('updateConfig', {
-            cleaningSchedules: schedules,
-            cleaningStartMsg: startMsg || '청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
-            cleaningEndMsg: endMsg || '청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
-        });
-
-        await alert(`🧹 구장 청소 설정이 저장되었습니다. (등록된 청소: ${schedules.length}건)`);
     }
+
+    const startMsg = document.getElementById('clean-start-msg').value.trim();
+    const endMsg = document.getElementById('clean-end-msg').value.trim();
+
+    // 🧹 서버로 청소 스케줄 및 방송 멘트 전송
+    socket.emit('updateConfig', {
+        cleaningSchedules: schedules,
+        cleaningStartMsg: startMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+        cleaningEndMsg: endMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
+    });
+
+    alert(`🧹 구장 청소 설정이 저장되었습니다. (등록: ${schedules.length}건)`);
+}
 
     function initTimeSelectOptions() {
         for (let i = 1; i <= 3; i++) {
