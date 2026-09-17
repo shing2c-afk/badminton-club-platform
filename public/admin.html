@@ -593,13 +593,12 @@
             document.getElementById('nanta-timeout').value = nantaSec / 60;
             document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
 
-            // 💡 최초 로딩 시에만 시간 셀렉트 옵션을 생성합니다.
             if (typeof initTimeSelectOptions === 'function') {
                 initTimeSelectOptions();
             }
         }
 
-        // 💡 [수정 완료] 서버에서 내려온 최신 청소 시간 설정값을 셀렉트박스에 강제로 정확히 반영합니다.
+        // 💡 [안정화 버전] 사용자가 직접 셀렉트박스를 만지고(포커스하고) 있는 중이 아닐 때만 안전하게 반영
         const schedules = data.config.cleaningSchedules || [];
         for (let i = 0; i < 3; i++) {
             const idx = i + 1;
@@ -612,21 +611,19 @@
                 const [sH, sM] = schedules[i].start.split(':');
                 const [eH, eM] = schedules[i].end.split(':');
                 
-                // 기존의 가로막던 '!값' 조건을 제거하여 서버의 진짜 설정값이 무조건 반영되도록 수정
-                if (startHEl) startHEl.value = sH || '';
-                if (startMEl) startMEl.value = sM || '';
-                if (endHEl) endHEl.value = eH || '';
-                if (endMEl) endMEl.value = eM || '';
+                if (startHEl && document.activeElement !== startHEl) startHEl.value = sH || '';
+                if (startMEl && document.activeElement !== startMEl) startMEl.value = sM || '';
+                if (endHEl && document.activeElement !== endHEl) endHEl.value = eH || '';
+                if (endMEl && document.activeElement !== endMEl) endMEl.value = eM || '';
             }
         }
 
-        // 💡 [수정 완료] 청소 안내 메시지 역시 서버의 최신 값으로 강제 갱신되도록 수정
         const startMsgEl = document.getElementById('clean-start-msg');
         const endMsgEl = document.getElementById('clean-end-msg');
-        if (startMsgEl) {
+        if (startMsgEl && document.activeElement !== startMsgEl) {
             startMsgEl.value = data.config.cleaningStartMsg || '청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
         }
-        if (endMsgEl) {
+        if (endMsgEl && document.activeElement !== endMsgEl) {
             endMsgEl.value = data.config.cleaningEndMsg || '청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
         }
     }
