@@ -57,7 +57,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const server = http.createServer(app);
-const io = new Server(server);
+
+// 💡 [수정완료] 실서버(Render) WebSocket 400 에러 방지를 위한 transports 및 cors 설정 추가
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    },
+    transports: ['polling', 'websocket']
+});
 
 const PORT = process.env.PORT || 3000;
 
