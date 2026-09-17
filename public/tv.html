@@ -493,13 +493,18 @@ const socket = io();
         const titleEl = document.getElementById('tv-clean-title');
         const descEl = document.getElementById('tv-clean-desc');
 
-        if (!popup || !titleEl || !descEl) return;
+        if (!popup) return;
 
-        titleEl.textContent = data.title || '🧹 구장 청소 안내';
-        descEl.innerHTML = (data.message || '').replace(/\n/g, '<br>');
+        if (titleEl) titleEl.textContent = data.title || '🧹 구장 청소 안내';
+        if (descEl) descEl.innerHTML = (data.message || '').replace(/\n/g, '<br>');
 
         popup.className = (data.type === 'start') ? 'cleaning-start' : 'cleaning-end';
         popup.style.display = 'block';
+
+        // 💡 청소 팝업이 뜰 때 음성 안내도 함께 확실하게 출력되도록 연결!
+        if (data.message) {
+            playVoiceAnnouncement(data.message, 0, 'cleaning-broadcast');
+        }
 
         if (tvCleanTimer) clearTimeout(tvCleanTimer);
         tvCleanTimer = setTimeout(() => {
