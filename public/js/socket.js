@@ -1,6 +1,28 @@
 // 중복 소켓 초기화 방지
 const socket = window.socket || io();
-window.socket = socket; 
+window.socket = socket;
+
+// ==========================================
+// 📶 체육관 Wi-Fi 접속 상태 보관 및 수신
+// ==========================================
+window.isGymWifiConnected = false;
+
+socket.on('wifiStatus', (data) => {
+    window.isGymWifiConnected = data.isGymWifi;
+    console.log(`📶 구장 Wi-Fi 접속 상태: ${data.isGymWifi ? '인증됨 (구장 내)' : '미인증 (외부 접속)'} (IP: ${data.clientIp})`);
+    
+    // 📶 body 태그에 Wi-Fi 인증 상태 클래스 즉시 반영
+    if (data.isGymWifi) {
+        document.body.classList.add('gym-wifi-active');
+    } else {
+        document.body.classList.remove('gym-wifi-active');
+    }
+
+    // UI 버튼 상태 갱신 함수가 있다면 호출
+    if (typeof updateWifiRestrictedButtons === 'function') {
+        updateWifiRestrictedButtons();
+    }
+});
 
 // 💡 서버와 웹소켓 연결 성공
 if (!socket.hasListeners('connect')) {

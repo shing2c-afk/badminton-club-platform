@@ -54,6 +54,19 @@ setInterval(() => {
 // ==========================================
 const CONFIG_FILE_PATH = path.join(__dirname, 'config.json');
 
+// 1. config 객체를 먼저 기본값과 함께 선언
+let config = {
+    ENTRY_TIMEOUT_SEC: 180,
+    NANTA_COURT_LIMIT_SEC: 900,
+    ADMIN_PASSWORD: "1234",
+    cleaningSchedules: [],
+    cleaningStartMsg: "구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+    cleaningEndMsg: "구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+    useWifiRestriction: true,
+    allowedGymIps: []
+};
+
+// 2. 파일에서 불러와 config 객체에 덮어쓰기
 function loadConfigFromFile() {
     try {
         if (fs.existsSync(CONFIG_FILE_PATH)) {
@@ -74,6 +87,32 @@ function saveConfigToFile() {
     } catch (err) {
         console.error('❌ [설정 저장 실패]:', err);
     }
+}
+
+// ==========================================
+// 🌐 접속자 실제 공인 IP 추출 및 구장 Wi-Fi 판별
+// ==========================================
+function getClientIp(socket) {
+    const forwarded = socket.handshake.headers['x-forwarded-for'];
+    if (forwarded) {
+        // 프록시 환경에서는 여러 IP가 쉼표로 연결될 수 있으므로 첫 번째 IP 추출
+        return forwarded.split(',')[0].trim();
+    }
+    return socket.handshake.address;
+}
+
+// 구장 Wi-Fi 접속 여부 확인 (config에 등록된 IP와 일치하는지 비교)
+function isGymWifiUser(socket) {
+    // 🎛️ [추가] 관리자가 Wi-Fi 제한 기능을 껐다면(false) 누구나 통과
+    if (config.useWifiRestriction === false) {
+        return true;
+    }
+    // 아직 구장 IP가 설정되지 않았거나 빈 배열이면 테스트를 위해 모두 허용
+    if (!config.allowedGymIps || config.allowedGymIps.length === 0) {
+        return true; 
+    }
+    const clientIp = getClientIp(socket);
+    return config.allowedGymIps.includes(clientIp);
 }
 
 // 서버 시작 시 파일에서 기존 설정 로드
@@ -920,13 +959,7 @@ app.post('/api/admin/clear-court', (req, res) => {
 
 // ==========================================
 // 4. 인메모리 데이터 상태 관리
-// ==========================================
-let config = {
-    ENTRY_TIMEOUT_SEC: 180, 
-    NANTA_COURT_LIMIT_SEC: 900, 
-    ADMIN_PASSWORD: '1234' 
-};
-
+// =========================================
 let courtsData = [
     { id: 1, type: 'game', isEmpty: true, players: '', note: '' },
     { id: 2, type: 'game', isEmpty: true, players: '', note: '' },
@@ -1299,6 +1332,12 @@ if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
 // 6. Socket.IO 이벤트 핸들링
 // ==========================================
 io.on('connection', (socket) => {
+    // 📶 접속자의 구장 Wi-Fi 여부 판별 후 개별 전달
+    const isGym = isGymWifiUser(socket);
+    socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(socket) });
+
+    console.log('새 소켓 연결:', socket.id);
+
     // 서버 소켓 연결 부분 어딘가에 추가
 socket.on('registerTV', () => {
     socket.join('tv-room');
@@ -1462,6 +1501,27 @@ socket.on('disconnect', () => {
     }
 });
 
+// 🎛️ [관리자] Wi-Fi 제한 ON/OFF 토글 및 구장 IP 등록 이벤트
+    socket.on('updateWifiSettings', ({ useWifiRestriction, allowedGymIps }) => {
+        if (typeof useWifiRestriction === 'boolean') {
+            config.useWifiRestriction = useWifiRestriction;
+        }
+        if (Array.isArray(allowedGymIps)) {
+            config.allowedGymIps = allowedGymIps;
+        }
+
+        // config.json 파일에 영구 저장
+        saveConfigToFile();
+
+        console.log(`📡 [설정 변경] Wi-Fi 제한: ${config.useWifiRestriction ? 'ON' : 'OFF'}, 등록 IP:`, config.allowedGymIps);
+
+        // 접속 중인 모든 사용자에게 새로운 Wi-Fi 인증 상태를 즉시 재전송
+        io.sockets.sockets.forEach((s) => {
+            const isGym = isGymWifiUser(s);
+            s.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(s) });
+        });
+    });
+
     socket.on('verifyAdminPassword', (inputPw, callback) => {
         if (typeof callback === 'function') {
             if (inputPw === config.ADMIN_PASSWORD) {
@@ -1558,6 +1618,11 @@ socket.on('disconnect', () => {
 
     // 🔒 방 개설 시 현재 코트 플레이 여부 및 중복 체크
     socket.on('createSlot', ({ type, userId, user }) => {
+        // 📶 [추가] 구장 Wi-Fi 접속 여부 체크
+        if (!isGymWifiUser(socket)) {
+            socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+            return;
+        }
         const myName = user.split(' / ')[0].trim();
 
         // 1. 현재 게임 코트에서 뛰고 있는지 확인
@@ -1600,6 +1665,10 @@ socket.on('disconnect', () => {
     });
 
     socket.on('forceCreateSlot', ({ type, userId, user }) => {
+        if (!isGymWifiUser(socket)) {
+            socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+            return;
+        }
         const myName = user.split(' / ')[0].trim();
         const isInGameCourt = courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(myName));
         if (isInGameCourt) {
@@ -1632,6 +1701,11 @@ socket.on('disconnect', () => {
 
     // 🔒 대기 방 참여(입장하기) 시 현재 코트 플레이 여부 체크
     socket.on('joinPlayer', ({ type, slotId, index, name }) => {
+        // 📶 [추가] 구장 Wi-Fi 접속 여부 체크
+        if (!isGymWifiUser(socket)) {
+            socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 대기 방에 입장할 수 있습니다.');
+            return;
+        }
         const cleanName = name.split('/')[0].trim();
 
         // 1. 게임 코트 플레이 중이면 모든 입장 차단
