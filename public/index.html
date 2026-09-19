@@ -460,47 +460,37 @@
 <!-- 🎨 스타일 영역 (CSS) -->
 <!-- ========================================== -->
 <style>
-/* 공통 모던 배지 및 버튼 기본 스타일 */
+/* 공통 모던 배지 및 버튼 기본 설정 (높이와 박스 모델 통일) */
 .modern-badge {
     display: inline-flex;
     align-items: center;
-    padding: 10px 16px;
+    height: 40px;                 /* 👈 높이를 40px로 정확히 강제 고정 */
+    padding: 0 16px;              /* 👈 좌우 여백만 지정 (상하는 높이로 제어) */
     font-size: 13px;
     font-weight: 600;
     border-radius: 50px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    box-sizing: border-box;       /* 👈 패딩과 테두리가 높이에 영향을 주지 않도록 고정 */
     transition: all 0.2s ease-in-out;
     z-index: 9999;
     position: fixed;
-    bottom: 24px; /* 화면 하단에서 띄울 거리 */
+    bottom: 24px;
 }
 
-/* 1. 왼쪽 하단 모서리로 고정된 접속자 배지 */
+/* 1. 왼쪽 하단 접속자 배지 */
 #online-badge-container {
     position: fixed;
-    left: 20px;   /* 👈 화면 왼쪽 끝에서 20px */
+    left: 20px;
     bottom: 24px;
     z-index: 9999;
 }
 
-/* 접속자 배지 (앱 공유 버튼과 내부 패딩 및 높이를 정확히 일치시킴) */
 .visitor-badge {
     background-color: #059669; 
     color: #ffffff;
-    display: inline-flex;
-    align-items: center;
-    padding: 10px 16px;          /* 👈 앱 공유 버튼과 동일한 상하좌우 여백 */
-    font-size: 13px;
-    font-weight: 600;
-    border-radius: 50px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-    
-    /* 기존 강제 높이/너비 관련 속성 제거 후 텍스트 왼쪽 정렬 유지 */
-    width: auto;                 
-    min-width: 95px;             /* 최소 너비만 주어 글자가 바뀔 때 떨림 방지 */
-    justify-content: flex-start; /* 👈 내부 텍스트 왼쪽 정렬 유지 */
+    width: 105px;                 /* 고정 너비 */
+    justify-content: flex-start;  /* 왼쪽 정렬 */
 }
 
 .visitor-text {
@@ -508,10 +498,10 @@
     width: 100%;
 }
 
-/* 2. 오른쪽 하단 모서리로 고정된 앱 공유 버튼 */
+/* 2. 오른쪽 하단 앱 공유 버튼 */
 #share-btn-container {
     position: fixed;
-    right: 20px;  /* 👈 화면 오른쪽 끝에서 20px */
+    right: 20px;
     bottom: 24px;
     z-index: 9999;
 }
@@ -523,7 +513,9 @@
     cursor: pointer;
     justify-content: center;
     gap: 6px;
-    position: static !important; /* 부모 컨테이너 기준 위치 잡기 위함 */
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    position: static !important;
 }
 
 .share-btn:hover {
