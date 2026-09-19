@@ -416,6 +416,8 @@ function initDatabase() {
 }
 
 function checkAndInsertDefaultData() {
+    // 🛑 기존 정회원/더미 데이터 자동 생성을 원하지 않으므로 기능을 차단(주석 처리)합니다.
+    /*
     db.get(`SELECT COUNT(*) as count FROM regular_members`, (err, row) => {
         if (row && row.count === 0) {
             console.log('📦 정회원 데이터가 없어 기본 더미 데이터를 삽입합니다.');
@@ -467,6 +469,7 @@ function checkAndInsertDefaultData() {
             }
         });
     });
+    */
 }
 
 function insertDefaultDummyData() {}
