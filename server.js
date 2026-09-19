@@ -69,8 +69,6 @@ setInterval(() => {
 // 💾 환경 설정 영구 저장/불러오기 (config.json)
 // ==========================================
 // 💡 상단에서 정의한 영구 디스크 경로(DATA_DIR)를 사용하여 config.json 경로 설정
-const CONFIG_FILE_PATH = path.join(DATA_DIR, 'config.json');
-
 // 1. config 객체를 먼저 기본값과 함께 선언
 let config = {
     ENTRY_TIMEOUT_SEC: 180,
