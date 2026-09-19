@@ -6,14 +6,28 @@ const http = require('http');
 const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-// 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
-const activeUserSockets = new Map();
 const fs = require('fs');
 const multer = require('multer');
 const upload = multer({ dest: 'uploads/' });
 const readline = require('readline');
 
-// 유저네임과 소켓 ID를 매핑하기 위한 객체 (이미 있다면 이어서 사용하세요)
+// ==========================================
+// 💾 영구 디스크 및 데이터베이스/설정 파일 경로 설정 (Render 대응)
+// ==========================================
+const DATA_DIR = process.env.RENDER ? '/var/data' : __dirname;
+
+// 폴더가 없으면 자동으로 생성하는 안전장치
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// 영구 디스크 경로가 반영된 파일 경로 정의
+const dbPath = path.join(DATA_DIR, 'badminton.db');
+const CONFIG_FILE_PATH = path.join(DATA_DIR, 'config.json');
+
+// 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
+const activeUserSockets = new Map();
+
 // 유저별 연결 끊김 유예 타이머를 저장할 객체
 const disconnectTimers = {};
 const userSockets = {};
@@ -54,7 +68,8 @@ setInterval(() => {
 // ==========================================
 // 💾 환경 설정 영구 저장/불러오기 (config.json)
 // ==========================================
-const CONFIG_FILE_PATH = path.join(__dirname, 'config.json');
+// 💡 상단에서 정의한 영구 디스크 경로(DATA_DIR)를 사용하여 config.json 경로 설정
+const CONFIG_FILE_PATH = path.join(DATA_DIR, 'config.json');
 
 // 1. config 객체를 먼저 기본값과 함께 선언
 let config = {
@@ -314,9 +329,7 @@ app.post('/api/member/withdraw', async (req, res) => {
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
-// /data 경로를 쓰지 않고 무조건 프로젝트 내부 경로를 쓰도록 수정
-const dbPath = path.resolve(__dirname, 'badminton.db');
-
+// 💡 상단에서 선언한 영구 디스크 대응 dbPath 변수를 그대로 사용합니다.
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('❌ 데이터베이스 연결 실패:', err.message);
