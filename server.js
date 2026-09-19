@@ -19,6 +19,8 @@ const disconnectTimers = {};
 const userSockets = {};
 const expiredUsers = {}; // 유예 시간 초과로 만료된 유저를 기록할 객체
 const UserDictionary = require('./userDictionary'); // 파일 경로에 맞게 설정
+// 현재 로그인된 유저들의 소켓 ID 또는 유저 정보를 담는 Set
+const onlineUsers = new Set();
 
 // 서버 전용 음성 안내 큐 및 상태 관리 변수
 let serverAudioQueue = [];
@@ -1329,26 +1331,46 @@ if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
 }, 1000);
 
 // ==========================================
-// 6. Socket.IO 이벤트 핸들링
+// 6. Socket.IO 이벤트 핸들링 (기존 모든 소켓 기능 + 로그인 핸들러 완벽 통합)
 // ==========================================
 io.on('connection', (socket) => {
+
     // 📶 접속자의 구장 Wi-Fi 여부 판별 후 개별 전달
     const isGym = isGymWifiUser(socket);
     socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(socket) });
 
     console.log('새 소켓 연결:', socket.id);
 
-    // 서버 소켓 연결 부분 어딘가에 추가
-socket.on('registerTV', () => {
-    socket.join('tv-room');
-    console.log("📺 TV 전광판 화면이 'tv-room'에 등록되었습니다.");
-});
-    
-    // ==========================
-    // 정회원 및 일일회원 로그인 소켓 이벤트
-    // ==========================
+    // 💡 사용자가 세션을 등록할 때 (로그인 완료 시점)
+    socket.on('registerUserSession', (username) => {
+        if (!username) return;
 
-   socket.on('loginMember', ({ name, phone }, callback) => {
+        const cleanUsername = String(username).split('/')[0].trim();
+
+        if (activeUserSockets.has(cleanUsername)) {
+            const oldSocketId = activeUserSockets.get(cleanUsername);
+            if (oldSocketId !== socket.id) {
+                io.to(oldSocketId).emit('forceLogout', {
+                    username: cleanUsername,
+                    reason: 'duplicate_login',
+                    message: '다른 기기 또는 브라우저에서 로그인하여 현재 세션이 종료되었습니다.'
+                });
+            }
+        }
+
+        activeUserSockets.set(cleanUsername, socket.id);
+        socket.username = cleanUsername;
+        broadcastOnlineCount();
+    });
+
+    // 서버 소켓 연결 - TV 전광판 등록
+    socket.on('registerTV', () => {
+        socket.join('tv-room');
+        console.log("📺 TV 전광판 화면이 'tv-room'에 등록되었습니다.");
+    });
+
+    // 🔑 [추가 완료] 정회원 로그인 처리 소켓 이벤트
+    socket.on('loginMember', ({ name, phone }, callback) => {
         const trimmedName = name ? name.trim() : '';
         const cleanInputPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
 
@@ -1368,7 +1390,6 @@ socket.on('registerTV', () => {
                 return callback({ success: false, message: '등록된 정회원 정보가 일치하지 않습니다.' });
             }
 
-            // 값이 없을 경우를 대비한 안전한 기본값 처리
             const genderStr = row.gender ? row.gender : '미입력';
             const ageGroupStr = row.ageGroup ? row.ageGroup : '일반';
             const gradeStr = row.grade ? row.grade : '초심';
@@ -1390,7 +1411,7 @@ socket.on('registerTV', () => {
         });
     });
 
-    // 2. 일일회원 로그인 처리 (undefined 방지를 위한 기본 속성 추가)
+    // 🔑 [추가 완료] 일일회원 로그인 처리 소켓 이벤트
     socket.on('loginGuest', ({ name, phone, payCode }, callback) => {
         if (!payCode || payCode.length !== 6) {
             return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
@@ -1412,96 +1433,8 @@ socket.on('registerTV', () => {
 
         callback({ success: true, user });
     });
-    socket.lastActiveTime = Date.now();
 
-    socket.onAny(() => {
-        socket.lastActiveTime = Date.now();
-    });
-
-    socket.emit('stateUpdated', {
-        config: config,
-        courtsData: courtsData,
-        gameQueue: gameQueue,
-        nantaQueue: nantaQueue,
-        notifications: notifications
-    });
-
-   socket.on('registerUserSession', (username) => {
-    if (!username) return;
-
-    const cleanUsername = String(username).split('/')[0].trim();
-
-    // 💡 이미 다른 브라우저/기기에서 접속 중인 소켓이 있는 경우
-    if (activeUserSockets.has(cleanUsername)) {
-        const oldSocketId = activeUserSockets.get(cleanUsername);
-
-        // 이전 소켓이 지금 접속한 소켓과 다를 때만 이전 브라우저 강제 로그아웃
-        if (oldSocketId !== socket.id) {
-            io.to(oldSocketId).emit('forceLogout', {
-                username: cleanUsername,
-                reason: 'duplicate_login',
-                message: '다른 기기 또는 브라우저에서 로그인하여 현재 세션이 종료되었습니다.'
-            });
-        }
-    }
-
-    // 현재 접속한 소켓 ID로 갱신
-    activeUserSockets.set(cleanUsername, socket.id);
-    socket.username = cleanUsername;
-});
-
-// 연결 종료 시 맵에서 정리
-socket.on('disconnect', () => {
-    if (socket.username && activeUserSockets.get(socket.username) === socket.id) {
-        activeUserSockets.delete(socket.username);
-    }
-});
-
-    socket.on('disconnect', () => {
-    const rawUser = userSockets[socket.id] || socket.username;
-    const currentSocketId = socket.id;
-    
-    if (rawUser) {
-        // 객체든 문자열이든 타이머 키로 쓸 수 있는 안전한 문자열 추출
-        let userKey = '';
-        if (typeof rawUser === 'object' && rawUser !== null) {
-            userKey = rawUser.id || rawUser.username || rawUser.name || '';
-        } else {
-            userKey = String(rawUser);
-        }
-
-        if (!userKey) {
-            console.log(`🔌 [연결 끊김] 소켓 ID: ${currentSocketId} - 유저 식별자 추출 실패`);
-            return;
-        }
-
-        console.log(`🔌 [연결 끊김] 소켓 ID: ${currentSocketId} (유저: ${userKey}) 연결 해제됨. 유예 타이머(1분) 작동 시작...`);
-        
-        // 만약 이 유저 명의로 된 기존 타이머가 있다면 초기화
-        if (disconnectTimers[userKey]) {
-            clearTimeout(disconnectTimers[userKey]);
-        }
-
-        disconnectTimers[userKey] = setTimeout(() => {
-            console.log(`⏳ [유예 시간 만료] 유저 [${userKey}]님이 오랜 시간 돌아오지 않아 대기열 퇴장을 진행합니다.`);
-            
-            // 1. 대기열 및 방 정리 (앞서 만든 강력 청소 함수 호출)
-            cleanupUser(rawUser);
-
-            // 2. 만료된 유저 명단에 등록
-            expiredUsers[userKey] = true;
-
-            // 3. 타이머 및 매핑 정리
-            delete disconnectTimers[userKey];
-            delete userSockets[currentSocketId];
-        }, 30 * 60 * 1000); // 30분 유예 시간(정해진 시간동안 웹 동작이 없으면 자동 로그아웃처리)
-        
-    } else {
-        console.log(`🔌 [연결 끊김] 매핑된 유저가 없는 소켓 ID: ${socket.id} 연결 해제됨`);
-    }
-});
-
-// 🎛️ [관리자] Wi-Fi 제한 ON/OFF 토글 및 구장 IP 등록 이벤트
+    // 🎛️ [관리자] Wi-Fi 제한 ON/OFF 토글 및 구장 IP 등록 이벤트
     socket.on('updateWifiSettings', ({ useWifiRestriction, allowedGymIps }) => {
         if (typeof useWifiRestriction === 'boolean') {
             config.useWifiRestriction = useWifiRestriction;
@@ -1552,7 +1485,7 @@ socket.on('disconnect', () => {
                     config.cleaningEndMsg = newConfig.cleaningEndMsg;
                 }
             }
-            saveConfigToFile(); // 👈 이 한 줄만 추가!
+            saveConfigToFile();
             broadcastState();
         } catch (err) {
             console.error('환경 설정 변경 에러:', err);
@@ -1618,21 +1551,18 @@ socket.on('disconnect', () => {
 
     // 🔒 방 개설 시 현재 코트 플레이 여부 및 중복 체크
     socket.on('createSlot', ({ type, userId, user }) => {
-        // 📶 [추가] 구장 Wi-Fi 접속 여부 체크
         if (!isGymWifiUser(socket)) {
             socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
             return;
         }
         const myName = user.split(' / ')[0].trim();
 
-        // 1. 현재 게임 코트에서 뛰고 있는지 확인
         const isInGameCourt = courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(myName));
         if (isInGameCourt) {
             socket.emit('alertMessage', `⚠️ ${myName} 님은 현재 게임 코트에서 플레이 중이므로 새로운 방을 개설할 수 없습니다.`);
             return;
         }
 
-        // 2. 난타 코트에서 뛰고 있는지 확인 (난타방 개설 시만 차단, 게임방 개설은 허용)
         if (type === 'nanta') {
             const isInNantaCourt = courtsData.some(c => c.type === 'nanta' && (
                 (c.sideA && !c.sideA.isEmpty && c.sideA.players && c.sideA.players.includes(myName)) ||
@@ -1699,23 +1629,19 @@ socket.on('disconnect', () => {
         createNewSlotDirectly(type, userId, user);
     });
 
-    // 🔒 대기 방 참여(입장하기) 시 현재 코트 플레이 여부 체크
     socket.on('joinPlayer', ({ type, slotId, index, name }) => {
-        // 📶 [추가] 구장 Wi-Fi 접속 여부 체크
         if (!isGymWifiUser(socket)) {
             socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 대기 방에 입장할 수 있습니다.');
             return;
         }
         const cleanName = name.split('/')[0].trim();
 
-        // 1. 게임 코트 플레이 중이면 모든 입장 차단
         const isInGameCourt = courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(cleanName));
         if (isInGameCourt) {
             socket.emit('alertMessage', `⚠️ ${cleanName} 님은 현재 게임 코트에서 플레이 중이므로 대기 방에 입장할 수 없습니다.`);
             return;
         }
 
-        // 2. 난타 코트 플레이 중이면 난타 방 입장 차단 (게임 방 입장은 허용)
         if (type === 'nanta') {
             const isInNantaCourt = courtsData.some(c => c.type === 'nanta' && (
                 (c.sideA && !c.sideA.isEmpty && c.sideA.players && c.sideA.players.includes(cleanName)) ||
@@ -1772,7 +1698,6 @@ socket.on('disconnect', () => {
         }
     });
 
-   // 🏟️ 대기 방에서 정원 충족 후 [코트 입장] 처리 (규칙 반영 완료)
     socket.on('enterCourtFromSlot', ({ type, slotId }) => {
         try {
             if (type === 'game') {
@@ -1783,24 +1708,19 @@ socket.on('disconnect', () => {
 
                 if (validPlayers.length < 4) return;
 
-                // 빈 게임 코트 찾기
                 const emptyCourt = courtsData.find(c => c.type === 'game' && c.isEmpty);
                 if (!emptyCourt) return;
 
-                // 코트에 플레이어 배정 및 상태 변경
                 emptyCourt.isEmpty = false;
                 emptyCourt.players = validPlayers.join(', ');
                 emptyCourt.startTime = Date.now();
                 emptyCourt.remainingSeconds = 0;
 
-                // 게임 대기열에서 제거
                 gameQueue.splice(slotIdx, 1);
 
-                // ⭐ [규칙 적용] 게임 코트 입장 시, 해당 인원들이 포함된 난타 대기열(nantaQueue) 및 난타 코트(A/B반)에서 강제 퇴장 처리
                 validPlayers.forEach(p => {
                     const cleanPName = p.split('/')[0].trim();
 
-                    // 1. 난타 대기열에서 제거
                     nantaQueue.forEach(nSlot => {
                         nSlot.players.forEach((np, idx) => {
                             if (np && np.includes(cleanPName)) {
@@ -1808,10 +1728,8 @@ socket.on('disconnect', () => {
                             }
                         });
                     });
-                    // 비어버린 난타 대기방 제거
                     nantaQueue = nantaQueue.filter(nSlot => getValidPlayers(nSlot.players).length > 0);
 
-                    // 2. 난타 코트(진행 중)에서 제거
                     courtsData.forEach(court => {
                         if (court.type === 'nanta') {
                             if (court.sideA && !court.sideA.isEmpty && court.sideA.players && court.sideA.players.includes(cleanPName)) {
@@ -1835,7 +1753,6 @@ socket.on('disconnect', () => {
 
                 if (validPlayers.length < 2) return;
 
-                // 빈 난타 반코트(sideA 또는 sideB) 찾기
                 let targetCourt = null;
                 let targetSide = null;
 
@@ -1855,7 +1772,6 @@ socket.on('disconnect', () => {
 
                 if (!targetCourt) return;
 
-                // 반코트에 플레이어 배정
                 targetCourt[targetSide] = {
                     isEmpty: false,
                     players: validPlayers.join(', '),
@@ -1863,7 +1779,6 @@ socket.on('disconnect', () => {
                     remainingSeconds: config.NANTA_COURT_LIMIT_SEC || 900
                 };
 
-                // 난타 대기열에서 제거
                 nantaQueue.splice(slotIdx, 1);
 
                 addNotification(`🏟️ [코트 입장] 난타 코트 (${targetCourt.id}번 - ${targetSide === 'sideA' ? 'A반' : 'B반'})에 팀이 입장했습니다.`);
@@ -1873,16 +1788,12 @@ socket.on('disconnect', () => {
             console.error('코트 입장 처리 에러:', err);
         }
     });
-   // 🏸 난타 코트(특정 사이드) 종료 요청 처리
-    socket.on('endNantaCourt', ({ courtId, side }) => {
-        console.log(`🔍 [디버깅] 난타 종료 요청 수신 - 코트번호: ${courtId}, 사이드: ${side}`);
 
+    socket.on('endNantaCourt', ({ courtId, side }) => {
         const targetCourt = courtsData.find(c => c.id === Number(courtId));
         if (!targetCourt || targetCourt.type !== 'nanta') return;
 
         let isCleared = false;
-
-        // 'sideA', 'sideB', 'A', 'B' 어떤 형태로 들어와도 안전하게 인식하도록 정제
         const cleanSide = side ? String(side).replace('side', '').toUpperCase() : '';
 
         if (cleanSide === 'A' && targetCourt.sideA && !targetCourt.sideA.isEmpty) {
@@ -1895,10 +1806,10 @@ socket.on('disconnect', () => {
 
         if (isCleared) {
             addNotification(`🔔 [난타종료] ${targetCourt.id}번 코트 (${cleanSide}면)가 수동 종료되었습니다.`);
-            broadcastState(); // 모든 클라이언트와 TV 화면에 즉시 동기화
+            broadcastState();
         }
     });
-    // 🏁 [게임 종료] 코트의 게임을 완전히 종료하고 비우는 핸들러
+
     socket.on('endGameCourt', ({ courtId }) => {
         try {
             const court = courtsData.find(c => c.id === courtId && c.type === 'game');
@@ -1915,7 +1826,6 @@ socket.on('disconnect', () => {
         }
     });
 
-    // 🔄 [한게임 더] 게임이 끝난 인원들을 새로운 대기 방으로 만들어 게임 대기열의 '최후순위'로 배치하는 핸들러
     socket.on('extendGameCourt', ({ courtId }) => {
         try {
             const court = courtsData.find(c => c.id === courtId && c.type === 'game');
@@ -1924,7 +1834,6 @@ socket.on('disconnect', () => {
             const playersArr = court.players.split(',').map(p => p.trim()).filter(Boolean);
             if (playersArr.length === 0) return;
 
-            // 새로운 대기 방 슬롯 생성 (기존 플레이어들 그대로 유지)
             const newSlot = {
                 id: 'slot_' + (slotIdCounter++),
                 type: 'game',
@@ -1940,10 +1849,8 @@ socket.on('disconnect', () => {
                 remainingSeconds: null
             };
 
-            // 게임 대기열의 맨 뒤(최후순위)에 푸시
             gameQueue.push(newSlot);
 
-            // 해당 코트는 비워주기
             court.isEmpty = true;
             court.players = '';
             court.startTime = null;
@@ -2021,7 +1928,53 @@ socket.on('disconnect', () => {
             }
         }
     });
-});
+
+    // ==========================================
+    // 통합된 단 하나의 disconnect (연결 해제 처리)
+    // ==========================================
+    socket.on('disconnect', () => {
+        const currentSocketId = socket.id;
+
+        if (socket.username && activeUserSockets.get(socket.username) === socket.id) {
+            activeUserSockets.delete(socket.username);
+            broadcastOnlineCount();
+        }
+
+        const rawUser = userSockets[currentSocketId] || socket.username;
+        
+        if (rawUser) {
+            let userKey = '';
+            if (typeof rawUser === 'object' && rawUser !== null) {
+                userKey = rawUser.id || rawUser.username || rawUser.name || '';
+            } else {
+                userKey = String(rawUser);
+            }
+
+            if (!userKey) return;
+
+            if (disconnectTimers[userKey]) {
+                clearTimeout(disconnectTimers[userKey]);
+            }
+
+            disconnectTimers[userKey] = setTimeout(() => {
+                cleanupUser(rawUser);
+                expiredUsers[userKey] = true;
+                delete disconnectTimers[userKey];
+                delete userSockets[currentSocketId];
+            }, 60 * 60 * 1000);  // 젒속 유예 시간 60분이 지나면 게임 및 난타 대기열 참여 정보 삭제, 혼자인 방은 자동 삭제됨.
+            
+        }
+    });
+
+}); // <--- io.on('connection') 블록 닫는 괄호
+
+// ==========================================
+// 공통 함수 영역 (io 블록 바깥)
+// ==========================================
+function broadcastOnlineCount() {
+    const count = activeUserSockets.size; 
+    io.emit('updateOnlineCount', count);
+}
 
 // 파일 하단 (기존 API 라우트들 아래)
 

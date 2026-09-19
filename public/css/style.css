@@ -176,3 +176,29 @@ input[lang="ko"] {
   letter-spacing: 0.5px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
+
+/* 하단 좌측 실시간 접속자 및 Wi-Fi 상태 배지 */
+.online-status-badge {
+    position: fixed;
+    bottom: 24px;
+    left: 20px;
+    z-index: 9999;
+    background-color: #4b5563; /* 기본 회색 (Wi-Fi 미연결) */
+    color: #ffffff;
+    padding: 10px 16px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.3s ease;
+    pointer-events: none;
+}
+
+/* 📶 체육관 Wi-Fi 인증 완료 시: 밝은 녹색 배경 */
+body.gym-wifi-active .online-status-badge {
+    background-color: #22c55e !important;
+    color: #000000; /* 가독성을 위한 진한 글자색 */
+}

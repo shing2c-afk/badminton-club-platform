@@ -226,6 +226,14 @@ socket.off('confirmCrossSlot').on('confirmCrossSlot', async ({ type, userId, use
     }
 });
 
+// 서버로부터 로그인된 접속자 수 업데이트 수신
+socket.on('updateOnlineCount', (count) => {
+    const countElement = document.getElementById('online-count');
+    if (countElement) {
+        countElement.textContent = count;
+    }
+});
+
 // =================================================================
 // 💡 관리자 코트 강제 종료 공지
 // =================================================================

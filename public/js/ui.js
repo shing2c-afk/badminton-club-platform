@@ -645,7 +645,7 @@ async function joinGameCell(slotId, idx) {
         const confirmBtn = document.getElementById('custom-alert-ok-btn');
 
         if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 게임에 참여할 수 있습니다.';
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
             modal.style.display = 'flex';
 
             if (confirmBtn) {
@@ -701,7 +701,7 @@ async function joinNantaCell(slotId, idx) {
         const confirmBtn = document.getElementById('custom-alert-ok-btn');
 
         if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 난타에 참여할 수 있습니다.';
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
             modal.style.display = 'flex';
 
             if (confirmBtn) {
