@@ -1,15 +1,27 @@
 {
-  "ENTRY_TIMEOUT_SEC": 180,
-  "NANTA_COURT_LIMIT_SEC": 900,
+  "ENTRY_TIMEOUT_SEC": 120,
+  "NANTA_COURT_LIMIT_SEC": 600,
   "ADMIN_PASSWORD": "1234",
   "cleaningSchedules": [
     {
-      "start": "08:24",
-      "end": "08:25"
+      "start": "",
+      "end": ""
+    },
+    {
+      "start": "",
+      "end": ""
+    },
+    {
+      "start": "20:00",
+      "end": "20:05"
+    },
+    {
+      "start": "",
+      "end": ""
     }
   ],
-  "cleaningStartMsg": "구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
-  "cleaningEndMsg": "구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+  "cleaningStartMsg": "청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+  "cleaningEndMsg": "청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
   "useWifiRestriction": true,
   "allowedGymIps": [
     "::1"

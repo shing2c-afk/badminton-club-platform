@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>운정배드민턴클럽 - 관리자 모드</title>
+    <title>클럽 관리자 모드</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-    /* 🎨 디자인 시스템 & 공통 스타일 통일 */
+    /* 🎨 모던 슬림 대시보드 디자인 시스템 */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { 
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
-        background: #0b0f19; 
-        color: #f3f4f6; 
-        padding: 14px; 
-        max-width: 600px; 
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+        background: #07090e; 
+        color: #e2e8f0; 
+        padding: 12px; 
+        max-width: 540px; 
         margin: 0 auto; 
         -webkit-tap-highlight-color: transparent;
         line-height: 1.5;
@@ -24,83 +24,120 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #111827;
-        border: 1px solid #1f2937;
+        background: linear-gradient(135deg, #111827 0%, #0f172a 100%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+        padding: 14px;
+        margin-bottom: 14px;
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.5);
     }
-    h1 { color: #f59e0b; font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+    h1 { color: #fbbf24; font-size: 17px; font-weight: 800; letter-spacing: -0.5px; display: flex; align-items: center; gap: 8px; }
 
-    /* 카드 컨테이너 통일 */
+    /* 아코디언 카드 스타일 */
     .card { 
         background: #111827; 
         border: 1px solid #1f2937; 
         border-radius: 12px; 
-        padding: 16px; 
-        margin-bottom: 16px; 
-        box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+        margin-bottom: 12px; 
+        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        overflow: hidden;
+        transition: border-color 0.2s;
     }
-    .card.danger-zone { border-color: rgba(239, 68, 68, 0.35); background: #131115; }
-    .card.cleaning-zone { border-color: rgba(56, 189, 248, 0.35); }
-    .card.notice-zone { border-color: rgba(245, 158, 11, 0.35); }
+    .card:hover { border-color: rgba(255, 255, 255, 0.15); }
+
+    /* 섹터별 개성 있는 테마 포인트 보더 (왼쪽 엣지) */
+    .card.setting-zone { border-left: 3.5px solid #3b82f6; }
+    .card.cleaning-zone { border-left: 3.5px solid #0ea5e9; }
+    .card.wifi-zone { border-left: 3.5px solid #10b981; }
+    .card.court-zone { border-left: 3.5px solid #8b5cf6; }
+    .card.notice-zone { border-left: 3.5px solid #f59e0b; }
+    .card.danger-zone { border-left: 3.5px solid #ef4444; background: #120e11; }
+    .card.member-zone { border-left: 3.5px solid #6366f1; }
+
+    .card-header {
+        padding: 14px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        background: #111827;
+        transition: background 0.2s;
+    }
+    .card-header:hover { background: #1a2234; }
+    .card-body {
+        padding: 14px 16px;
+        border-top: 1px solid #1f2937;
+        display: none; /* 기본 접힘 상태 */
+        background: #0b0f19;
+    }
+    .card-body.active { display: block; }
     
+    /* 화살표와 버튼 간격 확보 */
+    .arrow-wrap {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .arrow { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.8rem; color: #64748b; }
+    .card-header.open .arrow { transform: rotate(180deg); color: #e2e8f0; }
+
     /* 카드 타이틀 통일 */
     .card-title { 
         font-size: 14px; 
         font-weight: 700; 
-        color: #38bdf8; 
-        margin-bottom: 12px; 
+        color: #f8fafc; 
         display: flex; 
         justify-content: space-between; 
         align-items: center; 
-        border-bottom: 1px solid #1f2937;
-        padding-bottom: 8px;
+        width: 100%;
+        letter-spacing: -0.2px;
     }
-    .card-title.danger { color: #ef4444; }
-    .card-title.notice { color: #f59e0b; }
 
-    /* 폼 그룹 및 텍스트 계층 */
+    /* 폼 그룹 및 입력 요소 */
     .form-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; gap: 10px; }
-    .form-group label { font-size: 13px; font-weight: 500; color: #9ca3af; flex-shrink: 0; }
-    .form-group input, .form-group select { 
-        background: #1f2937; 
-        border: 1px solid #374151; 
-        color: #ffffff; 
-        padding: 8px 10px; 
-        border-radius: 6px; 
-        width: 150px; 
-        text-align: right; 
+    .form-group label { font-size: 12.5px; font-weight: 500; color: #94a3b8; flex-shrink: 0; }
+    .form-group input, .form-group select, .form-group textarea { 
+        background: #0f172a; 
+        border: 1px solid #334151; 
+        color: #f8fafc; 
+        padding: 10px 12px; 
+        border-radius: 8px; 
+        width: 100%; 
         font-size: 13.5px; 
         outline: none; 
+        transition: all 0.2s;
     }
-    .form-group input:focus, .form-group select:focus { border-color: #3b82f6; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { 
+        border-color: #3b82f6; 
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); 
+    }
     
-    /* 서브 텍스트 */
-    .form-desc { font-size: 12px; color: #9ca3af; margin-bottom: 12px; line-height: 1.5; }
+    .form-desc { font-size: 12px; color: #94a3b8; margin-bottom: 12px; line-height: 1.4; }
 
     /* 청소 시간 입력 스타일 */
     .cleaning-time-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: #1f2937;
-        padding: 10px 12px;
+        background: #0f172a;
+        padding: 12px;
         border-radius: 8px;
+        margin-bottom: 12px;
+        border: 1px solid #1e293b;
+    }
+    .cleaning-row-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         margin-bottom: 8px;
     }
     .cleaning-label {
-        color: #38bdf8;
         font-weight: 700;
-        font-size: 13px;
-        flex-shrink: 0;
+        font-size: 13.5px;
+        letter-spacing: -0.2px;
     }
     .cleaning-time-group {
         display: flex;
         align-items: center;
         gap: 6px;
-        justify-content: flex-end;
     }
     .time-box-wrap {
         display: flex;
@@ -109,9 +146,9 @@
     }
     .time-select {
         background: #111827;
-        border: 1px solid #374151;
+        border: 1px solid #334151;
         color: #ffffff;
-        padding: 4px 6px;
+        padding: 5px 8px;
         border-radius: 6px;
         font-size: 12px;
         font-weight: 600;
@@ -119,46 +156,47 @@
         cursor: pointer;
     }
     .tilde {
-        font-size: 13px;
-        color: #9ca3af;
+        font-size: 12px;
+        color: #64748b;
         font-weight: bold;
         padding: 0 2px;
     }
-
-    /* 📱 모바일 화면(스마트폰) 대응 반응형 스타일 추가 */
-    @media (max-width: 768px) {
-        .cleaning-zone .cleaning-time-row {
-            flex-wrap: wrap; 
-            gap: 6px;
-        }
-        .cleaning-zone .cleaning-time-row select.time-select {
-            padding: 4px 2px;
-            font-size: 11px;
-            max-width: 55px;
-        }
+    .cleaning-msg-input {
+        background: #111827 !important;
+        border: 1px solid #334151 !important;
+        color: #f8fafc !important;
+        padding: 9px 12px !important;
+        border-radius: 7px !important;
+        font-size: 13px !important;
+        width: 100% !important;
+        outline: none !important;
+        transition: border-color 0.2s;
+    }
+    .cleaning-msg-input:focus {
+        border-color: #0ea5e9 !important;
+        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
     }
 
     /* 코트 아이템 설정 */
     .court-item { 
-        background: #1f2937; 
-        border: 1px solid #374151; 
+        background: #0f172a; 
+        border: 1px solid #1e293b; 
         padding: 10px; 
         border-radius: 8px; 
         margin-bottom: 8px; 
     }
     .court-row-top { display: flex; align-items: center; gap: 8px; }
-    .court-num { font-size: 13px; font-weight: 700; width: 42px; color: #f3f4f6; flex-shrink: 0; text-align: center; }
+    .court-num { font-size: 13px; font-weight: 700; width: 40px; color: #cbd5e1; flex-shrink: 0; text-align: center; }
     
     .court-select { 
         background: #111827; 
         border: 1px solid #3b82f6; 
         color: #ffffff; 
         padding: 7px 10px; 
-        border-radius: 6px; 
+        border-radius: 7px; 
         flex: 1; 
         font-size: 13px; 
         font-weight: 600;
-        cursor: pointer;
         outline: none;
         height: 36px;
     }
@@ -167,10 +205,10 @@
     .court-note-wrap { margin-top: 6px; display: none; }
     .court-note { 
         background: #111827; 
-        border: 1px solid #4b5563; 
+        border: 1px solid #475569; 
         color: white; 
         padding: 7px 10px; 
-        border-radius: 6px; 
+        border-radius: 7px; 
         width: 100%; 
         font-size: 12.5px; 
         height: 36px; 
@@ -178,19 +216,37 @@
     }
     .court-note:focus { border-color: #3b82f6; }
     
-    .btn-del { background: #ef4444; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 12px; flex-shrink: 0; height: 36px; }
+    .btn-del { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding: 5px 10px; border-radius: 7px; font-weight: 700; cursor: pointer; font-size: 11.5px; flex-shrink: 0; height: 36px; transition: background 0.2s; }
+    .btn-del:hover { background: #ef4444; color: white; }
 
-    /* 버튼 스타일 */
-    .btn-primary { background: #2563eb; color: white; border: none; padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3); }
-    .btn-primary:active { background: #1d4ed8; }
+    /* 버튼 스타일 통일 및 모던화 */
+    .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 10px; box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3); transition: filter 0.2s; }
+    .btn-primary:active { filter: brightness(0.9); }
     
-    .btn-success { background: #10b981; color: white; border: none; padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px; }
-    .btn-success:active { background: #059669; }
+    .btn-success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 10px; box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3); }
+    .btn-success:active { filter: brightness(0.9); }
 
-    .btn-danger { background: #ef4444; color: white; border: none; padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); }
-    .btn-danger:active { background: #dc2626; }
+    .btn-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 10px; box-shadow: 0 3px 10px rgba(239, 68, 68, 0.3); }
+    .btn-danger:active { filter: brightness(0.9); }
 
-    .btn-add { background: #10b981; color: white; border: none; padding: 5px 10px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 12px; }
+    /* 💡 코트추가 및 전체목록 버튼 스타일 완벽히 동일하게 통일 */
+    .btn-action-badge { 
+        background: #10b981; 
+        color: white; 
+        border: none; 
+        padding: 5px 10px; 
+        border-radius: 6px; 
+        font-weight: 700; 
+        cursor: pointer; 
+        font-size: 11.5px; 
+        box-shadow: 0 2px 5px rgba(16, 185, 129, 0.2); 
+        white-space: nowrap;
+    }
+    .btn-action-badge.notice-btn {
+        background: #1e293b; 
+        color: #fbbf24; 
+        border: 1px solid #334155;
+    }
     
     .btn-link { 
         background: #111827; 
@@ -206,69 +262,28 @@
         margin-top: 16px; 
         margin-bottom: 24px; 
         font-weight: 700; 
-        border: 1px solid #374151; 
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        border: 1px solid #1f2937; 
+        box-shadow: 0 3px 10px rgba(0,0,0,0.25);
+        transition: background 0.2s;
     }
+    .btn-link:hover { background: #1a2234; }
 
-    .select-box { 
-        width: 100%; 
-        text-align: left; 
-        padding: 6px 8px; 
-        font-size: 7px; /* 기존 크기의 약 50 수준으로 축소 */
-        background: #1f2937; 
-        border: 1px solid #374151; 
-        color: white; 
-        border-radius: 8px; 
-        outline: none; 
-    }
-    .select-box:focus { border-color: #3b82f6; }
-
-    /* 📱 스마트폰 네이티브 팝업 대안용 컴팩트 커스텀 드롭다운 스타일 */
-    .custom-dropdown {
-        position: relative;
-        width: 100%;
-    }
+    /* 커스텀 드롭다운 스타일 */
+    .custom-dropdown { position: relative; width: 100%; }
     .custom-dropdown-toggle {
-        width: 100%;
-        background: #1f2937;
-        border: 1px solid #374151;
-        color: white;
-        padding: 8px 10px;
-        border-radius: 8px;
-        font-size: 13px;
-        text-align: left;
-        cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        outline: none;
+        width: 100%; background: #0f172a; border: 1px solid #334151; color: #f8fafc;
+        padding: 10px 12px; border-radius: 7px; font-size: 13px; text-align: left;
+        cursor: pointer; display: flex; justify-content: space-between; align-items: center; outline: none;
     }
     .custom-dropdown-menu {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        width: 100%;
-        background: #111827;
-        border: 1.5px solid #3b82f6;
-        border-radius: 8px;
-        margin-top: 4px;
-        max-height: 200px;
-        overflow-y: auto;
-        z-index: 999;
-        display: none;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        position: absolute; top: 100%; left: 0; width: 100%; background: #0f172a;
+        border: 1.5px solid #3b82f6; border-radius: 8px; margin-top: 4px; max-height: 200px;
+        overflow-y: auto; z-index: 999; display: none; box-shadow: 0 8px 20px rgba(0,0,0,0.6);
     }
     .custom-dropdown-item {
-        padding: 8px 12px;
-        font-size: 10px; /* 📱 스마트폰에서 보기 좋게 텍스트 크기를 대폭 축소 */
-        color: #f3f4f6;
-        cursor: pointer;
-        border-bottom: 1px solid #1f2937;
+        padding: 10px 12px; font-size: 12.5px; color: #cbd5e1; cursor: pointer; border-bottom: 1px solid #1e293b;
     }
-    .custom-dropdown-item:hover {
-        background: #2563eb;
-        color: white;
-    }
+    .custom-dropdown-item:hover { background: #2563eb; color: white; }
     </style>
 
     <!-- 🌐 URL 노출 없는 커스텀 모달 오버라이딩 스크립트 -->
@@ -328,256 +343,314 @@
 <body>
 
     <div class="admin-header">
-        <h1>⚙️ 운정배드민턴클럽 관리자 모드</h1>
+        <h1>⚙️ 클럽 관리자 모드</h1>
     </div>
 
-    <!-- 1. 기본 환경 설정 카드 -->
-    <div class="card">
-        <div class="card-title"><span>⏰ 타이머 및 관리자 보안 설정</span></div>
-        <div class="form-group">
-            <label>입장 대기 제한시간 (분):</label>
-            <input type="number" id="entry-timeout" step="0.5" min="0.5">
+    <!-- 1. 제한시간 및 관리자 보안 설정 -->
+    <div class="card setting-zone" id="card-setting">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title">
+                <span style="color: #60a5fa;">⏰ 제한시간 및 관리자 보안 설정</span>
+                <div class="arrow-wrap"><span class="arrow">▼</span></div>
+            </div>
         </div>
-        <div class="form-group">
-            <label>난타 코트 제한시간 (분):</label>
-            <input type="number" id="nanta-timeout" step="1" min="1">
+        <div class="card-body">
+            <div class="form-group">
+                <label>입장 대기 제한시간 (분):</label>
+                <input type="number" id="entry-timeout" step="0.5" min="0.5" style="width: 110px; text-align: right;">
+            </div>
+            <div class="form-group">
+                <label>난타 코트 이용시간 (분):</label>
+                <input type="number" id="nanta-timeout" step="1" min="1" style="width: 110px; text-align: right;">
+            </div>
+            <div class="form-group">
+                <label>관리자 접속 비밀번호:</label>
+                <input type="text" id="admin-password" style="width: 110px; text-align: right;">
+            </div>
+            <button class="btn-primary" onclick="saveConfig()">설정 저장</button>
         </div>
-        <div class="form-group">
-            <label>관리자 접속 비밀번호:</label>
-            <input type="text" id="admin-password">
-        </div>
-        <button class="btn-primary" onclick="saveConfig()">환경 설정 저장</button>
     </div>
 
-    <!-- 🧹 2. 구장 청소 시간 & 자동 방송 설정 카드 -->
-    <div class="card cleaning-zone">
-        <div class="card-title"><span>🧹 구장 청소 시간 & 자동 방송 설정</span></div>
-        <p class="form-desc">설정된 청소 시간 동안에는 <strong>입장 및 난타 코트 타이머가 일시 정지</strong>되며, 시작과 종료 시점에 자동 안내방송이 송출됩니다. (사용하지 않는 슬롯은 '미사용' 선택)</p>
-        
-        <!-- 1차 청소 시간 -->
-        <div class="cleaning-time-row">
-            <div class="cleaning-label">1차 청소</div>
-            <div class="cleaning-time-group">
-                <div class="time-box-wrap">
-                    <select id="clean-start-h-1" class="time-select"></select> :
-                    <select id="clean-start-m-1" class="time-select"></select>
+    <!-- 2. 청소시간 및 코트운영 시간 설정 -->
+    <div class="card cleaning-zone" id="card-cleaning">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title">
+                <span style="color: #38bdf8;">🧹 청소시간 및 코트운영 시간 설정</span>
+                <div class="arrow-wrap"><span class="arrow">▼</span></div>
+            </div>
+        </div>
+        <div class="card-body">
+            <p class="form-desc">설정된 시간 동안에는 <strong>입장 및 난타 코트 타이머가 일시 정지</strong>되며, 시작과 종료 시점에 자동 안내방송이 송출됩니다. (미사용 시 비워두세요)</p>
+            
+            <!-- 오전 청소시간 -->
+            <div class="cleaning-time-row">
+                <div class="cleaning-row-header">
+                    <div class="cleaning-label" style="color: #38bdf8;">오전 청소시간</div>
+                    <div class="cleaning-time-group">
+                        <div class="time-box-wrap"><select id="clean-start-h-1" class="time-select"></select>:<select id="clean-start-m-1" class="time-select"></select></div>
+                        <span class="tilde">~</span>
+                        <div class="time-box-wrap"><select id="clean-end-h-1" class="time-select"></select>:<select id="clean-end-m-1" class="time-select"></select></div>
+                    </div>
                 </div>
-                <span class="tilde">~</span>
-                <div class="time-box-wrap">
-                    <select id="clean-end-h-1" class="time-select"></select> :
-                    <select id="clean-end-m-1" class="time-select"></select>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                    <input type="text" id="clean-start-msg-1" class="cleaning-msg-input" placeholder="오전 청소 시작 안내 멘트">
+                    <input type="text" id="clean-end-msg-1" class="cleaning-msg-input" placeholder="오전 청소 종료 안내 멘트">
+                </div>
+            </div>
+
+            <!-- 오후 청소시간 -->
+            <div class="cleaning-time-row">
+                <div class="cleaning-row-header">
+                    <div class="cleaning-label" style="color: #38bdf8;">오후 청소시간</div>
+                    <div class="cleaning-time-group">
+                        <div class="time-box-wrap"><select id="clean-start-h-2" class="time-select"></select>:<select id="clean-start-m-2" class="time-select"></select></div>
+                        <span class="tilde">~</span>
+                        <div class="time-box-wrap"><select id="clean-end-h-2" class="time-select"></select>:<select id="clean-end-m-2" class="time-select"></select></div>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                    <input type="text" id="clean-start-msg-2" class="cleaning-msg-input" placeholder="오후 청소 시작 안내 멘트">
+                    <input type="text" id="clean-end-msg-2" class="cleaning-msg-input" placeholder="오후 청소 종료 안내 멘트">
+                </div>
+            </div>
+
+            <!-- 야간 청소시간 -->
+            <div class="cleaning-time-row">
+                <div class="cleaning-row-header">
+                    <div class="cleaning-label" style="color: #38bdf8;">야간 청소시간</div>
+                    <div class="cleaning-time-group">
+                        <div class="time-box-wrap"><select id="clean-start-h-3" class="time-select"></select>:<select id="clean-start-m-3" class="time-select"></select></div>
+                        <span class="tilde">~</span>
+                        <div class="time-box-wrap"><select id="clean-end-h-3" class="time-select"></select>:<select id="clean-end-m-3" class="time-select"></select></div>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                    <input type="text" id="clean-start-msg-3" class="cleaning-msg-input" placeholder="야간 청소 시작 안내 멘트">
+                    <input type="text" id="clean-end-msg-3" class="cleaning-msg-input" placeholder="야간 청소 종료 안내 멘트">
+                </div>
+            </div>
+
+            <!-- 구장 휴장시간 -->
+            <div class="cleaning-time-row" style="border-color: rgba(248, 113, 113, 0.3);">
+                <div class="cleaning-row-header">
+                    <div class="cleaning-label" style="color: #f87171;">구장 휴장시간</div>
+                    <div class="cleaning-time-group">
+                        <div class="time-box-wrap"><select id="clean-start-h-4" class="time-select"></select>:<select id="clean-start-m-4" class="time-select"></select></div>
+                        <span class="tilde">~</span>
+                        <div class="time-box-wrap"><select id="clean-end-h-4" class="time-select"></select>:<select id="clean-end-m-4" class="time-select"></select></div>
+                    </div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                    <input type="text" id="clean-start-msg-4" class="cleaning-msg-input" placeholder="휴장 시작 안내 멘트">
+                    <input type="text" id="clean-end-msg-4" class="cleaning-msg-input" placeholder="휴장 종료 안내 멘트">
+                </div>
+            </div>
+
+            <button class="btn-primary" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); margin-top: 8px;" onclick="saveCleaningConfig()">설정 저장</button>
+        </div>
+    </div>
+
+    <!-- 3. 구장 Wi-Fi 접속 설정 -->
+    <div class="card wifi-zone" id="card-wifi">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title">
+                <span style="color: #34d399;">📶 구장 Wi-Fi 접속 설정</span>
+                <div class="arrow-wrap"><span class="arrow">▼</span></div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <p style="font-size: 12.5px; color: #94a3b8; line-height: 1.4; padding-right: 10px;">
+                    체크박스 체크 시 구장 설정 Wi-Fi 접속자만 방 개설 및 참여가 가능합니다.
+                </p>
+                <input type="checkbox" id="toggle-wifi-restriction" style="transform: scale(1.3); cursor: pointer; flex-shrink: 0; accent-color: #10b981;">
+            </div>
+
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
+                <div style="font-size: 12.5px; color: #94a3b8; margin-bottom: 8px; line-height: 1.5;">
+                    내 현재 접속 IP: <strong id="current-admin-ip" style="color: #38bdf8;">확인 중...</strong><br>
+                    구장 설정 IP: <span id="registered-gym-ip" style="color: #34d399; font-weight: bold;">(미등록)</span>
+                </div>
+                <button type="button" id="btn-register-my-ip" class="btn-success" style="margin-top: 0; padding: 9px; font-size: 12.5px;">
+                    내 현재 접속 IP로 구장 설정 IP 변경
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. 코트 운영 설정 -->
+    <div class="card court-zone" id="card-court">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title">
+                <span style="color: #a78bfa;">🏸 코트 운영 설정</span>
+                <div class="arrow-wrap">
+                    <button class="btn-action-badge" onclick="event.stopPropagation(); addCourtRow();">코트추가</button>
+                    <span class="arrow">▼</span>
                 </div>
             </div>
         </div>
-
-        <!-- 2차 청소 시간 -->
-        <div class="cleaning-time-row">
-            <div class="cleaning-label">2차 청소</div>
-            <div class="cleaning-time-group">
-                <div class="time-box-wrap">
-                    <select id="clean-start-h-2" class="time-select"></select> :
-                    <select id="clean-start-m-2" class="time-select"></select>
-                </div>
-                <span class="tilde">~</span>
-                <div class="time-box-wrap">
-                    <select id="clean-end-h-2" class="time-select"></select> :
-                    <select id="clean-end-m-2" class="time-select"></select>
-                </div>
-            </div>
+        <div class="card-body">
+            <div id="court-config-list"></div>
+            <button class="btn-success" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); box-shadow: 0 3px 10px rgba(139, 92, 246, 0.3);" onclick="saveCourtsConfig()">설정 저장</button>
         </div>
-
-        <!-- 3차 청소 시간 -->
-        <div class="cleaning-time-row">
-            <div class="cleaning-label">3차 청소</div>
-            <div class="cleaning-time-group">
-                <div class="time-box-wrap">
-                    <select id="clean-start-h-3" class="time-select"></select> :
-                    <select id="clean-start-m-3" class="time-select"></select>
-                </div>
-                <span class="tilde">~</span>
-                <div class="time-box-wrap">
-                    <select id="clean-end-h-3" class="time-select"></select> :
-                    <select id="clean-end-m-3" class="time-select"></select>
-                </div>
-            </div>
-        </div>
-
-        <div style="margin-top: 12px;">
-            <label style="font-size: 12px; color: #9ca3af; display: block; margin-bottom: 4px;">시작 안내 멘트</label>
-            <input type="text" id="clean-start-msg" style="width: 100%; background: #1f2937; border: 1px solid #374151; color: white; padding: 8px; border-radius: 6px; font-size: 12.5px; outline: none; margin-bottom: 10px;" placeholder="구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.">
-
-            <label style="font-size: 12px; color: #9ca3af; display: block; margin-bottom: 4px;">종료 안내 멘트</label>
-            <input type="text" id="clean-end-msg" style="width: 100%; background: #1f2937; border: 1px solid #374151; color: white; padding: 8px; border-radius: 6px; font-size: 12.5px; outline: none;" placeholder="구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.">
-        </div>
-
-        <button class="btn-primary" style="background: #0284c7; margin-top: 12px;" onclick="saveCleaningConfig()">청소 시간 및 방송 설정 저장</button>
     </div>
 
-    <!-- 📶 체육관 Wi-Fi 접속 제한 설정 -->
-<div class="admin-setting-card" style="margin-top: 15px; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h4 style="margin: 0; font-size: 16px;">📶 구장 Wi-Fi 접속 필수 제한</h4>
-            <p style="margin: 5px 0 0 0; font-size: 13px; color: #666;">
-                활성화 시 구장 Wi-Fi 접속자만 방 개설 및 참여가 가능합니다.
+    <!-- 5. 공지사항 관리 -->
+    <div class="card notice-zone" id="card-notice">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title notice">
+                <span style="color: #fbbf24;">📢 공지사항 관리</span>
+                <div class="arrow-wrap">
+                    <button onclick="event.stopPropagation(); toggleNoticeList();" class="btn-action-badge notice-btn">전체목록</button>
+                    <span class="arrow">▼</span>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <p class="form-desc">새로운 공지사항을 등록하거나 기존 공지를 관리할 수 있습니다. (서버 재시작 시에도 DB에 안전하게 보존됩니다)</p>
+
+            <form id="noticeForm">
+                <div style="margin-bottom: 12px;">
+                    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:4px;">공지 제목</label>
+                    <input type="text" id="noticeTitle" placeholder="제목을 입력하세요" style="width: 100%; background: #0f172a; border: 1px solid #334151; color: #f8fafc; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; outline: none;">
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:4px;">공지 내용</label>
+                    <textarea id="noticeContent" rows="4" placeholder="내용을 입력하세요" style="width: 100%; background: #0f172a; border: 1px solid #334151; color: #f8fafc; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; outline: none; resize: vertical;"></textarea>
+                </div>
+                <div id="notice-msg" style="font-size: 12px; margin-bottom: 8px; font-weight: 500;"></div>
+                <button type="submit" class="btn-primary" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 3px 10px rgba(245, 158, 11, 0.3); margin-top: 0;">공지사항 등록하기</button>
+            </form>
+
+            <div id="noticeListWrapper" style="display: none; margin-top: 16px; border-top: 1px solid #1f2937; padding-top: 14px;">
+                <div style="font-size: 12.5px; font-weight: 600; color: #cbd5e1; margin-bottom: 8px;">📋 등록된 공지사항 목록</div>
+                <div id="admin-notice-list" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+                    <p style="color: #94a3b8; text-align: center; font-size: 12px; padding: 12px;">불러오는 중...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. 관리자 강제조치 설정 -->
+    <div class="card danger-zone" id="card-danger">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title danger">
+                <span style="color: #f87171;">🚨 관리자 강제조치 설정</span>
+                <div class="arrow-wrap"><span class="arrow">▼</span></div>
+            </div>
+        </div>
+        <div class="card-body">
+            <p class="form-desc" style="color: #f87171; font-weight: 600; margin-bottom: 12px; background: rgba(239, 68, 68, 0.1); padding: 8px 10px; border-radius: 7px; border: 1px solid rgba(239, 68, 68, 0.2);">
+                ⚠️ 관리자의 권한으로 할 수 있는 조치이니 정확한 확인 및 신중한 검토 후 처리 바랍니다.
             </p>
-        </div>
-        <div>
-            <input type="checkbox" id="toggle-wifi-restriction" style="transform: scale(1.4); cursor: pointer;">
-        </div>
-    </div>
 
-    <!-- 🌐 [추가] 공인 IP 확인 및 원클릭 등록 영역 -->
-    <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed #eee; display: flex; justify-content: space-between; align-items: center;">
-        <div style="font-size: 13px; color: #444;">
-            내 현재 접속 IP: <strong id="current-admin-ip" style="color: #007bff;">확인 중...</strong><br>
-            등록된 구장 IP: <span id="registered-gym-ip" style="color: #28a745; font-weight: bold;">(미등록)</span>
-        </div>
-        <button type="button" id="btn-register-my-ip" style="padding: 6px 12px; font-size: 13px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-            현재 IP로 구장 등록
-        </button>
-    </div>
-</div>
-
-    <!-- 3. 코트 운영 현황 설정 카드 -->
-    <div class="card">
-        <div class="card-title">
-            <span>🏸 코트 운영 현황 설정</span>
-            <button class="btn-add" onclick="addCourtRow()">+ 코트 추가</button>
-        </div>
-        <div id="court-config-list"></div>
-        <button class="btn-success" onclick="saveCourtsConfig()">코트 구성 저장 및 현장에 적용</button>
-    </div>
-
-    <!-- 📢 4. 공지사항 등록 및 토글형 목록 관리 카드 -->
-    <div class="card notice-zone">
-        <div class="card-title notice">
-            <span>📢 공지사항 관리</span>
-            <button onclick="toggleNoticeList()" class="btn-add" style="background: #374151; color: #f59e0b; border: 1px solid #4b5563;">📋 목록 보기/숨기기</button>
-        </div>
-        
-        <p class="form-desc">새로운 공지사항을 등록하거나 기존 공지를 관리할 수 있습니다.</p>
-
-        <!-- 새 공지 등록 폼 -->
-        <form id="noticeForm">
-            <div style="margin-bottom: 10px;">
-                <input type="text" id="noticeTitle" placeholder="공지 제목을 입력하세요" style="width: 100%; padding: 9px 12px; background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 6px; font-size: 13.5px; outline: none;">
-            </div>
-            <div style="margin-bottom: 10px;">
-                <textarea id="noticeContent" rows="3" placeholder="공지 내용을 입력하세요" style="width: 100%; padding: 9px 12px; background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 6px; font-size: 13.5px; outline: none; resize: vertical;"></textarea>
-            </div>
-            <div id="notice-msg" style="font-size: 12.5px; margin-bottom: 8px; font-weight: 500;"></div>
-            <button type="submit" class="btn-primary" style="background: #d97706; margin-top: 0;">공지사항 등록하기</button>
-        </form>
-
-        <!-- 목록 박스 -->
-        <div id="noticeListWrapper" style="display: none; margin-top: 16px; border-top: 1px solid #1f2937; padding-top: 14px;">
-            <div style="font-size: 13px; font-weight: 600; color: #d1d5db; margin-bottom: 8px;">📋 등록된 공지사항 목록</div>
-            <div id="admin-notice-list" style="max-height: 280px; overflow-y: auto; padding-right: 4px;">
-                <p style="color: #9ca3af; text-align: center; font-size: 12.5px; padding: 15px;">불러오는 중...</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- 5. 강제 퇴장 위험 구역 -->
-    <div class="card danger-zone">
-        <div class="card-title danger"><span>🚨 회원 강제 퇴장 (대기열/참여 일괄 정리)</span></div>
-        <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
-            <div class="custom-dropdown" id="kick-user-dropdown">
-                <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('kick-user-menu')">
-                    <span id="kick-user-selected-text">회원을 선택하세요</span>
-                    <span>▼</span>
-                </button>
-                <div class="custom-dropdown-menu" id="kick-user-menu">
-                    <div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '-- 회원을 선택하세요 --')">회원을 선택하세요</div>
+            <!-- 1) 대기열 회원 강제 퇴장 -->
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #1e293b;">
+                <div style="font-size: 13px; font-weight: 700; color: #f87171; margin-bottom: 6px;">대기열 회원 강제 퇴장</div>
+                <div class="custom-dropdown" id="kick-user-dropdown" style="margin-bottom: 8px;">
+                    <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('kick-user-menu')">
+                        <span id="kick-user-selected-text">회원을 선택하세요</span>
+                        <span>▼</span>
+                    </button>
+                    <div class="custom-dropdown-menu" id="kick-user-menu">
+                        <div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '회원을 선택하세요')">회원을 선택하세요</div>
+                    </div>
+                    <input type="hidden" id="kick-user-select" value="">
                 </div>
-                <input type="hidden" id="kick-user-select" value="">
+                <button class="btn-danger" style="margin-top:0;" onclick="executeKickUser()">회원 강제 퇴장</button>
             </div>
-        </div>
-        <button class="btn-danger" onclick="executeKickUser()">선택 회원 강제 퇴장 조치</button>
-    </div>
 
-    <!-- 6. 방 폭파 위험 구역 -->
-    <div class="card danger-zone">
-        <div class="card-title danger"><span>💥 게임방 / 난타방 강제 종료 (폭파)</span></div>
-        <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
-            <div class="custom-dropdown" id="delete-room-dropdown">
-                <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('delete-room-menu')">
-                    <span id="delete-room-selected-text">활성화된 방을 선택하세요</span>
-                    <span>▼</span>
-                </button>
-                <div class="custom-dropdown-menu" id="delete-room-menu">
-                    <div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '-- 활성화된 방을 선택하세요 --')">활성화된 방을 선택하세요</div>
+            <!-- 2) 게임 및 난타 대기방 강제 삭제 -->
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #1e293b;">
+                <div style="font-size: 13px; font-weight: 700; color: #f87171; margin-bottom: 6px;">게임 및 난타 대기방 강제 삭제</div>
+                <div class="custom-dropdown" id="delete-room-dropdown" style="margin-bottom: 8px;">
+                    <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('delete-room-menu')">
+                        <span id="delete-room-selected-text">활성화된 방을 선택하세요</span>
+                        <span>▼</span>
+                    </button>
+                    <div class="custom-dropdown-menu" id="delete-room-menu">
+                        <div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '활성화된 방을 선택하세요')">활성화된 방을 선택하세요</div>
+                    </div>
+                    <input type="hidden" id="delete-room-select" value="">
                 </div>
-                <input type="hidden" id="delete-room-select" value="">
+                <button class="btn-danger" style="margin-top:0;" onclick="executeDeleteRoom()">대기방 강제 삭제</button>
             </div>
-        </div>
-        <button class="btn-danger" onclick="executeDeleteRoom()">선택한 방 강제 종료</button>
-    </div>
 
-    <!-- 7. 코트 강제 비우기 -->
-    <div class="card danger-zone">
-        <div class="card-title danger"><span>🏸 코트 강제 비우기 (게임 / 난타)</span></div>
-        <p class="form-desc">현재 진행 중이거나 점유된 코트를 강제 초기화하여 빈 코트로 만듭니다. (레슨 코트는 제외됩니다)</p>
-        <div class="form-group" style="justify-content: stretch; margin-bottom: 8px;">
-            <div class="custom-dropdown" id="clear-court-dropdown">
-                <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('clear-court-menu')">
-                    <span id="clear-court-selected-text">비울 코트를 선택하세요</span>
-                    <span>▼</span>
-                </button>
-                <div class="custom-dropdown-menu" id="clear-court-menu">
-                    <div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '-- 비울 코트를 선택하세요 --')">비울 코트를 선택하세요</div>
+            <!-- 3) 코트 강제 비우기 -->
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #1e293b;">
+                <div style="font-size: 13px; font-weight: 700; color: #f87171; margin-bottom: 6px;">코트 강제 비우기 (게임/난타)</div>
+                <div class="custom-dropdown" id="clear-court-dropdown" style="margin-bottom: 8px;">
+                    <button type="button" class="custom-dropdown-toggle" onclick="toggleCustomDropdown('clear-court-menu')">
+                        <span id="clear-court-selected-text">비울 코트를 선택하세요</span>
+                        <span>▼</span>
+                    </button>
+                    <div class="custom-dropdown-menu" id="clear-court-menu">
+                        <div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '비울 코트를 선택하세요')">비울 코트를 선택하세요</div>
+                    </div>
+                    <input type="hidden" id="clear-court-select" value="">
                 </div>
-                <input type="hidden" id="clear-court-select" value="">
+                <button class="btn-danger" style="margin-top:0;" onclick="handleClearCourt()">코트 강제 비우기</button>
             </div>
         </div>
-        <button class="btn-danger" onclick="handleClearCourt()">선택한 코트 강제 비우기</button>
     </div>
 
-    <!-- 8. 정회원 가입 승인 대기 관리 섹션 -->
-    <div class="card" style="background: #161e2e; border-color: #1e3a8a;">
-        <div class="card-title" style="color: #60a5fa; border-color: #1e3a8a;"><span>👥 정회원 가입 승인 대기 목록</span></div>
-        <div id="pending-member-list" style="margin-top: 8px;">
-            <div style="font-size: 12.5px; color: #9ca3af; text-align: center; padding: 12px;">대기 중인 신청자가 없습니다.</div>
+    <!-- 7. 정회원 통합 관리 및 승인 -->
+    <div class="card member-zone" id="card-member">
+        <div class="card-header" onclick="toggleCard(this)">
+            <div class="card-title">
+                <span style="color: #818cf8;">👥 정회원 통합 관리 및 승인</span>
+                <div class="arrow-wrap"><span class="arrow">▼</span></div>
+            </div>
         </div>
-    </div>
+        <div class="card-body">
+            <!-- 1) 정회원 가입 승인 대기 목록 -->
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #1e293b;">
+                <div style="font-size: 13px; font-weight: 700; color: #818cf8; margin-bottom: 6px;">정회원 가입 승인</div>
+                <div id="pending-member-list">
+                    <div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>
+                </div>
+            </div>
 
-    <!-- 9. 회원 관리 페이지 이동 카드 -->
-    <div class="card" style="background: #161e2e; border-color: #1e3a8a;">
-        <div class="card-title" style="color: #60a5fa; border-color: #1e3a8a;"><span>👥 회원 통합 관리 시스템</span></div>
-        <p class="form-desc">회원 명부 엑셀 업로드 및 다운로드, 전체 회원 목록 조회, 검색 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
-        <a href="/admin-member.html" style="display: inline-block; padding: 10px 16px; background: #2563eb; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 700; font-size: 13.5px; text-align: center; width: 100%;">회원 관리 페이지로 이동 ➡</a>
+            <!-- 2) 회원 통합 관리 모듈 -->
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
+                <div style="font-size: 13px; font-weight: 700; color: #818cf8; margin-bottom: 6px;">회원 통합 관리 모듈</div>
+                <p class="form-desc" style="margin-bottom: 8px;">회원 명부 업로드, 다운로드, 전체 회원 목록 조회 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
+                <a href="/admin-member.html" style="display: block; text-decoration: none;">
+                    <button class="btn-success" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3); margin-top:0;">회원 관리 페이지로 이동 &rarr;</button>
+                </a>
+            </div>
+        </div>
     </div>
 
     <a href="/" class="btn-link">📱 사용자 메인 화면으로 돌아가기</a>
 
     <!-- 공지사항 수정 모달창 -->
-    <div id="editNoticeModal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); align-items:center; justify-content:center; padding:15px;">
-        <div style="background: #111827; border: 1px solid #374151; padding: 20px; border-radius: 12px; width: 100%; max-width: 480px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
-            <h3 style="color: #f59e0b; margin-bottom: 14px; font-size: 16px; font-weight: 700;">공지사항 수정</h3>
+    <div id="editNoticeModal" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; padding:15px; z-index:99999;">
+        <div style="background: #111827; border: 1px solid #374151; padding: 22px; border-radius: 14px; width: 100%; max-width: 440px; box-shadow: 0 15px 35px rgba(0,0,0,0.6);">
+            <h3 style="color: #fbbf24; margin-bottom: 12px; font-size: 15px; font-weight: 700;">공지사항 수정</h3>
             <input type="hidden" id="editNoticeId">
-            <div style="margin-bottom: 12px;">
-                <label style="display:block; font-size:12.5px; color:#9ca3af; margin-bottom:4px;">제목</label>
-                <input type="text" id="editNoticeTitle" style="width: 100%; padding: 9px 12px; background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 6px; font-size: 13.5px; outline: none;">
+            <div style="margin-bottom: 10px;">
+                <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:4px;">제목</label>
+                <input type="text" id="editNoticeTitle">
             </div>
-            <div style="margin-bottom: 16px;">
-                <label style="display:block; font-size:12.5px; color:#9ca3af; margin-bottom:4px;">내용</label>
-                <textarea id="editNoticeContent" rows="5" style="width: 100%; padding: 9px 12px; background: #1f2937; border: 1px solid #374151; color: #fff; border-radius: 6px; font-size: 13.5px; outline: none; resize: vertical;"></textarea>
+            <div style="margin-bottom: 14px;">
+                <label style="display:block; font-size:12px; color:#94a3b8; margin-bottom:4px;">내용</label>
+                <textarea id="editNoticeContent" rows="4" style="resize: vertical;"></textarea>
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                <button type="button" onclick="closeEditModal()" style="padding: 8px 14px; background: #374151; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">취소</button>
-                <button type="button" onclick="updateNotice()" style="padding: 8px 14px; background: #d97706; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer;">수정 완료</button>
+                <button type="button" onclick="closeEditModal()" style="padding: 9px 16px; background: #334155; color: #fff; border: none; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer;">취소</button>
+                <button type="button" onclick="updateNotice()" style="padding: 9px 16px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #fff; border: none; border-radius: 8px; font-size: 12.5px; font-weight: 700; cursor: pointer;">수정 완료</button>
             </div>
         </div>
     </div>
 
-    <!-- 🌐 전역 커스텀 모달 UI 구조 (화면 최하단 고정) -->
-    <div id="custom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 999999; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box;">
-        <div style="background: #1e1e1e; border: 1.5px solid #444; border-radius: 12px; padding: 24px 20px; width: 100%; max-width: 400px; box-sizing: border-box; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 20px;">
-            <p id="custom-modal-message" style="color: #fff; font-size: 16px; font-weight: 500; line-height: 1.5; word-break: keep-all; margin: 0;"></p>
-            <div style="display: flex; gap: 10px;">
-                <button id="custom-modal-cancel" style="flex: 1; background: #555; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; display: none;">취소</button>
-                <button id="custom-modal-ok" style="flex: 1; background: #0275d8; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer;">확인</button>
+    <!-- 🌐 전역 커스텀 모달 UI 구조 -->
+    <div id="custom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box;">
+        <div style="background: #111827; border: 1px solid #334151; border-radius: 12px; padding: 22px 18px; width: 100%; max-width: 380px; box-sizing: border-box; text-align: center; box-shadow: 0 12px 30px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 18px;">
+            <p id="custom-modal-message" style="color: #f8fafc; font-size: 15px; font-weight: 500; line-height: 1.5; word-break: keep-all; margin: 0;"></p>
+            <div style="display: flex; gap: 8px;">
+                <button id="custom-modal-cancel" style="flex: 1; background: #334151; color: white; border: none; padding: 10px; border-radius: 7px; font-size: 14px; font-weight: bold; cursor: pointer; display: none;">취소</button>
+                <button id="custom-modal-ok" style="flex: 1; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; border: none; padding: 10px; border-radius: 7px; font-size: 14px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);">확인</button>
             </div>
         </div>
     </div>
@@ -587,7 +660,36 @@
     let localCourts = [];
     let isInitialized = false; 
 
-    // 공지사항 목록 토글 함수
+    // 아코디언 토글 함수 (상태 기억 기능 포함)
+    function toggleCard(header) {
+        header.classList.toggle('open');
+        const body = header.nextElementSibling;
+        body.classList.toggle('active');
+        
+        const card = header.closest('.card');
+        if (card && card.id) {
+            const isOpen = body.classList.contains('active');
+            localStorage.setItem(`admin_card_${card.id}`, isOpen ? 'open' : 'closed');
+        }
+    }
+
+    // 저장된 아코디언 상태 복원 함수
+    function restoreCardStates() {
+        const cards = document.querySelectorAll('.card');
+        cards.forEach(card => {
+            if (card.id) {
+                const savedState = localStorage.getItem(`admin_card_${card.id}`);
+                const header = card.querySelector('.card-header');
+                const body = card.querySelector('.card-body');
+                
+                if (savedState === 'open' && header && body) {
+                    header.classList.add('open');
+                    body.classList.add('active');
+                }
+            }
+        });
+    }
+
     function toggleNoticeList() {
         const wrapper = document.getElementById('noticeListWrapper');
         if (wrapper.style.display === 'none') {
@@ -609,170 +711,159 @@
     }
 
     socket.on('stateUpdated', (data) => {
-    if (data.config) {
-        // 📶 [추가] Wi-Fi 제한 설정값 스위치에 동기화
-        if (wifiToggle && typeof data.config.useWifiRestriction !== 'undefined') {
-            wifiToggle.checked = data.config.useWifiRestriction;
-        }
-        // stateUpdated 내부의 if (data.config) 블록 안쪽
-if (registeredIpEl && data.config.allowedGymIps) {
-    registeredIpEl.textContent = data.config.allowedGymIps.length > 0 
-        ? data.config.allowedGymIps.join(', ') 
-        : '(미등록)';
-}
-        const entrySec = data.config.ENTRY_TIMEOUT_SEC || 180;
-        const nantaSec = data.config.NANTA_COURT_LIMIT_SEC || 900;
-        
-        // 💡 최초 로딩 시에만 단 1번 실행 (입력 도중 튕김 원천 차단)
-        if (!isInitialized) {
-            document.getElementById('entry-timeout').value = entrySec / 60;
-            document.getElementById('nanta-timeout').value = nantaSec / 60;
-            document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
-
-            if (typeof initTimeSelectOptions === 'function') {
-                initTimeSelectOptions();
+        if (data.config) {
+            const wifiToggle = document.getElementById('toggle-wifi-restriction');
+            if (wifiToggle && typeof data.config.useWifiRestriction !== 'undefined') {
+                wifiToggle.checked = data.config.useWifiRestriction;
             }
+            const registeredIpEl = document.getElementById('registered-gym-ip');
+            if (registeredIpEl && data.config.allowedGymIps) {
+                registeredIpEl.textContent = data.config.allowedGymIps.length > 0 
+                    ? data.config.allowedGymIps.join(', ') 
+                    : '(미등록)';
+            }
+            const entrySec = data.config.ENTRY_TIMEOUT_SEC || 180;
+            const nantaSec = data.config.NANTA_COURT_LIMIT_SEC || 900;
+            
+            if (!isInitialized) {
+                document.getElementById('entry-timeout').value = entrySec / 60;
+                document.getElementById('nanta-timeout').value = nantaSec / 60;
+                document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
 
-            // 청소 스케줄 설정 초기화
-            const schedules = data.config.cleaningSchedules || [];
-            for (let i = 0; i < 3; i++) {
-                const idx = i + 1;
-                const startHEl = document.getElementById(`clean-start-h-${idx}`);
-                const startMEl = document.getElementById(`clean-start-m-${idx}`);
-                const endHEl = document.getElementById(`clean-end-h-${idx}`);
-                const endMEl = document.getElementById(`clean-end-m-${idx}`);
+                if (typeof initTimeSelectOptions === 'function') {
+                    initTimeSelectOptions();
+                }
 
-                if (schedules[i] && schedules[i].start && schedules[i].end) {
-                    const [sH, sM] = schedules[i].start.split(':');
-                    const [eH, eM] = schedules[i].end.split(':');
-                    if (startHEl) startHEl.value = sH || '';
-                    if (startMEl) startMEl.value = sM || '';
-                    if (endHEl) endHEl.value = eH || '';
-                    if (endMEl) endMEl.value = eM || '';
-                } else {
-                    if (startHEl) startHEl.value = '';
-                    if (startMEl) startMEl.value = '';
-                    if (endHEl) endHEl.value = '';
-                    if (endMEl) endMEl.value = '';
+                const schedules = data.config.cleaningSchedules || [];
+                for (let i = 0; i < 4; i++) {
+                    const idx = i + 1;
+                    const startHEl = document.getElementById(`clean-start-h-${idx}`);
+                    const startMEl = document.getElementById(`clean-start-m-${idx}`);
+                    const endHEl = document.getElementById(`clean-end-h-${idx}`);
+                    const endMEl = document.getElementById(`clean-end-m-${idx}`);
+
+                    if (schedules[i] && schedules[i].start && schedules[i].end) {
+                        const [sH, sM] = schedules[i].start.split(':');
+                        const [eH, eM] = schedules[i].end.split(':');
+                        if (startHEl) startHEl.value = sH || '';
+                        if (startMEl) startMEl.value = sM || '';
+                        if (endHEl) endHEl.value = eH || '';
+                        if (endMEl) endMEl.value = eM || '';
+                    }
+                }
+
+                const defaultStarts = [
+                    data.config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+                    '오후 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+                    '야간 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+                    '구장 운영 마감 및 휴장 시간입니다. 이용해 주셔서 감사합니다.'
+                ];
+                const defaultEnds = [
+                    data.config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
+                    '오후 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
+                    '야간 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
+                    '구장 휴장이 해제되었습니다. 즐거운 배드민턴 되세요.'
+                ];
+
+                for (let i = 0; i < 4; i++) {
+                    const idx = i + 1;
+                    const sMsg = document.getElementById(`clean-start-msg-${idx}`);
+                    const eMsg = document.getElementById(`clean-end-msg-${idx}`);
+                    if (sMsg) sMsg.value = (data.config[`cleaningStartMsg_${idx}`] || defaultStarts[i]);
+                    if (eMsg) eMsg.value = (data.config[`cleaningEndMsg_${idx}`] || defaultEnds[i]);
                 }
             }
-
-            // 청소 안내 메시지 초기화
-            const startMsgEl = document.getElementById('clean-start-msg');
-            const endMsgEl = document.getElementById('clean-end-msg');
-            if (startMsgEl) {
-                startMsgEl.value = data.config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
-            }
-            if (endMsgEl) {
-                endMsgEl.value = data.config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
-            }
         }
-    }
 
-    if (data.courtsData && !isInitialized) {
-        localCourts = JSON.parse(JSON.stringify(data.courtsData));
-        renderCourtConfig();
-    }
+        if (data.courtsData && !isInitialized) {
+            localCourts = JSON.parse(JSON.stringify(data.courtsData));
+            renderCourtConfig();
+        }
 
-    updateAdminDropdowns(data);
-    isInitialized = true; 
-});
+        updateAdminDropdowns(data);
+        isInitialized = true; 
+    });
 
     async function saveCleaningConfig() {
-    const schedules = [];
-    
-    for (let i = 1; i <= 3; i++) {
-        const sH = document.getElementById(`clean-start-h-${i}`).value;
-        const sM = document.getElementById(`clean-start-m-${i}`).value;
-        const eH = document.getElementById(`clean-end-h-${i}`).value;
-        const eM = document.getElementById(`clean-end-m-${i}`).value;
+        const schedules = [];
+        const startMsgs = {};
+        const endMsgs = {};
         
-        if (sH && sM && eH && eM) {
-            const start = `${sH}:${sM}`;
-            const end = `${eH}:${eM}`;
-
-            if (start >= end) {
-                alert(`${i}차 청소 종료 시각(${end})은 시작 시각(${start})보다 늦어야 합니다.`);
-                return;
+        for (let i = 1; i <= 4; i++) {
+            const sH = document.getElementById(`clean-start-h-${i}`).value;
+            const sM = document.getElementById(`clean-start-m-${i}`).value;
+            const eH = document.getElementById(`clean-end-h-${i}`).value;
+            const eM = document.getElementById(`clean-end-m-${i}`).value;
+            
+            if (sH && sM && eH && eM) {
+                const start = `${sH}:${sM}`;
+                const end = `${eH}:${eM}`;
+                schedules.push({ start, end });
+            } else {
+                schedules.push({ start: "", end: "" });
             }
-            schedules.push({ start, end });
+
+            const sMsg = document.getElementById(`clean-start-msg-${i}`).value.trim();
+            const eMsg = document.getElementById(`clean-end-msg-${i}`).value.trim();
+            startMsgs[`cleaningStartMsg_${i}`] = sMsg;
+            endMsgs[`cleaningEndMsg_${i}`] = eMsg;
         }
+
+        socket.emit('updateConfig', {
+            cleaningSchedules: schedules,
+            cleaningStartMsg: startMsgs['cleaningStartMsg_1'],
+            cleaningEndMsg: endMsgs['cleaningEndMsg_1'],
+            ...startMsgs,
+            ...endMsgs
+        });
+
+        await alert('청소시간 및 코트운영 시간 설정이 저장되었습니다.');
     }
 
-    const startMsg = document.getElementById('clean-start-msg').value.trim();
-    const endMsg = document.getElementById('clean-end-msg').value.trim();
+    const wifiToggle = document.getElementById('toggle-wifi-restriction');
+    const adminSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 
-    // 🧹 서버로 청소 스케줄 및 방송 멘트 전송
-    socket.emit('updateConfig', {
-        cleaningSchedules: schedules,
-        cleaningStartMsg: startMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
-        cleaningEndMsg: endMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.'
-    });
-
-    alert(`🧹 구장 청소 설정이 저장되었습니다. (등록: ${schedules.length}건)`);
-}
-
-// ==========================================
-// 📶 구장 Wi-Fi 제한 ON/OFF 스위치 연동
-// ==========================================
-const wifiToggle = document.getElementById('toggle-wifi-restriction');
-const adminSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-
-if (adminSocket && wifiToggle) {
-    // 1. 스위치 클릭/변경 시 서버로 전송
-    wifiToggle.addEventListener('change', (e) => {
-        const isEnabled = e.target.checked;
-        adminSocket.emit('updateWifiSettings', {
-            useWifiRestriction: isEnabled
+    if (adminSocket && wifiToggle) {
+        wifiToggle.addEventListener('change', (e) => {
+            const isEnabled = e.target.checked;
+            adminSocket.emit('updateWifiSettings', { useWifiRestriction: isEnabled });
         });
-        console.log(`📶 구장 Wi-Fi 제한 상태 변경 요청: ${isEnabled ? 'ON' : 'OFF'}`);
-    });
-
-    // 2. 서버로부터 현재 설정값 수신 (스위치 상태 동기화)
-    adminSocket.on('syncConfig', (configData) => {
-        if (configData && typeof configData.useWifiRestriction !== 'undefined') {
-            wifiToggle.checked = configData.useWifiRestriction;
-        }
-    });
-}
-
-// ==========================================
-// 🌐 원클릭 구장 IP 등록 및 표시 연동
-// ==========================================
-let myCurrentIp = '';
-const currentIpEl = document.getElementById('current-admin-ip');
-const registeredIpEl = document.getElementById('registered-gym-ip');
-const btnRegisterIp = document.getElementById('btn-register-my-ip');
-
-// 1. 소켓 연결 시 서버로부터 내 IP 수신 (기존 wifiStatus 활용)
-if (adminSocket) {
-    adminSocket.on('wifiStatus', (data) => {
-        if (data && data.clientIp) {
-            myCurrentIp = data.clientIp;
-            if (currentIpEl) currentIpEl.textContent = myCurrentIp;
-        }
-    });
-
-    // 2. 현재 IP로 구장 등록 버튼 클릭 이벤트
-    if (btnRegisterIp) {
-        btnRegisterIp.addEventListener('click', () => {
-            if (!myCurrentIp) {
-                alert('⚠️ 현재 접속 IP를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                return;
-            }
-
-            if (confirm(`현재 접속한 IP [ ${myCurrentIp} ] 를 체육관 공용 Wi-Fi로 등록하시겠습니까?`)) {
-                adminSocket.emit('updateWifiSettings', {
-                    allowedGymIps: [myCurrentIp]
-                });
-                alert(`✅ [ ${myCurrentIp} ] 가 구장 공용 Wi-Fi IP로 등록되었습니다.`);
+        adminSocket.on('syncConfig', (configData) => {
+            if (configData && typeof configData.useWifiRestriction !== 'undefined') {
+                wifiToggle.checked = configData.useWifiRestriction;
             }
         });
     }
-}
+
+    let myCurrentIp = '';
+    const currentIpEl = document.getElementById('current-admin-ip');
+    const btnRegisterIp = document.getElementById('btn-register-my-ip');
+
+    if (adminSocket) {
+        adminSocket.on('wifiStatus', (data) => {
+            if (data && data.clientIp) {
+                myCurrentIp = data.clientIp;
+                if (currentIpEl) currentIpEl.textContent = myCurrentIp;
+            }
+        });
+
+        if (btnRegisterIp) {
+            btnRegisterIp.addEventListener('click', async () => {
+                if (!myCurrentIp) {
+                    await alert('⚠️ 현재 접속 IP를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    return;
+                }
+                const confirmed = await confirm(`현재 접속한 IP [ ${myCurrentIp} ] 를 구장 설정 IP로 변경하시겠습니까?`);
+                if (confirmed) {
+                    adminSocket.emit('updateWifiSettings', { allowedGymIps: [myCurrentIp] });
+                    await alert(`✅ [ ${myCurrentIp} ] 가 구장 설정 IP로 등록되었습니다.`);
+                }
+            });
+        }
+    }
 
     function initTimeSelectOptions() {
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= 4; i++) {
             ['start', 'end'].forEach(type => {
                 const hourEl = document.getElementById(`clean-${type}-h-${i}`);
                 const minEl = document.getElementById(`clean-${type}-m-${i}`);
@@ -796,7 +887,6 @@ if (adminSocket) {
         }
     }
 
-    // 공통 커스텀 드롭다운 토글 제어 (하나를 열면 다른 것은 닫힘)
     function toggleCustomDropdown(menuId) {
         ['kick-user-menu', 'delete-room-menu', 'clear-court-menu'].forEach(id => {
             const m = document.getElementById(id);
@@ -804,14 +894,12 @@ if (adminSocket) {
         });
     }
 
-    // 항목 선택 공통 처리
     function selectCustomOption(targetType, value, displayText) {
         document.getElementById(`${targetType}-select`).value = value;
         document.getElementById(`${targetType}-selected-text`).textContent = displayText;
         document.getElementById(`${targetType}-menu`).style.display = 'none';
     }
 
-    // 화면 빈 곳 클릭 시 모든 커스텀 드롭다운 닫기
     window.addEventListener('click', function(e) {
         if (!e.target.closest('.custom-dropdown')) {
             ['kick-user-menu', 'delete-room-menu', 'clear-court-menu'].forEach(id => {
@@ -826,67 +914,47 @@ if (adminSocket) {
         const roomSelect = document.getElementById('delete-room-select');
         const courtSelect = document.getElementById('clear-court-select');
         
-        if (document.activeElement === userSelect || document.activeElement === roomSelect || document.activeElement === courtSelect) {
-            return;
-        }
+        if (document.activeElement === userSelect || document.activeElement === roomSelect || document.activeElement === courtSelect) return;
 
         const selectedUser = userSelect ? userSelect.value : '';
         const selectedRoom = roomSelect ? roomSelect.value : '';
         const selectedCourt = courtSelect ? courtSelect.value : '';
 
-        // 1. 회원 강제 퇴장 드롭다운 렌더링
         if (userSelect) {
             const menu = document.getElementById('kick-user-menu');
             menu.innerHTML = `<div class="custom-dropdown-item" onclick="selectCustomOption('kick-user', '', '회원을 선택하세요')">회원을 선택하세요</div>`;
             
             let uniqueUsersMap = new Map();
-            const collectUser = (id, name, extraInfo = {}) => {
+            const collectUser = (id, name) => {
                 if (!id) return;
                 if (!uniqueUsersMap.has(id)) {
-                    uniqueUsersMap.set(id, { username: id, displayName: (name && name !== id) ? name : id, ...extraInfo });
+                    uniqueUsersMap.set(id, { username: id, displayName: (name && name !== id) ? name : id });
                 } else if (name && name !== id) {
-                    let existing = uniqueUsersMap.get(id);
-                    existing.displayName = name;
+                    uniqueUsersMap.get(id).displayName = name;
                 }
             };
 
-            if (data.gameQueue && Array.isArray(data.gameQueue)) {
+            if (data.gameQueue) {
                 data.gameQueue.forEach(slot => {
-                    if (slot.userIds && Array.isArray(slot.userIds)) {
-                        slot.userIds.forEach((id, idx) => collectUser(id, slot.players ? slot.players[idx] : ''));
-                    } else if (slot.players && Array.isArray(slot.players)) {
-                        slot.players.forEach(p => { if (p) collectUser(p, p); });
-                    }
+                    if (slot.players) slot.players.forEach(p => { if (p) collectUser(p, p); });
                 });
             }
-            if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
+            if (data.nantaQueue) {
                 data.nantaQueue.forEach(slot => {
-                    if (slot.userIds && Array.isArray(slot.userIds)) {
-                        slot.userIds.forEach((id, idx) => collectUser(id, slot.players ? slot.players[idx] : ''));
-                    } else if (slot.players && Array.isArray(slot.players)) {
-                        slot.players.forEach(p => { if (p) collectUser(p, p); });
-                    }
+                    if (slot.players) slot.players.forEach(p => { if (p) collectUser(p, p); });
                 });
             }
 
             let hasSelected = false;
             uniqueUsersMap.forEach((user) => {
-                let details = [];
-                if (user.gender) details.push(user.gender);
-                if (user.ageGroup) details.push(user.ageGroup);
-                if (user.grade) details.push(user.grade);
-
-                let textContent = details.length > 0 ? `${user.displayName} (${details.join(' / ')})` : `${user.displayName} (${user.username})`;
-                let usernameVal = user.username;
-
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'custom-dropdown-item';
-                itemDiv.textContent = textContent;
-                itemDiv.setAttribute('onclick', `selectCustomOption('kick-user', '${usernameVal}', \`${textContent}\`)`);
+                itemDiv.textContent = user.displayName;
+                itemDiv.setAttribute('onclick', `selectCustomOption('kick-user', '${user.username}', \`${user.displayName}\`)`);
                 menu.appendChild(itemDiv);
 
-                if (usernameVal === selectedUser) {
-                    document.getElementById('kick-user-selected-text').textContent = textContent;
+                if (user.username === selectedUser) {
+                    document.getElementById('kick-user-selected-text').textContent = user.displayName;
                     hasSelected = true;
                 }
             });
@@ -897,24 +965,19 @@ if (adminSocket) {
             }
         }
 
-        // 2. 방 폭파 드롭다운 렌더링
         if (roomSelect) {
             const menu = document.getElementById('delete-room-menu');
             menu.innerHTML = `<div class="custom-dropdown-item" onclick="selectCustomOption('delete-room', '', '활성화된 방을 선택하세요')">활성화된 방을 선택하세요</div>`;
             
             let rooms = [];
-            if (data.gameQueue && Array.isArray(data.gameQueue)) {
+            if (data.gameQueue) {
                 data.gameQueue.forEach((slot, index) => {
-                    const roomId = slot.id !== undefined ? slot.id : index;
-                    const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
-                    rooms.push({ type: 'game', id: roomId, label: `게임 코트방 #${index + 1} (참여자: ${participants})` });
+                    rooms.push({ type: 'game', id: slot.id || index, label: `게임방 #${index + 1} (${slot.players ? slot.players.filter(Boolean).join(', ') : ''})` });
                 });
             }
-            if (data.nantaQueue && Array.isArray(data.nantaQueue)) {
+            if (data.nantaQueue) {
                 data.nantaQueue.forEach((slot, index) => {
-                    const roomId = slot.id !== undefined ? slot.id : index;
-                    const participants = slot.players ? slot.players.filter(Boolean).join(', ') : '인원 없음';
-                    rooms.push({ type: 'nanta', id: roomId, label: `난타 코트방 #${index + 1} (참여자: ${participants})` });
+                    rooms.push({ type: 'nanta', id: slot.id || index, label: `난타방 #${index + 1} (${slot.players ? slot.players.filter(Boolean).join(', ') : ''})` });
                 });
             }
 
@@ -939,8 +1002,7 @@ if (adminSocket) {
             }
         }
 
-        // 3. 코트 강제 비우기 드롭다운 렌더링
-        if (courtSelect && data.courtsData && Array.isArray(data.courtsData)) {
+        if (courtSelect && data.courtsData) {
             const menu = document.getElementById('clear-court-menu');
             menu.innerHTML = `<div class="custom-dropdown-item" onclick="selectCustomOption('clear-court', '', '비울 코트를 선택하세요')">비울 코트를 선택하세요</div>`;
             
@@ -962,7 +1024,7 @@ if (adminSocket) {
                 } else if (court.type === 'nanta') {
                     if (court.sideA && !court.sideA.isEmpty && court.sideA.players) {
                         const val = `${court.id}:A`;
-                        const label = `[난타코트 #${court.id} A코트] ${court.sideA.players}`;
+                        const label = `[난타코트 #${court.id} A구역] ${court.sideA.players}`;
                         const itemDiv = document.createElement('div');
                         itemDiv.className = 'custom-dropdown-item';
                         itemDiv.textContent = label;
@@ -976,7 +1038,7 @@ if (adminSocket) {
                     }
                     if (court.sideB && !court.sideB.isEmpty && court.sideB.players) {
                         const val = `${court.id}:B`;
-                        const label = `[난타코트 #${court.id} B코트] ${court.sideB.players}`;
+                        const label = `[난타코트 #${court.id} B구역] ${court.sideB.players}`;
                         const itemDiv = document.createElement('div');
                         itemDiv.className = 'custom-dropdown-item';
                         itemDiv.textContent = label;
@@ -999,16 +1061,10 @@ if (adminSocket) {
     }
 
     async function executeKickUser() {
-        const userSelect = document.getElementById('kick-user-select');
-        const targetUsername = userSelect.value;
-        if (!targetUsername) {
-            await alert('강제 퇴장시킬 회원을 선택해주세요.');
-            return;
-        }
+        const targetUsername = document.getElementById('kick-user-select').value;
+        if (!targetUsername) { await alert('강제 퇴장시킬 회원을 선택해주세요.'); return; }
 
-        const selectedOptionText = document.getElementById('kick-user-selected-text').textContent;
-
-        const confirmed = await confirm(`[${selectedOptionText}] 회원을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
+        const confirmed = await confirm(`선택한 회원을 대기열 및 모든 방에서 강제 퇴장시키겠습니까?`);
         if (!confirmed) return;
 
         try {
@@ -1018,31 +1074,24 @@ if (adminSocket) {
                 body: JSON.stringify({ targetUsername })
             });
             const result = await response.json();
+            await alert(result.message);
             if (result.success) {
-                await alert(result.message);
-                // 성공 시 선택값 초기화 및 화면 표시 문구 리셋
-                userSelect.value = '';
+                document.getElementById('kick-user-select').value = '';
                 document.getElementById('kick-user-selected-text').textContent = '회원을 선택하세요';
-            } else {
-                await alert('퇴장 처리 실패: ' + result.message);
             }
         } catch (err) {
-            console.error('강제 퇴장 에러:', err);
             await alert('서버 통신 중 오류가 발생했습니다.');
         }
     }
 
     async function executeDeleteRoom() {
         const roomVal = document.getElementById('delete-room-select').value;
-        if (!roomVal) {
-            await alert('강제 종료할 방을 선택해주세요.');
-            return;
-        }
+        if (!roomVal) { await alert('강제 삭제할 대기방을 선택해주세요.'); return; }
 
         const [roomType, roomIdStr] = roomVal.split(':');
         const roomId = isNaN(roomIdStr) ? roomIdStr : Number(roomIdStr);
 
-        const confirmed = await confirm(`선택한 ${roomType === 'game' ? '게임방' : '난타방'}을 즉시 강제 종료(폭파)하시겠습니까?`);
+        const confirmed = await confirm(`선택한 대기방을 강제 삭제하시겠습니까?`);
         if (!confirmed) return;
 
         try {
@@ -1052,28 +1101,19 @@ if (adminSocket) {
                 body: JSON.stringify({ roomType, roomId })
             });
             const result = await response.json();
+            await alert(result.message);
             if (result.success) {
-                await alert(result.message);
-                // 성공 시 선택값 초기화 및 화면 표시 문구 리셋
                 document.getElementById('delete-room-select').value = '';
                 document.getElementById('delete-room-selected-text').textContent = '활성화된 방을 선택하세요';
-            } else {
-                await alert('방 강제 종료 실패: ' + result.message);
             }
         } catch (err) {
-            console.error('방 강제 종료 에러:', err);
             await alert('서버 통신 중 오류가 발생했습니다.');
         }
     }
 
     async function handleClearCourt() {
-        const courtSelect = document.getElementById('clear-court-select');
-        const val = courtSelect.value;
-
-        if (!val) {
-            await alert('⚠️ 강제로 비울 코트를 선택해 주세요.');
-            return;
-        }
+        const val = document.getElementById('clear-court-select').value;
+        if (!val) { await alert('⚠️ 코트 강제 비우기를 진행할 코트를 선택해 주세요.'); return; }
 
         let courtId, side = null;
         if (val.includes(':')) {
@@ -1084,29 +1124,23 @@ if (adminSocket) {
             courtId = Number(val);
         }
 
-        let confirmMsg = side ? `정말 ${courtId}번 난타 코트 ${side}구역을 강제 초기화(비우기) 하시겠습니까?` : `정말 ${courtId}번 코트를 강제 초기화(비우기) 하시겠습니까?`;
+        const confirmed = await confirm(`정말 해당 코트를 강제 비우기 하시겠습니까?`);
+        if (!confirmed) return;
 
-        const confirmed = await confirm(confirmMsg);
-        if (confirmed) {
-            try {
-                const response = await fetch('/api/admin/clear-court', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ courtId: Number(courtId), side: side })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    await alert(`✅ ${result.message}`);
-                    courtSelect.value = '';
-                    document.getElementById('clear-court-selected-text').textContent = '비울 코트를 선택하세요';
-                } else {
-                    await alert(`❌ 실패: ${result.message}`);
-                }
-            } catch (err) {
-                console.error('코트 강제 비우기 통신 에러:', err);
-                await alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
+        try {
+            const response = await fetch('/api/admin/clear-court', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ courtId, side })
+            });
+            const result = await response.json();
+            await alert(result.message);
+            if (result.success) {
+                document.getElementById('clear-court-select').value = '';
+                document.getElementById('clear-court-selected-text').textContent = '비울 코트를 선택하세요';
             }
+        } catch (err) {
+            await alert('⚠️ 서버 통신 중 오류가 발생했습니다.');
         }
     }
 
@@ -1132,9 +1166,8 @@ if (adminSocket) {
                         <button type="button" class="btn-del" onclick="deleteCourtRow(${idx})">삭제</button>
                     </div>
                     <div class="court-note-wrap" id="note-wrap-${idx}" style="display:${courtType === 'lesson' ? 'block' : 'none'};">
-                        <input type="text" class="court-note" id="note-${idx}" placeholder="레슨 안내문구 입력 (예: 회원전용 레슨코트)" 
-                               oninput="onNoteChange(${idx}, this.value)"
-                               value="${noteVal}">
+                        <input type="text" class="court-note" id="note-${idx}" placeholder="레슨 안내문구 입력" 
+                               oninput="onNoteChange(${idx}, this.value)" value="${noteVal}">
                     </div>
                 </div>
             `;
@@ -1145,36 +1178,20 @@ if (adminSocket) {
     function onSelectChange(idx, val) {
         localCourts[idx].type = val;
         const noteWrap = document.getElementById(`note-wrap-${idx}`);
-        if (noteWrap) {
-            noteWrap.style.display = val === 'lesson' ? 'block' : 'none';
-        }
+        if (noteWrap) noteWrap.style.display = val === 'lesson' ? 'block' : 'none';
     }
-
-    function onNoteChange(idx, val) {
-        localCourts[idx].note = val;
-    }
-
-    function addCourtRow() {
-        localCourts.push({ type: 'game', label: '게임 코트', note: '' });
-        renderCourtConfig();
-    }
-
-    function deleteCourtRow(idx) {
-        localCourts.splice(idx, 1);
-        renderCourtConfig();
-    }
+    function onNoteChange(idx, val) { localCourts[idx].note = val; }
+    function addCourtRow() { localCourts.push({ type: 'game', label: '게임 코트', note: '' }); renderCourtConfig(); }
+    function deleteCourtRow(idx) { localCourts.splice(idx, 1); renderCourtConfig(); }
 
     async function saveConfig() {
         const entryMin = parseFloat(document.getElementById('entry-timeout').value);
         const nantaMin = parseFloat(document.getElementById('nanta-timeout').value);
         const password = document.getElementById('admin-password').value.trim();
 
-        const entrySec = Math.round((isNaN(entryMin) ? 3 : entryMin) * 60);
-        const nantaSec = Math.round((isNaN(nantaMin) ? 15 : nantaMin) * 60);
-
         socket.emit('updateConfig', {
-            ENTRY_TIMEOUT_SEC: entrySec,
-            NANTA_COURT_LIMIT_SEC: nantaSec,
+            ENTRY_TIMEOUT_SEC: Math.round((isNaN(entryMin) ? 3 : entryMin) * 60),
+            NANTA_COURT_LIMIT_SEC: Math.round((isNaN(nantaMin) ? 15 : nantaMin) * 60),
             ADMIN_PASSWORD: password || '1234'
         });
         await alert('설정이 성공적으로 저장되었습니다.');
@@ -1186,20 +1203,15 @@ if (adminSocket) {
             const typeSelect = document.getElementById(`select-type-${i}`);
             const noteInput = document.getElementById(`note-${i}`);
             if (typeSelect) {
-                newCourts.push({
-                    type: typeSelect.value,
-                    note: noteInput ? noteInput.value : ''
-                });
+                newCourts.push({ type: typeSelect.value, note: noteInput ? noteInput.value : '' });
             }
         }
-
         socket.emit('updateCourtsConfig', newCourts);
-        await alert('코트 구성 설정이 현장에 즉시 반영되었습니다.');
+        await alert('설정 저장');
     }
 
     document.getElementById('noticeForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-
         const title = document.getElementById('noticeTitle').value.trim();
         const content = document.getElementById('noticeContent').value.trim();
         const msgDiv = document.getElementById('notice-msg');
@@ -1216,22 +1228,18 @@ if (adminSocket) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title, content, author: '관리자' })
             });
-
             const result = await response.json();
-
             if (result.success) {
                 msgDiv.style.color = '#10b981';
                 msgDiv.textContent = '✅ 공지사항이 성공적으로 등록되었습니다!';
                 document.getElementById('noticeForm').reset();
                 fetchAdminNotices();
-
                 setTimeout(() => { msgDiv.textContent = ''; }, 3000);
             } else {
                 msgDiv.style.color = '#ef4444';
                 msgDiv.textContent = `❌ 등록 실패: ${result.message}`;
             }
         } catch (error) {
-            console.error('공지 등록 통신 오류:', error);
             msgDiv.style.color = '#ef4444';
             msgDiv.textContent = '❌ 서버 통신 중 오류가 발생했습니다.';
         }
@@ -1241,37 +1249,28 @@ if (adminSocket) {
         try {
             const response = await fetch('/api/notices');
             const notices = await response.json();
-            
             const container = document.getElementById('admin-notice-list');
             if (!container) return;
 
             if (!notices || notices.length === 0) {
-                container.innerHTML = `<p style="color: #9ca3af; text-align: center; padding: 15px; font-size: 12.5px;">등록된 공지사항이 없습니다.</p>`;
+                container.innerHTML = `<p style="color: #94a3b8; text-align: center; padding: 12px; font-size: 12px;">등록된 공지사항이 없습니다.</p>`;
                 return;
             }
 
-            let html = '';
-            notices.forEach(notice => {
-                html += `
-                    <div style="background: #1f2937; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #374151;">
-                        <div style="overflow: hidden; padding-right: 8px;">
-                            <div style="color: #f59e0b; font-weight: 700; font-size: 13.5px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(notice.title)}</div>
-                            <div style="color: #d1d5db; font-size: 12px; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(notice.content)}</div>
-                        </div>
-                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                            <button type="button" onclick="openEditModal(${notice.id}, \`${escapeQuotes(notice.title)}\`, \`${escapeQuotes(notice.content)}\`)" style="padding: 5px 10px; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11.5px; font-weight: 600;">수정</button>
-                            <button type="button" onclick="deleteNotice(${notice.id})" style="padding: 5px 10px; background: #ef4444; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 11.5px; font-weight: 600;">삭제</button>
-                        </div>
+            container.innerHTML = notices.map(notice => `
+                <div style="background: #0f172a; padding: 10px; margin-bottom: 6px; border-radius: 7px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #1e293b;">
+                    <div style="overflow: hidden; padding-right: 6px;">
+                        <div style="color: #fbbf24; font-weight: 700; font-size: 13px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(notice.title)}</div>
+                        <div style="color: #cbd5e1; font-size: 11.5px; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(notice.content)}</div>
                     </div>
-                `;
-            });
-            container.innerHTML = html;
+                    <div style="display: flex; gap: 5px; flex-shrink: 0;">
+                        <button type="button" onclick="openEditModal(${notice.id}, \`${escapeQuotes(notice.title)}\`, \`${escapeQuotes(notice.content)}\`)" style="padding: 5px 9px; background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 600;">수정</button>
+                        <button type="button" onclick="deleteNotice(${notice.id})" style="padding: 5px 9px; background: #ef4444; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 600;">삭제</button>
+                    </div>
+                </div>
+            `).join('');
         } catch (error) {
             console.error('공지 목록 불러오기 실패:', error);
-            const container = document.getElementById('admin-notice-list');
-            if (container) {
-                container.innerHTML = `<p style="color: #ef4444; text-align: center; padding: 15px; font-size: 12.5px;">공지 목록을 불러오지 못했습니다.</p>`;
-            }
         }
     }
 
@@ -1281,20 +1280,13 @@ if (adminSocket) {
         document.getElementById('editNoticeContent').value = content;
         document.getElementById('editNoticeModal').style.display = 'flex';
     }
-
-    function closeEditModal() {
-        document.getElementById('editNoticeModal').style.display = 'none';
-    }
+    function closeEditModal() { document.getElementById('editNoticeModal').style.display = 'none'; }
 
     async function updateNotice() {
         const id = document.getElementById('editNoticeId').value;
         const title = document.getElementById('editNoticeTitle').value;
         const content = document.getElementById('editNoticeContent').value;
-
-        if (!title.trim() || !content.trim()) {
-            await alert('제목과 내용을 모두 입력해 주세요.');
-            return;
-        }
+        if (!title.trim() || !content.trim()) { await alert('제목과 내용을 모두 입력해 주세요.'); return; }
 
         try {
             const response = await fetch(`/api/notices/${id}`, {
@@ -1303,45 +1295,25 @@ if (adminSocket) {
                 body: JSON.stringify({ title, content })
             });
             const result = await response.json();
-
             if (result.success) {
                 await alert('공지사항이 수정되었습니다.');
                 closeEditModal();
                 fetchAdminNotices();
-            } else {
-                await alert('수정에 실패했습니다.');
-            }
-        } catch (error) {
-            console.error('공지 수정 오류:', error);
-        }
+            } else { await alert('수정에 실패했습니다.'); }
+        } catch (error) { console.error(error); }
     }
 
     async function deleteNotice(id) {
         const confirmed = await confirm('정말 이 공지사항을 삭제하시겠습니까?');
         if (!confirmed) return;
-
         try {
-            const response = await fetch(`/api/notices/${id}`, {
-                method: 'DELETE'
-            });
+            const response = await fetch(`/api/notices/${id}`, { method: 'DELETE' });
             const result = await response.json();
-
             if (result.success) {
                 await alert('공지사항이 삭제되었습니다.');
                 fetchAdminNotices();
-            } else {
-                await alert('삭제에 실패했습니다.');
-            }
-        } catch (error) {
-            console.error('공지 삭제 오류:', error);
-        }
-    }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>'"]/g, 
-            tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-        );
+            } else { await alert('삭제에 실패했습니다.'); }
+        } catch (error) { console.error(error); }
     }
 
     function escapeQuotes(str) {
@@ -1353,31 +1325,28 @@ if (adminSocket) {
         try {
             const response = await fetch('/api/admin/pending-members');
             const result = await response.json();
-            
             const container = document.getElementById('pending-member-list');
             if (!container) return;
 
             if (!result.success || !result.data || result.data.length === 0) {
-                container.innerHTML = '<div style="font-size: 12.5px; color: #9ca3af; text-align: center; padding: 12px;">대기 중인 신청자가 없습니다.</div>';
+                container.innerHTML = '<div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 10px;">대기 중인 신청자가 없습니다.</div>';
                 return;
             }
 
             container.innerHTML = result.data.map(member => `
-                <div style="display: flex; justify-content: space-between; align-items: center; background: #1f2937; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #374151;">
+                <div style="background: #0f172a; padding: 10px; margin-bottom: 6px; border-radius: 7px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 6px;">
                     <div>
-                        <strong style="font-size: 13.5px; color: #fff;">${escapeHtml(member.name)}</strong> 
-                        <span style="font-size: 12px; color: #9ca3af;">(${escapeHtml(member.gender)}, ${escapeHtml(member.grade)})</span><br>
-                        <span style="font-size: 11.5px; color: #9ca3af;">📞 ${escapeHtml(member.phone)} | 생년월일: ${escapeHtml(member.birthDate)}</span>
+                        <strong style="font-size: 13px; color: #f8fafc;">${escapeHtml(member.name)}</strong> 
+                        <span style="font-size: 11.5px; color: #94a3b8;">(${escapeHtml(member.gender)}, ${escapeHtml(member.grade)})</span><br>
+                        <span style="font-size: 11px; color: #94a3b8;">📞 ${escapeHtml(member.phone)} | 생일: ${escapeHtml(member.birthDate)}</span>
                     </div>
-                    <div style="display: flex; gap: 6px;">
-                        <button type="button" onclick="processApproval('${escapeHtml(member.phone)}', 'approve')" style="background: #10b981; border: none; color: white; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11.5px; font-weight: 700;">승인</button>
-                        <button type="button" onclick="processApproval('${escapeHtml(member.phone)}', 'reject')" style="background: #ef4444; border: none; color: white; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11.5px; font-weight: 700;">반려</button>
+                    <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                        <button type="button" onclick="processApproval('${escapeHtml(member.phone)}', 'approve')" style="background: #10b981; border: none; color: white; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700;">승인</button>
+                        <button type="button" onclick="processApproval('${escapeHtml(member.phone)}', 'reject')" style="background: #ef4444; border: none; color: white; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700;">반려</button>
                     </div>
                 </div>
             `).join('');
-        } catch (error) {
-            console.error('대기 목록 로드 실패:', error);
-        }
+        } catch (error) { console.error(error); }
     }
 
     async function processApproval(phone, action) {
@@ -1391,24 +1360,16 @@ if (adminSocket) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, action })
             });
-            
             const result = await response.json();
             await alert(result.message);
-            
-            if (result.success) {
-                loadPendingMembers();
-            }
-        } catch (error) {
-            console.error('승인 처리 통신 오류:', error);
-            await alert('처리 중 오류가 발생했습니다.');
-        }
+            if (result.success) loadPendingMembers();
+        } catch (error) { await alert('처리 중 오류가 발생했습니다.'); }
     }
 
     document.addEventListener('DOMContentLoaded', () => {
         loadPendingMembers();
-        setInterval(() => {
-            loadPendingMembers();
-        }, 3000);
+        restoreCardStates();
+        setInterval(loadPendingMembers, 3000);
     });
 </script>
 </body>
