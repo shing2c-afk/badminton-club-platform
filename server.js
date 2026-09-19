@@ -1008,6 +1008,18 @@ let slotIdCounter = 1;
 // 5. 유틸리티 및 브로드캐스트 함수
 // ==========================================
 function broadcastState() {
+    // 💡 브로드캐스트하기 전, 24시간(하루)이 지난 알림은 자동으로 걸러냅니다.
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    
+    if (Array.isArray(notifications)) {
+        notifications = notifications.filter(item => {
+            // timestamp가 있는 경우 24시간 경과 여부 체크 (없으면 기본 유지)
+            if (!item.timestamp) return true;
+            return (now - item.timestamp) < ONE_DAY_MS;
+        });
+    }
+
     io.emit('stateUpdated', {
         config: config,
         courtsData: courtsData,
@@ -1018,8 +1030,17 @@ function broadcastState() {
 }
 
 function addNotification(message) {
-    const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-    notifications.unshift({ message, time: timeStr });
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    
+    // 💡 24시간 계산을 위한 절대 시간(timestamp)을 함께 저장합니다.
+    notifications.unshift({ 
+        message, 
+        time: timeStr, 
+        timestamp: now.getTime() 
+    });
+    
+    // 최대 30개 제한 유지
     if (notifications.length > 30) notifications.pop();
 }
 
