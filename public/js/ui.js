@@ -289,7 +289,6 @@ function renderCourts() {
 function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
     if (!container) return;
-    container.innerHTML = '';
 
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
@@ -317,6 +316,8 @@ function renderGameQueue() {
         return;
     }
 
+    const allSlotsHtml = [];
+
     gameQueue.forEach((slot, idx) => {
         const rank = idx + 1;
         let playerCellsHtml = '';
@@ -333,10 +334,8 @@ function renderGameQueue() {
                 }
             } else {
                 if (amIInGameQueue) {
-                    // [본인 참여 중] 중복 참여 방지: 회색 비활성화 유지
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">게임참여</span></div>`;
                 } else {
-                    // [미참여 회원] 참여 가능: CSS에 의해 Wi-Fi 연결 시 녹색, 미연결 시 회색 표시
                     playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell">게임참여</span></div>`;
                 }
             }
@@ -400,7 +399,7 @@ function renderGameQueue() {
         const timerText = slot.remainingSeconds !== null ? `⏱️ 입장제한 ${formatTime(slot.remainingSeconds)}` : '대기중';
         const timerClass = slot.remainingSeconds !== null ? '' : 'idle';
 
-        const html = `
+        allSlotsHtml.push(`
             <div class="slot-card game-slot">
                 <div class="slot-header">
                     <span class="rank-badge">${rank}순위</span>
@@ -413,9 +412,10 @@ function renderGameQueue() {
                 </div>
                 ${mergeMenuHtml}
             </div>
-        `;
-        container.insertAdjacentHTML('beforeend', html);
+        `);
     });
+
+    container.innerHTML = allSlotsHtml.join('');
 }
 
 function mergeGameSlot(slotId) {
@@ -472,7 +472,6 @@ async function confirmAndExecuteMerge(mySlotId, targetSlotId, targetRank) {
 function renderNantaQueue() {
     const container = document.getElementById('nanta-slot-list');
     if (!container) return;
-    container.innerHTML = '';
 
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
@@ -500,6 +499,8 @@ function renderNantaQueue() {
         return;
     }
 
+    const allNantaSlotsHtml = [];
+
     nantaQueue.forEach((slot, idx) => {
         const rank = idx + 1;
         let playerCellsHtml = '';
@@ -516,10 +517,8 @@ function renderNantaQueue() {
                 }
             } else {
                 if (amIInNantaQueue) {
-                    // [본인 참여 중] 중복 참여 방지: 회색 비활성화 유지
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">난타참여</span></div>`;
                 } else {
-                    // [미참여 회원] 참여 가능: CSS에 의해 Wi-Fi 연결 시 녹색, 미연결 시 회색 표시
                     playerCellsHtml += `<div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell">난타참여</span></div>`;
                 }
             }
@@ -539,7 +538,7 @@ function renderNantaQueue() {
         const timerText = slot.remainingSeconds !== null ? `⏱️ 입장제한 ${formatTime(slot.remainingSeconds)}` : '대기중';
         const timerClass = slot.remainingSeconds !== null ? '' : 'idle';
 
-        const html = `
+        allNantaSlotsHtml.push(`
             <div class="slot-card nanta-slot">
                 <div class="slot-header">
                     <span class="rank-badge" style="color:#f97316;">${rank}순위</span>
@@ -550,9 +549,10 @@ function renderNantaQueue() {
                     ${nantaEnterBtnHtml}
                 </div>
             </div>
-        `;
-        container.insertAdjacentHTML('beforeend', html);
+        `);
     });
+
+    container.innerHTML = allNantaSlotsHtml.join('');
 }
 
 function updateAvailableCourtCounts() {

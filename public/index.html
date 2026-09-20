@@ -32,22 +32,15 @@
     let lastConfirmMessage = "";
 
     window.confirm = function(message) {
-        const now = Date.now();
-        
-        // 0.5초(500ms) 안에 동일한 메시지나 연속으로 들어오는 confirm은 무조건 차단!
-        if (now - lastConfirmTime < 500 && lastConfirmMessage === message) {
-            console.warn("⚠️ [따닥이/중복 confirm 완벽 차단됨]:", message);
+        const modal = document.getElementById('custom-alert-modal');
+
+        // 🛡️ [모바일 최적화 방어벽]: 이미 팝업창이 떠 있는 상태라면 중복 호출 무시
+        if (modal && modal.style.display === 'flex') {
+            console.warn("⚠️ [중복 팝업 방지] 이미 팝업이 열려 있습니다:", message);
             return Promise.resolve(false);
         }
 
-        lastConfirmTime = now;
-        lastConfirmMessage = message;
-
-        console.warn("🔔 confirm 호출됨! 메시지:", message);
-        console.trace("호출 경로 추적:");
-
         return new Promise((resolve) => {
-            const modal = document.getElementById('custom-alert-modal');
             const msgEl = document.getElementById('custom-alert-message');
             const cancelBtn = document.getElementById('custom-alert-cancel-btn');
             const okBtn = document.getElementById('custom-alert-ok-btn');
@@ -59,6 +52,7 @@
                 if (promptInput) promptInput.style.display = 'none';
                 modal.style.display = 'flex';
 
+                // 기존 이벤트 복사 및 초기화로 터치 중복(이벤트 꼬임) 방지
                 const newOkBtn = okBtn.cloneNode(true);
                 const newCancelBtn = cancelBtn.cloneNode(true);
                 okBtn.parentNode.replaceChild(newOkBtn, okBtn);
@@ -73,7 +67,7 @@
                     resolve(false);
                 };
             } else {
-                resolve(confirm(message));
+                resolve(window.confirm(message)); // 안전 장치
             }
         });
     };
