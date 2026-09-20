@@ -25,15 +25,53 @@ window.cancelVoiceAnnouncement = function(announcementId) {
  */
 function playVoiceAnnouncement(message, delaySeconds = 0, announcementId = null) {
     if (!('speechSynthesis' in window)) {
+        // 🔍 강제로 전역 config 상태 출력
+         console.log('🚨 [Audio 진입 성공] 현재 window.currentConfig:', window.currentConfig);
         console.warn('이 브라우저는 음성 합성을 지원하지 않는 브라우저입니다.');
         return;
     }
 
-    // 💡 [수정 부분] 청소/공지 객체이거나 메시지가 객체로 넘어온 경우 순수 멘트만 추출
+    // 💡 [추가] 3가지 음성 제어 토글 설정값 가져오기 (없으면 빈 객체)
+    const config = window.currentConfig || {}; 
+    console.log('[Audio Debug] 현재 설정된 config:', config);
+    console.log('[Audio Debug] soundEntryNotice 상태:', config.soundEntryNotice);
+    console.log('[Audio Debug] soundNantaWarning 상태:', config.soundNantaWarning);
+    console.log('[Audio Debug] soundScheduleNotice 상태:', config.soundScheduleNotice);
+
+    // 💡 청소/공지 객체이거나 메시지가 객체로 넘어온 경우 순수 멘트 및 타입 추출
     let actualMessage = message;
+    let msgType = ''; // 메시지 성격 구분용
     if (typeof message === 'object' && message !== null) {
         actualMessage = message.message || message.text || '';
+        msgType = message.type || '';
     }
+
+    // 🛑 [핵심 방어 로직] 각 토글 설정이 꺼져 있는 경우(false) 음성 재생을 취소(return)합니다.
+    
+    // 1. 입장 제한 및 코트 배정 안내 관련 방송 필터링
+    if (config.soundEntryNotice === false) {
+        if (announcementId !== null || actualMessage.includes('회원님') || actualMessage.includes('입장')) {
+            console.log(`[Audio Block] 🚫 '입장 안내' 음성 설정이 꺼져 있어 방송이 차단되었습니다. (ID: ${announcementId})`);
+            return;
+        }
+    }
+
+    // 2. 난타 종료 임박 (1분 전 경고) 관련 방송 필터링
+    if (config.soundNantaWarning === false) {
+        if (msgType === 'nanta_warning' || (actualMessage.includes('난타') && (actualMessage.includes('1분') || actualMessage.includes('종료') || actualMessage.includes('임박')))) {
+            console.log(`[Audio Block] 🚫 '난타 경고' 음성 설정이 꺼져 있어 방송이 차단되었습니다.`);
+            return;
+        }
+    }
+
+    // 3. 청소 및 휴장 시간 알림 관련 방송 필터링
+    if (config.soundScheduleNotice === false) {
+        if (msgType === 'cleaning' || actualMessage.includes('청소') || actualMessage.includes('휴장') || actualMessage.includes('마감') || actualMessage.includes('정비')) {
+            console.log(`[Audio Block] 🚫 '청소 및 휴장' 음성 설정이 꺼져 있어 방송이 차단되었습니다.`);
+            return;
+        }
+    }
+    // -----------------------------------------------------------------------------------------
 
     // 동일한 ID(코트)로 이미 대기 중인 타이머가 있다면 기존 타이머 초기화 (중복 예약 방지)
     if (announcementId && pendingAnnouncements.has(announcementId)) {

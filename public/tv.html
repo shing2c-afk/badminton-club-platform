@@ -166,10 +166,6 @@
 </head>
 <body>
 
-<div id="court-alert-banner" style="display: none; position: fixed; top: 30px; left: 50%; transform: translateX(-50%); color: white; padding: 35px 70px; border-radius: 16px; font-weight: bold; font-size: 45px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 99999; text-align: center; border: 4px solid rgba(255,255,255,0.3); transition: background-color 0.3s;">
-    <span id="court-alert-text">알림 내용</span>
-</div>
-
 <div id="popupModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; justify-content:center; align-items:center;">
     <div style="background:#141824; border: 5px solid #3498db; padding:60px 80px; border-radius:20px; text-align:center; max-width:1200px; width:85%; color: #ffffff; box-shadow: 0 25px 50px rgba(0,0,0,0.8);">
         <h2 id="popupTitle" style="color: #ff4d4d; margin-bottom: 30px; font-size: 55px; font-weight: 900;">대기방 삭제 안내</h2>
@@ -181,9 +177,12 @@
         <h1>🏸 체육관 실시간 종합 현황판</h1>
     </div>
 
-    <div style="width: 100%; background: #161b22; border-bottom: 1px solid #30363d; border-top: 1px solid #30363d; padding: 12px 24px; box-sizing: border-box; margin-bottom: 15px;">
-        <div id="tv-notice-text" style="color: #e6edf3; font-size: 20px; font-weight: bold; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            📢 공지사항을 불러오는 중...
+    <!-- 📢 흘러가는 마퀴 애니메이션이 적용된 통합 공지 영역 -->
+    <div style="overflow: hidden; white-space: nowrap; width: 100%; box-sizing: border-box; background: #161b22; border-top: 1px solid #30363d; border-bottom: 1px solid #30363d; padding: 12px 0; margin-bottom: 15px;">
+        <div style="display: inline-block; padding-left: 100%; animation: marquee-scroll 35s linear infinite;">
+            <span id="tv-notice-text" style="color: #e6edf3; font-size: 20px; font-weight: bold;">
+                📢 공지사항을 불러오는 중...
+            </span>
         </div>
     </div>
 
@@ -200,12 +199,52 @@
         </div>
     </div>
 
+<style>
+@keyframes marquee-scroll {
+    0%   { transform: translate(0, 0); }
+    100% { transform: translate(-100%, 0); }
+}
+.notice-marquee-track:hover, div[style*="marquee-scroll"]:hover {
+    animation-play-state: paused; /* 마우스 올리면 잠시 멈춤 */
+}
+</style>
+
 <script>
 const socket = io();
 
-    if (typeof window.pendingAnnouncements === 'undefined') {
-        window.pendingAnnouncements = new Map();
+// 💡 [추가] 페이지 로드 시 서버로부터 최초 설정값을 받아오기 위한 함수
+async function loadInitialConfig() {
+    try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+            const data = await response.json();
+            window.currentConfig = data;
+            console.log('[TV Config] 최초 설정값 로드 완료:', window.currentConfig);
+        }
+    } catch (e) {
+        console.log('[TV Config] 최초 설정값 로드 실패, 기본값(전부 허용) 적용');
+        window.currentConfig = window.currentConfig || {
+            soundEntryNotice: true,
+            soundNantaWarning: true,
+            soundScheduleNotice: true
+        };
     }
+}
+loadInitialConfig();
+
+// 🎛️ 관리자 모드에서 음성 제어 및 토글을 바꿀 때 실시간으로 설정 동기화 받기
+if (typeof socket !== 'undefined') {
+    socket.on('syncConfig', (configData) => {
+        if (configData) {
+            window.currentConfig = configData;
+            console.log('[TV Config] 실시간 syncConfig 수신 및 적용:', window.currentConfig);
+        }
+    });
+}
+
+if (typeof window.pendingAnnouncements === 'undefined') {
+    window.pendingAnnouncements = new Map();
+}
 
     let tvPopupQueue = [];
     let isTvPopupShowing = false;
@@ -427,8 +466,18 @@ const socket = io();
 
     let previousCourtStates = {};
 
-socket.on('stateUpdated', (state) => {
+// 💡 전역 설정 객체 초기화
+    window.currentConfig = window.currentConfig || {};
+
+    // 1. 서버 상태 업데이트 및 설정 동기화 수신
+    socket.on('stateUpdated', (state) => {
         try {
+            if (state && state.config) {
+                window.currentConfig = state.config;
+            } else if (state && state.courtsData && state.courtsData.config) {
+                window.currentConfig = state.courtsData.config;
+            }
+
             const courts = state.courtsData || state.courts || [];
             const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
             const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
@@ -450,7 +499,6 @@ socket.on('stateUpdated', (state) => {
                     const wasOccupied = previousCourtStates[courtNum] || false;
                     
                     if (isOccupied && !wasOccupied) {
-                        console.log(`[취소 시도] ${courtNum}번 코트에 사람이 입장함! cancelVoiceAnnouncement 호출`);
                         if (typeof cancelVoiceAnnouncement === 'function') {
                             cancelVoiceAnnouncement(courtNum);
                             cancelVoiceAnnouncement(String(courtNum));
@@ -466,6 +514,14 @@ socket.on('stateUpdated', (state) => {
             renderTVQueues(gameQueue, nantaQueue);
         } catch (err) {
             console.error("stateUpdated 처리 중 오류 발생:", err);
+        }
+    });
+
+    // 2. 관리자 모드 토글 변경 시 실시간 설정 동기화 수신
+    socket.on('syncConfig', (configData) => {
+        if (configData) {
+            window.currentConfig = configData;
+            console.log('[TV Config] 실시간 syncConfig 수신 및 적용:', window.currentConfig);
         }
     });
 
@@ -507,15 +563,40 @@ socket.on('stateUpdated', (state) => {
         }, data.duration || 60000);
     });
 
+    // 3. 서버로부터 음성 요청을 받았을 때 토글 상태를 확인하여 제어하는 핵심 리스너
     socket.on('requestVoiceAnnouncement', (data) => {
         console.log('[Socket Debug] 서버로부터 음성 요청 수신됨:', data);
         if (!data) return;
 
+        const config = window.currentConfig || {};
+
+        // A. 청소, 휴장, 공지 또는 난타 1분 전 방송인 경우
         if (data.matchType === '공지' || data.matchType === '난타1분전' || data.isBroadcast || data.message) {
             const broadcastText = data.message || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
             
-            playVoiceAnnouncement(broadcastText, 0, 'broadcast-cleaning');
+            const isCleaningNotice = broadcastText.includes('청소') || broadcastText.includes('휴장') || broadcastText.includes('정비') || data.matchType === '공지';
+            const isNantaWarning = data.matchType === '난타1분전' || broadcastText.includes('난타');
 
+            let allowVoice = true;
+
+            // 3. 청소 및 휴장 안내 토글이 꺼져 있으면 음성만 차단
+            if (isCleaningNotice && config.soundScheduleNotice === false) {
+                console.log('[TV Audio Block] 🚫 청소/휴장 안내 음성 차단됨');
+                allowVoice = false;
+            }
+
+            // 2. 난타 경고 토글이 꺼져 있으면 음성만 차단
+            if (isNantaWarning && config.soundNantaWarning === false) {
+                console.log('[TV Audio Block] 🚫 난타 경고 음성 차단됨');
+                allowVoice = false;
+            }
+
+            // 🔊 음성이 허용된 경우에만 재생 실행
+            if (allowVoice) {
+                playVoiceAnnouncement(broadcastText, 0, 'broadcast-cleaning');
+            }
+
+            // 📺 난타 1분 전 팝업은 음성 설정(토글)과 상관없이 항상 정상 출력!
             if (data.matchType === '난타1분전') {
                 enqueueTvPopup({
                     matchType: '난타임박',
@@ -527,10 +608,14 @@ socket.on('stateUpdated', (state) => {
             return; 
         }
 
+        // B. 1. 코트 입장 안내 토글 검사
+        if (config.soundEntryNotice === false) {
+            console.log('[TV Audio Block] 🚫 입장 안내 토글 꺼짐으로 코트 입장 방송 차단됨');
+            return;
+        }
+
         const { courtNumber, names, matchType } = data;
         const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
-
-        // 💡 1번부터 10번 이후까지 번호와 '번'이 절대 누락되지 않도록 함수 적용
         const readableCourtNum = getReadableCourtName(courtNumber);
 
         const announcementText = `${namesString} 회원님은, ${readableCourtNum}, ${matchType || '게임'} 코트로, 입장해 주세요.`;
@@ -705,6 +790,16 @@ function formatPlayersHorizontal(players) {
     if (arr.length === 0) return '';
     return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join(' ');
 }
+
+// 🎛️ [추가] TV 화면에서 실시간으로 음성 제어 설정 동기화 받기
+    if (typeof socket !== 'undefined') {
+        socket.on('syncConfig', (configData) => {
+            if (configData) {
+                window.currentConfig = configData;
+                console.log('[TV] 음성 제어 설정이 실시간으로 동기화되었습니다:', configData);
+            }
+        });
+    }
 </script>
 
 <div id="tv-cleaning-popup">

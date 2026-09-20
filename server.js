@@ -99,6 +99,13 @@ function saveConfigToFile() {
     try {
         fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2), 'utf-8');
         console.log('💾 [설정 저장] config.json 파일에 영구 기록되었습니다.');
+
+        // 🎛️ [추가] 설정이 변경·저장될 때 TV 등 모든 클라이언트에 실시간으로 동기화 신호 전송
+        if (typeof io !== 'undefined') {
+            io.emit('syncConfig', config);
+            console.log('📡 [실시간 동기화] 모든 클라이언트에 syncConfig 전송 완료');
+        }
+
     } catch (err) {
         console.error('❌ [설정 저장 실패]:', err);
     }
@@ -1500,7 +1507,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('updateConfig', (newConfig) => {
+   socket.on('updateConfig', (newConfig) => {
         try {
             if (newConfig) {
                 if (newConfig.ENTRY_TIMEOUT_SEC !== undefined) config.ENTRY_TIMEOUT_SEC = newConfig.ENTRY_TIMEOUT_SEC;
@@ -1518,6 +1525,17 @@ io.on('connection', (socket) => {
                 }
                 if (newConfig.cleaningEndMsg !== undefined) {
                     config.cleaningEndMsg = newConfig.cleaningEndMsg;
+                }
+
+                // 🔊 [추가] TV 음성 안내(TTS) 개별 제어 설정 저장
+                if (newConfig.soundEntryNotice !== undefined) {
+                    config.soundEntryNotice = newConfig.soundEntryNotice;
+                }
+                if (newConfig.soundNantaWarning !== undefined) {
+                    config.soundNantaWarning = newConfig.soundNantaWarning;
+                }
+                if (newConfig.soundScheduleNotice !== undefined) {
+                    config.soundScheduleNotice = newConfig.soundScheduleNotice;
                 }
             }
             saveConfigToFile();
