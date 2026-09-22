@@ -837,12 +837,15 @@ input:checked + .slider:before {
 
             if (soundEntryToggle && typeof data.config.soundEntryNotice !== 'undefined') {
                 soundEntryToggle.checked = data.config.soundEntryNotice;
+                localStorage.setItem("soundEntryNotice", data.config.soundEntryNotice ? "true" : "false");
             }
             if (soundNantaToggle && typeof data.config.soundNantaWarning !== 'undefined') {
                 soundNantaToggle.checked = data.config.soundNantaWarning;
+                localStorage.setItem("soundNantaWarning", data.config.soundNantaWarning ? "true" : "false");
             }
             if (soundScheduleToggle && typeof data.config.soundScheduleNotice !== 'undefined') {
                 soundScheduleToggle.checked = data.config.soundScheduleNotice;
+                localStorage.setItem("soundScheduleNotice", data.config.soundScheduleNotice ? "true" : "false");
             }
             const registeredIpEl = document.getElementById('registered-gym-ip');
             if (registeredIpEl && data.config.allowedGymIps) {
@@ -983,20 +986,41 @@ input:checked + .slider:before {
     const soundNantaToggle = document.getElementById('sound-nanta-warning');
     const soundScheduleToggle = document.getElementById('sound-schedule-notice');
 
+    // 💡 1. 화면이 로드되는 순간 직전 상태 즉시 복원 (꺼졌다 켜지는 깜빡임 원천 차단)
+    if (soundEntryToggle) {
+        const saved = localStorage.getItem("soundEntryNotice");
+        if (saved !== null) soundEntryToggle.checked = (saved === "true");
+    }
+    if (soundNantaToggle) {
+        const saved = localStorage.getItem("soundNantaWarning");
+        if (saved !== null) soundNantaToggle.checked = (saved === "true");
+    }
+    if (soundScheduleToggle) {
+        const saved = localStorage.getItem("soundScheduleNotice");
+        if (saved !== null) soundScheduleToggle.checked = (saved === "true");
+    }
+
+    // 💡 2. 관리자가 토글을 변경했을 때 로컬 저장소 즉시 저장 및 서버 전송
     if (adminSocket) {
         if (soundEntryToggle) {
             soundEntryToggle.addEventListener('change', (e) => {
-                adminSocket.emit('updateConfig', { soundEntryNotice: e.target.checked });
+                const isChecked = e.target.checked;
+                localStorage.setItem("soundEntryNotice", isChecked ? "true" : "false");
+                adminSocket.emit('updateConfig', { soundEntryNotice: isChecked });
             });
         }
         if (soundNantaToggle) {
             soundNantaToggle.addEventListener('change', (e) => {
-                adminSocket.emit('updateConfig', { soundNantaWarning: e.target.checked });
+                const isChecked = e.target.checked;
+                localStorage.setItem("soundNantaWarning", isChecked ? "true" : "false");
+                adminSocket.emit('updateConfig', { soundNantaWarning: isChecked });
             });
         }
         if (soundScheduleToggle) {
             soundScheduleToggle.addEventListener('change', (e) => {
-                adminSocket.emit('updateConfig', { soundScheduleNotice: e.target.checked });
+                const isChecked = e.target.checked;
+                localStorage.setItem("soundScheduleNotice", isChecked ? "true" : "false");
+                adminSocket.emit('updateConfig', { soundScheduleNotice: isChecked });
             });
         }
 
