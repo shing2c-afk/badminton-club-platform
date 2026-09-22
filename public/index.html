@@ -532,31 +532,36 @@
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-    width: auto;                  /* 텍스트 길이에 맞춰 자동 조절 */
-    min-width: 120px;             /* 최소 너비 확보 */
-    padding: 6px 12px;            /* 좌우 여백 */
+    width: auto;
+    padding: 7px 14px;            /* 위아래 7px, 좌우 14px로 여유 확보 */
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;                     /* 항목 간 간격 */
+    gap: 10px;                    /* '클럽' 그룹과 '접속' 그룹 사이 간격 확장 */
     font-size: 13px;
-    white-space: nowrap;          /* 줄바꿈 방지 */
+    line-height: 1;               /* 줄높이를 1로 고정해 텍스트 들뜸 방지 */
+    white-space: nowrap;
 }
 
 .badge-item {
     display: inline-flex;
-    align-items: center;
-    gap: 2px;
+    align-items: baseline;        /* 한글과 숫자의 하단 기준선을 일치 */
+    gap: 3px;                     /* 글자와 숫자 사이 미세 간격 */
+    line-height: 1;
 }
 
 .badge-item strong {
     font-weight: 700;
+    line-height: 1;
+    position: relative;
+    top: 0.5px;                   /* 숫자가 위로 튀는 현상을 아래로 살짝 밀어 보정 */
 }
 
 .badge-divider {
-    opacity: 0.45;
-    font-size: 11px;
-    margin: 0 2px;
+    opacity: 0.35;
+    font-size: 12px;
+    line-height: 1;
+    display: inline-block;
 }
 
 /* 2. 오른쪽 하단 앱 공유 버튼 */
