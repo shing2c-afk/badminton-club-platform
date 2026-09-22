@@ -22,7 +22,7 @@
   ],
   "cleaningStartMsg": "청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
   "cleaningEndMsg": "청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
-  "useWifiRestriction": false,
+  "useWifiRestriction": true,
   "allowedGymIps": [
     "::1"
   ],

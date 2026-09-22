@@ -618,5 +618,24 @@
     });
   }
 </script>
+<!-- 🧪 시뮬레이션(체험존) 모드 안내 모달 -->
+<div id="simulation-guide-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 360px; text-align: center; padding: 24px 20px;">
+        <div style="font-size: 38px; margin-bottom: 12px;">🏸</div>
+        <h3 style="margin: 0 0 10px; font-size: 18px; font-weight: bold; color: #1f2937;">체육관 외부 접속 안내</h3>
+        <p style="margin: 0 0 18px; font-size: 13.5px; color: #4b5563; line-height: 1.5;">
+            현재 <strong>체육관 Wi-Fi 외부</strong>에 접속 중입니다.<br>
+            가상 회원 8명과 함께 실제 대기열 및 코트 진행을 미리 경험해 보시겠습니까?
+        </p>
+        <div style="display: flex; gap: 8px; justify-content: center;">
+            <button id="start-simulation-btn" style="flex: 1; padding: 10px; background-color: #059669; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer;">
+                체험하기 (8명 봇)
+            </button>
+            <button id="close-simulation-btn" style="flex: 1; padding: 10px; background-color: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: 500; font-size: 14px; cursor: pointer;">
+                둘러보기만 하기
+            </button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
