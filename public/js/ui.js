@@ -292,10 +292,12 @@ function renderGameQueue() {
 
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
+    let cleanName = "";
     if (savedUser) {
         try {
             const u = JSON.parse(savedUser);
             currentUserName = (u.name || u.username || "").trim();
+            cleanName = currentUserName.replace(/님$/, '').trim();
         } catch (e) {}
     }
 
@@ -307,9 +309,29 @@ function renderGameQueue() {
         return playerStr;
     }
 
+    // 이름 식별 함수 ('관리자' / '관리자님' 모두 완벽 대응)
+    function isMePlayer(p) {
+        if (!p || !cleanName) return false;
+        const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
+        return str.includes(cleanName) || str.includes(currentUserName);
+    }
+
+    // 1. 코트 현황 확인 (내가 현재 게임 코트 경기 중인지 체크)
+    const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
+    const isPlayingGame = activeCourts.some(c => {
+        if (!c || c.type !== 'game') return false;
+        const courtStr = JSON.stringify(c);
+        return cleanName && (courtStr.includes(cleanName) || courtStr.includes(currentUserName));
+    });
+
+    // 2. 대기열 확인 (내가 이미 게임 대기열 어느 방이든 들어가 있는지)
     const amIInGameQueue = gameQueue.some(slot => 
-        slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
+        slot.players && slot.players.some(p => isMePlayer(p))
     );
+
+    // 🚨 게임참여 버튼 비활성화 조건: 이미 게임 대기열에 있거나 게임 코트 경기 중일 때
+    // (※ 난타 코트에서 몸을 풀고 있는 회원은 게임에 참여할 수 있도록 열어둠!)
+    const cannotJoinGame = amIInGameQueue || isPlayingGame;
 
     if (gameQueue.length === 0) {
         container.innerHTML = `<div class="empty-queue-msg">현재 대기 중인 게임 방이 없습니다.</div>`;
@@ -325,15 +347,17 @@ function renderGameQueue() {
         for (let i = 0; i < 4; i++) {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
-                const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
+                const isMe = isMePlayer(p);
                 const formattedPlayer = formatPlayerText(p);
+                // [퇴장 버튼]: 본인 칸만 활성화
                 if (isMe) {
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
                 } else {
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
                 }
             } else {
-                if (amIInGameQueue) {
+                // [게임참여 버튼]: 경기 중이거나 이미 대기 중인 경우 비활성화
+                if (cannotJoinGame) {
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">게임참여</span></div>`;
                 } else {
                     playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell">게임참여</span></div>`;
@@ -342,8 +366,9 @@ function renderGameQueue() {
         }
 
         const validPlayersCount = getValidPlayers(slot.players).length;
-        const isMySlotGame = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+        const isMySlotGame = slot.players && slot.players.some(p => isMePlayer(p));
 
+        // 1. [코트 입장 버튼]: 4명이 모두 차고, 내가 해당 방의 멤버일 때만 활성화
         const isFullGame = (validPlayersCount === 4);
         let gameEnterBtnHtml = '';
         if (isFullGame && isMySlotGame) {
@@ -352,7 +377,8 @@ function renderGameQueue() {
             gameEnterBtnHtml = `<button class="btn-action btn-enter" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">코트 입장</button>`;
         }
 
-        const isMergeableCount = (validPlayersCount > 0 && validPlayersCount < 4);
+        // 2. [게임 통합 버튼]: 1~3명 대기 중이고, 내가 해당 방의 멤버일 때만 활성화
+        const isMergeableCount = (validPlayersCount >= 1 && validPlayersCount < 4);
         let gameMergeBtnHtml = '';
         if (isMergeableCount && isMySlotGame) {
             gameMergeBtnHtml = `<button class="btn-action btn-merge" onclick="mergeGameSlot('${slot.id}')" style="background: #8b5cf6; color: #fff; cursor: pointer; opacity: 1;">게임 통합</button>`;
@@ -360,6 +386,7 @@ function renderGameQueue() {
             gameMergeBtnHtml = `<button class="btn-action btn-merge" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">게임 통합</button>`;
         }
 
+        // 3. [게임 통합 메뉴]: 합쳐서 4명이 되는 슬롯만 표시 (기존 유지)
         let mergeMenuHtml = '';
         if (activeMergeSlotId === slot.id) {
             const targetSlots = gameQueue.filter(s => {
@@ -421,18 +448,26 @@ function renderGameQueue() {
 function mergeGameSlot(slotId) {
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
+    let cleanName = "";
     if (savedUser) {
         try {
             const u = JSON.parse(savedUser);
             currentUserName = (u.name || u.username || "").trim();
+            cleanName = currentUserName.replace(/님$/, '').trim();
         } catch (e) {}
+    }
+
+    function isMePlayer(p) {
+        if (!p || !cleanName) return false;
+        const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
+        return str.includes(cleanName) || str.includes(currentUserName);
     }
 
     const currentSlot = gameQueue.find(s => s.id === slotId);
     if (!currentSlot) return;
 
     const currentValidPlayers = getValidPlayers(currentSlot.players);
-    const isMySlot = currentSlot.players.some(p => p && currentUserName && p.includes(currentUserName));
+    const isMySlot = currentSlot.players.some(p => isMePlayer(p));
     if (!isMySlot || currentValidPlayers.length === 0 || currentValidPlayers.length >= 4) return;
 
     const targetSlots = gameQueue.filter(s => {
@@ -475,10 +510,12 @@ function renderNantaQueue() {
 
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
+    let cleanName = "";
     if (savedUser) {
         try {
             const u = JSON.parse(savedUser);
             currentUserName = (u.name || u.username || "").trim();
+            cleanName = currentUserName.replace(/님$/, '').trim();
         } catch (e) {}
     }
 
@@ -490,9 +527,27 @@ function renderNantaQueue() {
         return playerStr;
     }
 
+    function isMePlayer(p) {
+        if (!p || !cleanName) return false;
+        const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
+        return str.includes(cleanName) || str.includes(currentUserName);
+    }
+
+    // 1. 코트 현황 확인 (게임 코트나 난타 코트 중 하나라도 코트 이용 중인지 검사)
+    const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
+    const isPlayingAnyCourt = activeCourts.some(c => {
+        if (!c || (c.type !== 'game' && c.type !== 'nanta')) return false;
+        const courtStr = JSON.stringify(c);
+        return cleanName && (courtStr.includes(cleanName) || courtStr.includes(currentUserName));
+    });
+
+    // 2. 난타 대기열 확인
     const amIInNantaQueue = nantaQueue.some(slot => 
-        slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName))
+        slot.players && slot.players.some(p => isMePlayer(p))
     );
+
+    // 🚨 난타참여 비활성화 조건: 이미 난타 대기열에 있거나, 어떤 코트든 경기/플레이 중일 때
+    const cannotJoinNanta = amIInNantaQueue || isPlayingAnyCourt;
 
     if (nantaQueue.length === 0) {
         container.innerHTML = `<div class="empty-queue-msg">현재 대기 중인 난타 방이 없습니다.</div>`;
@@ -508,15 +563,17 @@ function renderNantaQueue() {
         for (let i = 0; i < 2; i++) {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
-                const isMe = currentUserName && currentUserName !== '' && p.includes(currentUserName);
+                const isMe = isMePlayer(p);
                 const formattedNantaPlayer = formatNantaPlayerText(p);
+                // [퇴장 버튼]: 본인 칸만 활성화
                 if (isMe) {
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
                 } else {
                     playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
                 }
             } else {
-                if (amIInNantaQueue) {
+                // [난타참여 버튼]: 코트 이용 중이거나 이미 대기 중인 경우 비활성화
+                if (cannotJoinNanta) {
                     playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">난타참여</span></div>`;
                 } else {
                     playerCellsHtml += `<div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell">난타참여</span></div>`;
@@ -525,9 +582,10 @@ function renderNantaQueue() {
         }
 
         const validNantaCount = getValidPlayers(slot.players).length;
-        const isFullNanta = (validNantaCount === 2);
-        const isMySlotNanta = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+        const isMySlotNanta = slot.players && slot.players.some(p => isMePlayer(p));
 
+        // [코트 입장 버튼]: 2명이 모두 차고, 내가 해당 방의 멤버일 때만 활성화
+        const isFullNanta = (validNantaCount === 2);
         let nantaEnterBtnHtml = '';
         if (isFullNanta && isMySlotNanta) {
             nantaEnterBtnHtml = `<button class="btn-action btn-enter" onclick="enterNantaCourt('${slot.id}')" style="background: #10b981; color: #fff; cursor: pointer; opacity: 1;">코트 입장</button>`;
@@ -599,6 +657,106 @@ async function createNewGameSlot() {
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
 
+// ==========================================
+// 1. 게임방 개설 (문구 통일 및 방어 로직 완비)
+// ==========================================
+async function createNewGameSlot() {
+    const savedUser = localStorage.getItem("currentUser");
+    if (!savedUser) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
+        return;
+    }
+
+    let u;
+    try {
+        u = JSON.parse(savedUser);
+    } catch (e) {
+        alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
+        return;
+    }
+
+    const rawName = (u.name || u.username || "").trim();
+    const cleanName = rawName.replace(/님$/, '').trim();
+    const gender = (u.gender || "").trim();
+    const age = (u.age || u.ageGroup || "").trim();
+    const level = (u.level || u.grade || "").trim();
+
+    if (!cleanName) {
+        alert("회원 이름 정보를 찾을 수 없습니다.");
+        return;
+    }
+
+    const parts = [cleanName, gender, age, level].filter(Boolean);
+    const formattedPlayerInfo = parts.join(" / ");
+
+    // 1. 코트 현황 검사
+    const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
+    
+    // 게임 코트에서 실제 경기 중인지 검사
+    const isPlayingGame = activeCourts.some(c => {
+        if (!c || c.type !== 'game') return false;
+        const courtStr = JSON.stringify(c);
+        return courtStr.includes(cleanName) || courtStr.includes(rawName);
+    });
+
+    // 🚨 문구 통일: '경기 중이므로 새로운 게임방을 개설할 수 없습니다.'
+    if (isPlayingGame) {
+        alert(`⚠️ ${cleanName} 님은 현재 게임 코트에서 경기 중이므로 새로운 게임방을 개설할 수 없습니다.`);
+        return;
+    }
+
+    // 2. 게임 대기열 확인
+    const activeGameQueue = (typeof gameQueue !== 'undefined' && gameQueue) ? gameQueue : (window.gameQueue || []);
+    const isWaitingGame = activeGameQueue.some(slot => {
+        if (!slot) return false;
+        const slotStr = JSON.stringify(slot);
+        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+    });
+
+    if (isWaitingGame) {
+        alert(`⚠️ ${cleanName} 님은 이미 게임에 참여(대기) 중이므로 새로운 게임방을 개설할 수 없습니다.`);
+        return;
+    }
+
+    // 3. 난타 대기열 확인 (교차 선택창 1회)
+    const activeNantaQueue = (typeof nantaQueue !== 'undefined' && nantaQueue) ? nantaQueue : (window.nantaQueue || []);
+    const isWaitingNanta = activeNantaQueue.some(slot => {
+        if (!slot) return false;
+        const slotStr = JSON.stringify(slot);
+        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+    });
+
+    if (isWaitingNanta) {
+        const confirmSwitch = await confirm(`현재 난타 대기 상태입니다. 게임 방을 개설하시면 기존 난타 대기 상태에 영향을 줄 수 있습니다. 진행하시겠습니까?`);
+        if (!confirmSwitch) return;
+
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) {
+            activeSocket.emit('forceCreateSlot', { type: 'game', userId: u.id || u.userId, user: formattedPlayerInfo });
+        }
+        return;
+    }
+
+    // 체육관 Wi-Fi 검사
+    if (typeof window.isGymWifiConnected !== 'undefined' && window.isGymWifiConnected === false) {
+        alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+        return;
+    }
+
+    // 정상 게임방 개설 요청
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (!activeSocket) {
+        alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
+        return;
+    }
+
+    activeSocket.emit('createSlot', { type: 'game', userId: u.id || u.userId, user: formattedPlayerInfo });
+}
+
+
+// ==========================================
+// 2. 난타방 개설 (문구 통일 및 완벽 방어)
+// ==========================================
 async function createNewNantaSlot() {
     const savedUser = localStorage.getItem("currentUser");
     if (!savedUser) {
@@ -606,35 +764,102 @@ async function createNewNantaSlot() {
         return;
     }
 
-    const user = JSON.parse(savedUser);
-    const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
+    let u;
+    try {
+        u = JSON.parse(savedUser);
+    } catch (e) {
+        alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
+        return;
+    }
 
+    const rawName = (u.name || u.username || "").trim();
+    const cleanName = rawName.replace(/님$/, '').trim();
+    const gender = (u.gender || "").trim();
+    const age = (u.age || u.ageGroup || "").trim();
+    const level = (u.level || u.grade || "").trim();
+
+    if (!cleanName) {
+        alert("회원 이름 정보를 찾을 수 없습니다.");
+        return;
+    }
+
+    const parts = [cleanName, gender, age, level].filter(Boolean);
+    const formattedPlayerInfo = parts.join(" / ");
+
+    // 1. 코트 현황 검사
+    const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
+
+    // A. 난타 코트 플레이 중인지 검사
+    const isPlayingNanta = activeCourts.some(c => {
+        if (!c || c.type !== 'nanta') return false;
+        const courtStr = JSON.stringify(c);
+        return courtStr.includes(cleanName) || courtStr.includes(rawName);
+    });
+
+    if (isPlayingNanta) {
+        alert(`⚠️ ${cleanName} 님은 현재 난타 코트에서 플레이 중이므로 새로운 난타방을 개설할 수 없습니다.`);
+        return;
+    }
+
+    // B. 게임 코트 경기 중인지 검사
+    const isPlayingGame = activeCourts.some(c => {
+        if (!c || c.type !== 'game') return false;
+        const courtStr = JSON.stringify(c);
+        return courtStr.includes(cleanName) || courtStr.includes(rawName);
+    });
+
+    // 🚨 문구 통일: '경기 중이므로 새로운 난타방을 개설할 수 없습니다.'
+    if (isPlayingGame) {
+        alert(`⚠️ ${cleanName} 님은 현재 게임 코트에서 경기 중이므로 새로운 난타방을 개설할 수 없습니다.`);
+        return;
+    }
+
+    // 2. 난타 대기열 확인
+    const activeNantaQueue = (typeof nantaQueue !== 'undefined' && nantaQueue) ? nantaQueue : (window.nantaQueue || []);
+    const isWaitingNanta = activeNantaQueue.some(slot => {
+        if (!slot) return false;
+        const slotStr = JSON.stringify(slot);
+        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+    });
+
+    if (isWaitingNanta) {
+        alert(`⚠️ ${cleanName} 님은 이미 난타에 참여(대기) 중이므로 새로운 난타방을 개설할 수 없습니다.`);
+        return;
+    }
+
+    // 3. 게임 대기열 확인 (교차 확인창 1회)
+    const activeGameQueue = (typeof gameQueue !== 'undefined' && gameQueue) ? gameQueue : (window.gameQueue || []);
+    const isWaitingGame = activeGameQueue.some(slot => {
+        if (!slot) return false;
+        const slotStr = JSON.stringify(slot);
+        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+    });
+
+    if (isWaitingGame) {
+        const confirmSwitch = await confirm(`현재 게임 대기 상태입니다. 난타 방을 개설하시면 기존 게임 대기 상태에 영향을 줄 수 있습니다. 진행하시겠습니까?`);
+        if (!confirmSwitch) return;
+
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+        if (activeSocket) {
+            activeSocket.emit('forceCreateSlot', { type: 'nanta', userId: u.id || u.userId, user: formattedPlayerInfo });
+        }
+        return;
+    }
+
+    // 체육관 Wi-Fi 검사
+    if (typeof window.isGymWifiConnected !== 'undefined' && window.isGymWifiConnected === false) {
+        alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+        return;
+    }
+
+    // 정상 난타방 개설 요청 전송
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
         alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
         return;
     }
 
-    if (!window.isGymWifiConnected) {
-        const modal = document.getElementById('custom-alert-modal');
-        const msgEl = document.getElementById('custom-alert-message');
-        const confirmBtn = document.getElementById('custom-alert-ok-btn');
-
-        if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 참여(개설)할 수 있습니다.';
-            modal.style.display = 'flex';
-
-            if (confirmBtn) {
-                confirmBtn.onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
-        }
-        return;
-    }
-
-    // 💡 누락되었던 소켓 전송 및 함수 마감 부분
-    activeSocket.emit('createSlot', { type: 'nanta', userId: user.id, user: userInfo });
+    activeSocket.emit('createSlot', { type: 'nanta', userId: u.id || u.userId, user: formattedPlayerInfo });
 }
 
 async function joinGameCell(slotId, idx) {

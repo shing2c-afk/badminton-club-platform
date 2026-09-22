@@ -1,6 +1,6 @@
 {
   "ENTRY_TIMEOUT_SEC": 120,
-  "NANTA_COURT_LIMIT_SEC": 120,
+  "NANTA_COURT_LIMIT_SEC": 600,
   "ADMIN_PASSWORD": "1234",
   "cleaningSchedules": [
     {

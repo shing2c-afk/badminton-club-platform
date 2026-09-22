@@ -13,67 +13,124 @@
 
     <!-- 📌 alert, confirm, prompt 전역 오버라이딩 스크립트 -->
     <script>
+    // 🔒 전역 비동기 Resolve 핸들러 관리
+    let currentConfirmResolve = null;
+    let currentPromptResolve = null;
+
+    // 🚀 [영구 이벤트 위임]: 새로고침/동적 DOM 교체와 무관하게 전역 클릭을 감지
+    document.addEventListener('click', (e) => {
+        const modal = document.getElementById('custom-alert-modal');
+        if (!modal || modal.style.display !== 'flex') return;
+
+        // 1. 확인 버튼 감지 (하위 아이콘/텍스트 클릭 대응)
+        if (e.target.id === 'custom-alert-ok-btn' || e.target.closest('#custom-alert-ok-btn')) {
+            modal.style.display = 'none';
+            
+            if (currentConfirmResolve) {
+                const resolveFn = currentConfirmResolve;
+                currentConfirmResolve = null;
+                resolveFn(true);
+            }
+            
+            if (currentPromptResolve) {
+                const resolveFn = currentPromptResolve;
+                currentPromptResolve = null;
+                const promptInput = document.getElementById('custom-prompt-input');
+                const val = promptInput ? promptInput.value : '';
+                if (promptInput) promptInput.style.display = 'none';
+                resolveFn(val);
+            }
+        }
+
+        // 2. 취소 버튼 감지
+        if (e.target.id === 'custom-alert-cancel-btn' || e.target.closest('#custom-alert-cancel-btn')) {
+            modal.style.display = 'none';
+            
+            if (currentConfirmResolve) {
+                const resolveFn = currentConfirmResolve;
+                currentConfirmResolve = null;
+                resolveFn(false);
+            }
+            
+            if (currentPromptResolve) {
+                const resolveFn = currentPromptResolve;
+                currentPromptResolve = null;
+                const promptInput = document.getElementById('custom-prompt-input');
+                if (promptInput) promptInput.style.display = 'none';
+                resolveFn(null);
+            }
+        }
+    }, true); // 캡처링 단계에서 우선 감지하도록 설정
+
+    // 브라우저 기본 alert 오버라이드
     window.alert = function(message) {
         const modal = document.getElementById('custom-alert-modal');
         const msgEl = document.getElementById('custom-alert-message');
         const cancelBtn = document.getElementById('custom-alert-cancel-btn');
+        const okBtn = document.getElementById('custom-alert-ok-btn');
         const promptInput = document.getElementById('custom-prompt-input');
         
         if (modal && msgEl) {
             msgEl.innerText = message;
             if (cancelBtn) cancelBtn.style.display = 'none';
             if (promptInput) promptInput.style.display = 'none';
+            if (okBtn) {
+                okBtn.style.pointerEvents = 'auto';
+                okBtn.style.cursor = 'pointer';
+            }
             modal.style.display = 'flex';
+            modal.style.zIndex = '999999';
         }
     };
 
-    // 🔒 [초강력 방어벽]: 마지막으로 confirm이 호출된 시간을 기록
-    let lastConfirmTime = 0;
-    let lastConfirmMessage = "";
-
-    window.confirm = function(message) {
+    // 브라우저 기본 confirm 오버라이드 (Promise 반환)
+    window.confirm = function(message, showCancel = true) {
         const modal = document.getElementById('custom-alert-modal');
 
-        // 🛡️ [모바일 최적화 방어벽]: 이미 팝업창이 떠 있는 상태라면 중복 호출 무시
         if (modal && modal.style.display === 'flex') {
-            console.warn("⚠️ [중복 팝업 방지] 이미 팝업이 열려 있습니다:", message);
             return Promise.resolve(false);
         }
 
         return new Promise((resolve) => {
+            currentConfirmResolve = resolve;
+            currentPromptResolve = null;
+
             const msgEl = document.getElementById('custom-alert-message');
             const cancelBtn = document.getElementById('custom-alert-cancel-btn');
             const okBtn = document.getElementById('custom-alert-ok-btn');
             const promptInput = document.getElementById('custom-prompt-input');
 
+            if (!okBtn) {
+                resolve(false);
+                return;
+            }
+
             if (modal && msgEl) {
                 msgEl.innerText = message;
-                if (cancelBtn) cancelBtn.style.display = 'inline-block';
+                
+                if (cancelBtn) {
+                    cancelBtn.style.display = showCancel ? 'inline-block' : 'none';
+                    cancelBtn.style.pointerEvents = 'auto';
+                    cancelBtn.style.cursor = 'pointer';
+                }
                 if (promptInput) promptInput.style.display = 'none';
+                
+                okBtn.style.pointerEvents = 'auto';
+                okBtn.style.cursor = 'pointer';
                 modal.style.display = 'flex';
-
-                // 기존 이벤트 복사 및 초기화로 터치 중복(이벤트 꼬임) 방지
-                const newOkBtn = okBtn.cloneNode(true);
-                const newCancelBtn = cancelBtn.cloneNode(true);
-                okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-
-                newOkBtn.onclick = () => {
-                    modal.style.display = 'none';
-                    resolve(true);
-                };
-                newCancelBtn.onclick = () => {
-                    modal.style.display = 'none';
-                    resolve(false);
-                };
+                modal.style.zIndex = '999999';
             } else {
-                resolve(window.confirm(message)); // 안전 장치
+                resolve(false);
             }
         });
     };
 
+    // 브라우저 기본 prompt 오버라이드 (Promise 반환)
     window.prompt = function(message) {
         return new Promise((resolve) => {
+            currentPromptResolve = resolve;
+            currentConfirmResolve = null;
+
             const modal = document.getElementById('custom-alert-modal');
             const msgEl = document.getElementById('custom-alert-message');
             const cancelBtn = document.getElementById('custom-alert-cancel-btn');
@@ -82,38 +139,29 @@
 
             if (modal && msgEl) {
                 msgEl.innerText = message;
-                if (cancelBtn) cancelBtn.style.display = 'inline-block';
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'inline-block';
+                    cancelBtn.style.pointerEvents = 'auto';
+                }
                 if (promptInput) {
                     promptInput.style.display = 'block';
                     promptInput.value = '';
                     setTimeout(() => promptInput.focus(), 100);
                 }
+                if (okBtn) {
+                    okBtn.style.pointerEvents = 'auto';
+                    okBtn.style.cursor = 'pointer';
+                }
                 modal.style.display = 'flex';
+                modal.style.zIndex = '999999';
 
-                const newOkBtn = okBtn.cloneNode(true);
-                const newCancelBtn = cancelBtn.cloneNode(true);
-                okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-                cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
-
-                const handleOk = () => {
-                    const val = promptInput ? promptInput.value : '';
-                    modal.style.display = 'none';
-                    if (promptInput) promptInput.style.display = 'none';
-                    resolve(val);
-                };
-
-                const handleCancel = () => {
-                    modal.style.display = 'none';
-                    if (promptInput) promptInput.style.display = 'none';
-                    resolve(null);
-                };
-
-                newOkBtn.onclick = handleOk;
-                newCancelBtn.onclick = handleCancel;
-                
-                promptInput.onkeydown = (e) => {
-                    if (e.key === 'Enter') handleOk();
-                };
+                if (promptInput) {
+                    promptInput.onkeydown = (e) => {
+                        if (e.key === 'Enter' && okBtn) {
+                            okBtn.click();
+                        }
+                    };
+                }
             } else {
                 resolve(null);
             }
