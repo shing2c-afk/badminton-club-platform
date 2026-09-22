@@ -477,10 +477,12 @@
   }
 </script>
 
-<!-- 1. 왼쪽 하단 모서리에 위치할 접속자 배지 -->
+<!-- 1. 왼쪽 하단 모서리에 위치할 클럽 및 접속자 배지 -->
 <div id="online-badge-container">
     <div id="online-badge" class="modern-badge visitor-badge">
-        <span class="visitor-text">접속자 <span id="online-count">0</span>명</span>
+        <span class="badge-item">클럽 <strong id="club-count">0</strong>명</span>
+        <span class="badge-divider">|</span>
+        <span class="badge-item">접속 <strong id="online-count">0</strong>명</span>
     </div>
 </div>
 
@@ -497,7 +499,6 @@
         앱 공유
     </button>
 </div>
-
 <!-- ========================================== -->
 <!-- 🎨 스타일 영역 (CSS) -->
 <!-- ========================================== -->
@@ -531,13 +532,31 @@
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-    width: 105px;                 /* 고정 너비 */
-    justify-content: flex-start;  /* 왼쪽 정렬 */
+    width: auto;                  /* 텍스트 길이에 맞춰 자동 조절 */
+    min-width: 120px;             /* 최소 너비 확보 */
+    padding: 6px 12px;            /* 좌우 여백 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;                     /* 항목 간 간격 */
+    font-size: 13px;
+    white-space: nowrap;          /* 줄바꿈 방지 */
 }
 
-.visitor-text {
-    text-align: left;
-    width: 100%;
+.badge-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.badge-item strong {
+    font-weight: 700;
+}
+
+.badge-divider {
+    opacity: 0.45;
+    font-size: 11px;
+    margin: 0 2px;
 }
 
 /* 2. 오른쪽 하단 앱 공유 버튼 */

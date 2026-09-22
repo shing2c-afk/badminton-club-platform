@@ -241,11 +241,17 @@ socket.off('confirmCrossSlot').on('confirmCrossSlot', async ({ type, userId, use
     }
 });
 
-// 서버로부터 로그인된 접속자 수 업데이트 수신
-socket.on('updateOnlineCount', (count) => {
-    const countElement = document.getElementById('online-count');
-    if (countElement) {
-        countElement.textContent = count;
+// 서버로부터 로그인된 접속자 수 업데이트 수신 (클럽 n명, 접속 m명)
+socket.on('updateOnlineCount', (data) => {
+    const clubElement = document.getElementById('club-count');
+    const totalElement = document.getElementById('online-count');
+
+    if (typeof data === 'object' && data !== null) {
+        if (clubElement) clubElement.textContent = data.club || 0;
+        if (totalElement) totalElement.textContent = data.total || 0;
+    } else {
+        // 기존 단순 숫자 데이터 수신 시 예외 처리
+        if (totalElement) totalElement.textContent = data || 0;
     }
 });
 

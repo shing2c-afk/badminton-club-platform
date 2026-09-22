@@ -1400,6 +1400,16 @@ io.on('connection', (socket) => {
             }
         }
 
+        // 🔄 [추가] 15분 외출 유예 타이머 해제 (대기열 순번 복구 유지)
+        if (disconnectTimers[cleanUsername]) {
+            clearTimeout(disconnectTimers[cleanUsername]);
+            delete disconnectTimers[cleanUsername];
+            console.log(`[복귀 확인] 유저(${cleanUsername}) 15분 이내 재접속 -> 대기열 자동 퇴장 취소 및 순번 유지`);
+        }
+        if (expiredUsers[cleanUsername]) {
+            delete expiredUsers[cleanUsername];
+        }
+
         activeUserSockets.set(cleanUsername, socket.id);
         socket.username = cleanUsername;
         broadcastOnlineCount();
@@ -1987,24 +1997,29 @@ io.on('connection', (socket) => {
     // ==========================================
     socket.on('disconnect', () => {
         const currentSocketId = socket.id;
-
-        if (socket.username && activeUserSockets.get(socket.username) === socket.id) {
-            activeUserSockets.delete(socket.username);
-            broadcastOnlineCount();
-        }
-
         const rawUser = userSockets[currentSocketId] || socket.username;
         
+        let userKey = '';
         if (rawUser) {
-            let userKey = '';
             if (typeof rawUser === 'object' && rawUser !== null) {
                 userKey = rawUser.id || rawUser.username || rawUser.name || '';
             } else {
                 userKey = String(rawUser);
             }
+        }
 
-            if (!userKey) return;
+        // 현재 끊긴 소켓 정보 정리
+        delete userSockets[currentSocketId];
 
+        if (userKey && activeUserSockets.get(userKey) === currentSocketId) {
+            activeUserSockets.delete(userKey);
+            if (typeof broadcastOnlineCount === 'function') {
+                broadcastOnlineCount();
+            }
+        }
+
+        // 대기열 유예 타이머: 구장 밖으로 잠깐 나간 경우(담배, 외출 등) 15분 대기
+        if (userKey) {
             if (disconnectTimers[userKey]) {
                 clearTimeout(disconnectTimers[userKey]);
             }
@@ -2013,9 +2028,8 @@ io.on('connection', (socket) => {
                 cleanupUser(rawUser);
                 expiredUsers[userKey] = true;
                 delete disconnectTimers[userKey];
-                delete userSockets[currentSocketId];
-            }, 60 * 60 * 1000);  // 젒속 유예 시간 60분이 지나면 게임 및 난타 대기열 참여 정보 삭제, 혼자인 방은 자동 삭제됨.
-            
+                console.log(`[자동 퇴장] 유저(${userKey}) 15분 유예 시간 종료로 대기열 및 방 정리 완료`);
+            }, 15 * 60 * 1000); // 15분 유예 시간
         }
     });
 
@@ -2025,12 +2039,27 @@ io.on('connection', (socket) => {
 // 공통 함수 영역 (io 블록 바깥)
 // ==========================================
 function broadcastOnlineCount() {
-    const count = activeUserSockets.size; 
-    io.emit('updateOnlineCount', count);
+    const totalCount = activeUserSockets.size; // 전체 로그인 접속 인원
+    let clubCount = 0; // 구장 Wi-Fi 접속 인원
+
+    if (io && io.sockets && io.sockets.sockets) {
+        activeUserSockets.forEach((socketId) => {
+            const userSocket = io.sockets.sockets.get(socketId);
+            if (userSocket) {
+                // 이미 정의된 구장 Wi-Fi 판별 함수 활용
+                if (typeof isGymWifiUser === 'function' && isGymWifiUser(userSocket)) {
+                    clubCount++;
+                }
+            }
+        });
+    }
+
+    // 클라이언트로 객체 형태로 전송
+    io.emit('updateOnlineCount', {
+        club: clubCount,
+        total: totalCount
+    });
 }
-
-// 파일 하단 (기존 API 라우트들 아래)
-
 // 1. 전체 회원 명부 CSV 다운로드 라우트 (프론트엔드 경로 /api/admin/download-excel와 일치시킴)
 app.get('/api/admin/download-excel', (req, res) => {
     db.all("SELECT * FROM regular_members", [], (err, rows) => {
