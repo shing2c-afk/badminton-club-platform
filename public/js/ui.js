@@ -737,9 +737,27 @@ async function createNewGameSlot() {
         return;
     }
 
-    // 체육관 Wi-Fi 검사
-    if (typeof window.isGymWifiConnected !== 'undefined' && window.isGymWifiConnected === false) {
-        alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+    // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
+    const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
+
+    // 관리자가 설정을 켰고(ON), 구장 Wi-Fi 인증이 되지 않은 경우만 차단
+    if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
+
+        if (modal && msgEl) {
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
+            modal.style.display = 'flex';
+
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
+            }
+        } else {
+            alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+        }
         return;
     }
 
@@ -846,13 +864,31 @@ async function createNewNantaSlot() {
         return;
     }
 
-    // 체육관 Wi-Fi 검사
-    if (typeof window.isGymWifiConnected !== 'undefined' && window.isGymWifiConnected === false) {
-        alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+    // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
+    const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
+
+    // 관리자가 설정을 켰고(ON), 구장 Wi-Fi 인증이 되지 않은 경우만 차단
+    if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
+
+        if (modal && msgEl) {
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
+            modal.style.display = 'flex';
+
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
+            }
+        } else {
+            alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+        }
         return;
     }
 
-    // 정상 난타방 개설 요청 전송
+    // 정상 게임방 개설 요청
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
         alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");

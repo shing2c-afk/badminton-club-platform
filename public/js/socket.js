@@ -6,13 +6,28 @@ window.socket = socket;
 // 📶 체육관 Wi-Fi 접속 상태 보관 및 수신
 // ==========================================
 window.isGymWifiConnected = false;
+window.useWifiRestriction = false;
+
+// 로컬 저장소에 저장된 관리자 설정이 있다면 초기값으로 즉시 복원
+if (localStorage.getItem("useWifiRestriction") === "true") {
+    window.useWifiRestriction = true;
+}
 
 socket.on('wifiStatus', (data) => {
-    window.isGymWifiConnected = data.isGymWifi;
-    console.log(`📶 구장 Wi-Fi 접속 상태: ${data.isGymWifi ? '인증됨 (구장 내)' : '미인증 (외부 접속)'} (IP: ${data.clientIp})`);
+    // 💡 1. 구장 Wi-Fi 일치 여부 저장
+    window.isGymWifiConnected = !!data.isGymWifi;
+    
+    // 💡 2. 서버에서 보낸 Wi-Fi 제한 기능 활성화 여부(토글 상태)도 함께 동기화
+    if (typeof data.useWifiRestriction !== 'undefined') {
+        window.useWifiRestriction = !!data.useWifiRestriction;
+        localStorage.setItem("useWifiRestriction", data.useWifiRestriction ? "true" : "false");
+    }
+
+    console.log(`📶 구장 Wi-Fi 제한 설정: ${window.useWifiRestriction ? 'ON(제한 중)' : 'OFF(자유 이용)'}`);
+    console.log(`📶 현재 접속 상태: ${window.isGymWifiConnected ? '인증됨 (구장 내)' : '미인증 (외부 접속)'} (IP: ${data.clientIp})`);
     
     // 📶 body 태그에 Wi-Fi 인증 상태 클래스 즉시 반영
-    if (data.isGymWifi) {
+    if (window.isGymWifiConnected) {
         document.body.classList.add('gym-wifi-active');
     } else {
         document.body.classList.remove('gym-wifi-active');

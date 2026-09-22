@@ -823,11 +823,13 @@ input:checked + .slider:before {
     }
 
     socket.on('stateUpdated', (data) => {
-        if (data.config) {
-            const wifiToggle = document.getElementById('toggle-wifi-restriction');
-            if (wifiToggle && typeof data.config.useWifiRestriction !== 'undefined') {
-                wifiToggle.checked = data.config.useWifiRestriction;
-            }
+    if (data.config) {
+        const wifiToggle = document.getElementById('toggle-wifi-restriction');
+        if (wifiToggle && typeof data.config.useWifiRestriction !== 'undefined') {
+            wifiToggle.checked = data.config.useWifiRestriction;
+            // 💡 서버에서 받아온 최신 설정을 브라우저 저장소에도 즉시 보관
+            localStorage.setItem("useWifiRestriction", data.config.useWifiRestriction ? "true" : "false");
+        }
             // 🔊 [추가] TV 음성 안내(TTS) 개별 제어 토글 상태 불러오기 및 동기화
             const soundEntryToggle = document.getElementById('sound-entry-notice');
             const soundNantaToggle = document.getElementById('sound-nanta-warning');
@@ -949,14 +951,29 @@ input:checked + .slider:before {
     const wifiToggle = document.getElementById('toggle-wifi-restriction');
     const adminSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 
-    if (adminSocket && wifiToggle) {
+    if (wifiToggle) {
+        // 💡 1. 화면이 뜨는 0.001초 순간에 로컬 저장소에서 직전 상태 즉시 복원 (깜빡임 원천 차단)
+        const savedWifiSetting = localStorage.getItem("useWifiRestriction");
+        if (savedWifiSetting !== null) {
+            wifiToggle.checked = (savedWifiSetting === "true");
+        }
+
+        // 💡 2. 관리자가 직접 토글을 켰거나 껐을 때 즉시 브라우저에 저장하고 서버로 전송
         wifiToggle.addEventListener('change', (e) => {
             const isEnabled = e.target.checked;
-            adminSocket.emit('updateWifiSettings', { useWifiRestriction: isEnabled });
+            localStorage.setItem("useWifiRestriction", isEnabled ? "true" : "false");
+            if (adminSocket) {
+                adminSocket.emit('updateWifiSettings', { useWifiRestriction: isEnabled });
+            }
         });
+    }
+
+    // 💡 3. 서버에서 최신 설정이 내려올 때도 로컬 저장소와 동기화
+    if (adminSocket && wifiToggle) {
         adminSocket.on('syncConfig', (configData) => {
             if (configData && typeof configData.useWifiRestriction !== 'undefined') {
                 wifiToggle.checked = configData.useWifiRestriction;
+                localStorage.setItem("useWifiRestriction", configData.useWifiRestriction ? "true" : "false");
             }
         });
     }
