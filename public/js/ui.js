@@ -127,10 +127,6 @@ function formatCourtPlayers(playersStr) {
 }
 
 function renderCourts() {
-    // 🛑 [추가] 시뮬레이션 모드 동작 중에는 서버 데이터로 코트를 덮어쓰지 않음!
-    if (typeof isSimulationMode !== 'undefined' && isSimulationMode) {
-        return;
-    }
     const courtList = document.getElementById('court-status-list');
     if (!courtList) return;
     courtList.innerHTML = '';
@@ -293,11 +289,6 @@ function renderCourts() {
 function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
     if (!container) return;
-
-    // 🛑 [추가] 시뮬레이션 모드 동작 중에는 서버 데이터로 덮어쓰지 않음!
-    if (typeof isSimulationMode !== 'undefined' && isSimulationMode) {
-        return;
-    }
 
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
@@ -517,11 +508,6 @@ function renderNantaQueue() {
     const container = document.getElementById('nanta-slot-list');
     if (!container) return;
 
-    // 🛑 [추가] 시뮬레이션 모드 동작 중에는 서버 데이터로 덮어쓰지 않음!
-    if (typeof isSimulationMode !== 'undefined' && isSimulationMode) {
-        return;
-    }
-
     const savedUser = localStorage.getItem("currentUser");
     let currentUserName = "";
     let cleanName = "";
@@ -649,34 +635,24 @@ async function createNewGameSlot() {
         alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
         return;
     }
-// 💡 [수정] 시뮬레이션 모드가 아닐 때만 Wi-Fi 체크 진행
-    if (!window.isGymWifiConnected && !isSimulationMode) {
-        // 체육관 외부 접속 시 가상 봇 10명 체험 모달 실행
-        if (typeof promptSimulationModal === 'function') {
-            promptSimulationModal();
-        } else {
-            // 예외 대비 기존 알림 백업
-            const modal = document.getElementById('custom-alert-modal');
-            const msgEl = document.getElementById('custom-alert-message');
-            const confirmBtn = document.getElementById('custom-alert-ok-btn');
-            if (modal && msgEl) {
-                msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
-                modal.style.display = 'flex';
-                if (confirmBtn) {
-                    confirmBtn.onclick = function() { modal.style.display = 'none'; };
-                }
+// 💡 서버에 검증 및 처리를 요청함
+    if (!window.isGymWifiConnected) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
+
+        if (modal && msgEl) {
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
+            modal.style.display = 'flex';
+
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
             }
         }
         return;
     }
-
-    // 💡 시뮬레이션 모드일 때는 서버로 보내지 않고 로컬 가상 처리 (다음 단계 연결용)
-    if (isSimulationMode) {
-        console.log('🧪 시뮬레이션 모드에서 방 생성 클릭됨');
-        alert('체험 모드: 방 개설 기능이 가상으로 동작합니다.');
-        return;
-    }
-
     // 💡 직접 팝업을 띄우지 않고, 서버에 검증 및 처리를 요청함 (서버가 상황에 맞는 팝업 신호를 줌)
     activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
 }
@@ -764,36 +740,24 @@ async function createNewGameSlot() {
     // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
     const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
 
-   // 💡 [수정] 관리자가 설정을 켰고(ON), 시뮬레이션 모드가 아니며, 구장 Wi-Fi 인증이 안 된 경우
-    if (isRestrictionActive && !isSimulationMode && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
-        // 체육관 외부 접속 시 가상 봇 10명 체험 모달 실행
-        if (typeof promptSimulationModal === 'function') {
-            promptSimulationModal();
-        } else {
-            const modal = document.getElementById('custom-alert-modal');
-            const msgEl = document.getElementById('custom-alert-message');
-            const confirmBtn = document.getElementById('custom-alert-ok-btn');
+    // 관리자가 설정을 켰고(ON), 구장 Wi-Fi 인증이 되지 않은 경우만 차단
+    if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
 
-            if (modal && msgEl) {
-                msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설하거나 참여할 수 있습니다.';
-                modal.style.display = 'flex';
+        if (modal && msgEl) {
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
+            modal.style.display = 'flex';
 
-                if (confirmBtn) {
-                    confirmBtn.onclick = function() {
-                        modal.style.display = 'none';
-                    };
-                }
-            } else {
-                alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설하거나 참여할 수 있습니다.');
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
             }
+        } else {
+            alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
         }
-        return;
-    }
-
-    // 💡 [추가] 시뮬레이션 모드일 때 서버 전송 차단 및 로컬 가상 동작 안내
-    if (isSimulationMode) {
-        console.log('🧪 시뮬레이션 모드: 로컬 가상 동작 실행');
-        alert('체험 모드: 가상 봇들과 함께 로컬에서 동작합니다. (실제 서버에 전송되지 않음)');
         return;
     }
 
@@ -924,13 +888,6 @@ async function createNewNantaSlot() {
         return;
     }
 
-    // 💡 [추가] 시뮬레이션 모드일 때 서버 전송 차단 및 로컬 가상 동작 안내
-    if (isSimulationMode) {
-        console.log('🧪 시뮬레이션 모드: 로컬 가상 동작 실행');
-        alert('체험 모드: 가상 봇들과 함께 로컬에서 동작합니다. (실제 서버에 전송되지 않음)');
-        return;
-    }
-
     // 정상 게임방 개설 요청
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
@@ -942,76 +899,52 @@ async function createNewNantaSlot() {
 }
 
 async function joinGameCell(slotId, idx) {
-    if (!window.isGymWifiConnected && !isSimulationMode) {
-        if (typeof promptSimulationModal === 'function') {
-            promptSimulationModal();
+    // 📶 구장 Wi-Fi 접속 여부 체크 (커스텀 모달 적용)
+    if (!window.isGymWifiConnected) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
+
+        if (modal && msgEl) {
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
+            modal.style.display = 'flex';
+
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
+            }
         }
         return;
     }
 
     const savedUser = localStorage.getItem("currentUser");
-    let formattedPlayerInfo = "체험회원/남/30대/C";
-    if (savedUser) {
-        try {
-            const u = JSON.parse(savedUser);
-            const name = (u.name || u.username || "").trim();
-            const gender = (u.gender || "").trim();
-            const age = (u.age || u.ageGroup || "").trim();
-            const level = (u.level || u.grade || "").trim();
-            if (name) {
-                formattedPlayerInfo = [name, gender, age, level].filter(Boolean).join("/");
-            }
-        } catch (e) {}
-    }
-
-    // 🧪 [시뮬레이션 모드 전용 참여 로직]
-    if (isSimulationMode) {
-        console.log('🧪 시뮬레이션 모드: 가상 참여 직접 실행');
-
-        // 1. 대기열 카드의 버튼을 내 이름으로 즉시 변경
-        const simCard = document.querySelector('.sim-slot');
-        if (simCard) {
-            const joinBtn = simCard.querySelector('button');
-            if (joinBtn) {
-                const mySlot = document.createElement('div');
-                mySlot.id = 'sim-my-slot';
-                mySlot.style.cssText = "background: #2563eb; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; font-weight: bold; border: 2px solid #60a5fa;";
-                mySlot.textContent = formattedPlayerInfo;
-                joinBtn.replaceWith(mySlot);
-            }
-            const statusText = simCard.querySelector('span:last-child');
-            if (statusText) statusText.innerHTML = '<b style="color:#10b981;">매칭 완료! (4/4명)</b>';
-        }
-
-        // 2. 1.5초 후 코트 탭으로 강제 이동 및 경기 화면 생성
-        setTimeout(() => {
-            // 모든 탭 섹션 숨기고 코트 섹션 강제 표시
-            const secGame = document.getElementById('section-game');
-            const secNanta = document.getElementById('section-nanta');
-            const secCourt = document.getElementById('section-court');
-
-            if (secGame) secGame.style.display = 'none';
-            if (secNanta) secNanta.style.display = 'none';
-            if (secCourt) secCourt.style.display = 'block';
-
-            // 상단 탭 버튼 활성화 스타일 동기화
-            const tabs = document.querySelectorAll('.tab-menu button, .tab-menu div, .tab-btn');
-            tabs.forEach(t => {
-                if (t.innerText && t.innerText.includes('코트')) {
-                    t.classList.add('active');
-                } else {
-                    t.classList.remove('active');
-                }
-            });
-
-            // 코트 화면에 경기 카드 그리기
-            showSimulatedCourtMatch(formattedPlayerInfo);
-        }, 1200);
-
+    if (!savedUser) {
+        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
     }
 
-    // 실제 서버 환경 참여 확인
+    let u;
+    try {
+        u = JSON.parse(savedUser);
+    } catch (e) {
+        alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
+        return;
+    }
+
+    const name = (u.name || u.username || "").trim();
+    const gender = (u.gender || "").trim();
+    const age = (u.age || u.ageGroup || "").trim();
+    const level = (u.level || u.grade || "").trim();
+
+    if (!name) {
+        alert("회원 이름 정보를 찾을 수 없습니다.");
+        return;
+    }
+
+    const parts = [name, gender, age, level].filter(Boolean);
+    const formattedPlayerInfo = parts.join("/");
+
     const confirmed = await confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`);
     if (confirmed) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
@@ -1021,61 +954,21 @@ async function joinGameCell(slotId, idx) {
     }
 }
 
-// 🏸 코트에 가상 매칭 경기 띄워주기 함수 (강제 렌더링)
-function showSimulatedCourtMatch(myInfo) {
-    const courtSection = document.getElementById('section-court');
-    if (!courtSection) return;
-
-    courtSection.innerHTML = `
-        <div style="padding: 10px 4px;">
-            <div style="background: #1e293b; border: 2px solid #2563eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(37,99,235,0.3);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <span style="font-size:15px; font-weight:bold; color:#60a5fa;">🏸 2코트 경기 진행 중 (체험)</span>
-                    <span style="background:#ef4444; color:#fff; font-size:11px; padding:2px 8px; border-radius:4px; font-weight:bold; animation: blink 1.5s infinite;">LIVE</span>
-                </div>
-                <div style="display:flex; justify-content:space-around; align-items:center; background:rgba(0,0,0,0.25); padding:14px 10px; border-radius:8px;">
-                    <div style="text-align:center; flex:1;">
-                        <div style="color:#93c5fd; font-weight:bold; font-size:12px; margin-bottom:4px;">A팀</div>
-                        <div style="font-size:13px; color:#fff;">윤도현 (남/B)</div>
-                        <div style="font-size:13px; color:#fff;">한소희 (여/C)</div>
-                        <div style="font-size:26px; font-weight:bold; color:#60a5fa; margin-top:8px;">12</div>
-                    </div>
-                    <div style="font-size:18px; font-weight:bold; color:#64748b; padding:0 8px;">VS</div>
-                    <div style="text-align:center; flex:1;">
-                        <div style="color:#fca5a5; font-weight:bold; font-size:12px; margin-bottom:4px;">B팀 (나)</div>
-                        <div style="font-size:13px; color:#fff;">장기용 (남/D)</div>
-                        <div style="font-size:13px; color:#38bdf8; font-weight:bold;">${myInfo.split('/')[0]} (나)</div>
-                        <div style="font-size:26px; font-weight:bold; color:#f87171; margin-top:8px;">10</div>
-                    </div>
-                </div>
-                <div style="text-align:center; margin-top:12px; font-size:12px; color:#94a3b8; line-height:1.4;">
-                    🎉 4인 매칭이 완료되어 2코트로 자동 배정되었습니다.<br>
-                    실제 체육관에서는 전광판과 자동 동기화됩니다.
-                </div>
-            </div>
-        </div>
-    `;
-}
-
 async function joinNantaCell(slotId, idx) {
-    // 📶 구장 Wi-Fi 접속 여부 체크 (시뮬레이션 모드가 아닐 때 검사)
-    if (!window.isGymWifiConnected && !isSimulationMode) {
-        if (typeof promptSimulationModal === 'function') {
-            promptSimulationModal();
-        } else {
-            const modal = document.getElementById('custom-alert-modal');
-            const msgEl = document.getElementById('custom-alert-message');
-            const confirmBtn = document.getElementById('custom-alert-ok-btn');
+    // 📶 구장 Wi-Fi 접속 여부 체크 (커스텀 모달 적용)
+    if (!window.isGymWifiConnected) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
 
-            if (modal && msgEl) {
-                msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
-                modal.style.display = 'flex';
+        if (modal && msgEl) {
+            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
+            modal.style.display = 'flex';
 
-                if (confirmBtn) {
-                    confirmBtn.onclick = function() {
-                        modal.style.display = 'none';
-                    };
-                }
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
             }
         }
         return;
@@ -1110,13 +1003,6 @@ async function joinNantaCell(slotId, idx) {
 
     const confirmed = await confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`);
     if (confirmed) {
-        // 🧪 시뮬레이션 모드일 때는 서버로 보내지 않고 로컬에서 가상 처리
-        if (isSimulationMode) {
-            console.log('🧪 시뮬레이션 모드: 가상 난타 대기열 참여 완료');
-            alert(`[체험존] ${formattedPlayerInfo} 님이 난타 대기열에 성공적으로 참여했습니다!`);
-            return;
-        }
-
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
             activeSocket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: formattedPlayerInfo });
@@ -1484,289 +1370,4 @@ function updateWifiRestrictedButtons() {
             el.style.cursor = targetCursor;
         }
     });
-}
-
-// ==========================================
-// 🧪 [시뮬레이션 모드] 가상 봇 10명 데이터 및 컨트롤러
-// ==========================================
-let isSimulationMode = false;
-
-// 1. 가상 봇 10명 프로필 (1코트 4명, 난타 대기 3명, 게임 대기 3명)
-const mockBots = [
-    // 🏸 코트 1 진행 중 (4명)
-    { id: 'bot_1', name: '김민수', gender: '남', grade: 'A', status: 'playing', court: 1 },
-    { id: 'bot_2', name: '이영희', gender: '여', grade: 'B', status: 'playing', court: 1 },
-    { id: 'bot_3', name: '박준호', gender: '남', grade: 'B', status: 'playing', court: 1 },
-    { id: 'bot_4', name: '최수진', gender: '여', grade: 'C', status: 'playing', court: 1 },
-
-    // 🏸 난타 대기열 (3명 대기 중 -> 사용자가 들어오면 4명 완성!)
-    { id: 'bot_5', name: '정우성', gender: '남', grade: 'C', status: 'waiting_rally' },
-    { id: 'bot_6', name: '강민경', gender: '여', grade: 'D', status: 'waiting_rally' },
-    { id: 'bot_7', name: '임시완', gender: '남', grade: 'B', status: 'waiting_rally' },
-
-    // 🏸 다음 게임 대기열 1번방 (3명 대기 중 -> 사용자가 참여하면 4명 완성!)
-    { id: 'bot_8', name: '윤도현', gender: '남', grade: 'B', status: 'waiting_game' },
-    { id: 'bot_9', name: '한소희', gender: '여', grade: 'C', status: 'waiting_game' },
-    { id: 'bot_10', name: '장기용', gender: '남', grade: 'D', status: 'waiting_game' }
-];
-
-// 2. 모달 열기/닫기 및 시뮬레이션 시작 바인딩
-document.addEventListener('DOMContentLoaded', () => {
-    const simModal = document.getElementById('simulation-guide-modal');
-    const startSimBtn = document.getElementById('start-simulation-btn');
-    const closeSimBtn = document.getElementById('close-simulation-btn');
-
-    if (startSimBtn) {
-        startSimBtn.addEventListener('click', () => {
-            if (simModal) simModal.style.display = 'none';
-            startSimulationMode();
-        });
-    }
-
-    if (closeSimBtn) {
-        closeSimBtn.addEventListener('click', () => {
-            if (simModal) simModal.style.display = 'none';
-        });
-    }
-});
-
-// 3. 외부 접속 시 모달 띄우기 함수
-function promptSimulationModal() {
-    const simModal = document.getElementById('simulation-guide-modal');
-    if (simModal) {
-        simModal.style.display = 'flex';
-    }
-}
-
-// 4. 시뮬레이션 실행 로직 (강화 버전)
-function startSimulationMode() {
-    isSimulationMode = true;
-    console.log('🧪 [시뮬레이션 시작] 가상 회원 10명과 함께 가상 환경을 로드합니다.');
-
-    // 1) 상단 안내 배너 띄우기
-    let banner = document.getElementById('simulation-banner');
-    if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'simulation-banner';
-        banner.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%;
-            background-color: #f59e0b; color: #111827;
-            text-align: center; padding: 10px 14px; font-size: 13.5px;
-            font-weight: bold; z-index: 10000; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-            display: flex; justify-content: space-between; align-items: center;
-        `;
-        banner.innerHTML = `
-            <span>🧪 가상 체험존 동작 중 (실제 구장 데이터에 영향 없음)</span>
-            <button id="exit-simulation-btn" style="background:#111827; color:white; border:none; padding:4px 10px; border-radius:6px; font-size:12px; cursor:pointer;">체험 종료</button>
-        `;
-        document.body.appendChild(banner);
-
-        document.getElementById('exit-simulation-btn').addEventListener('click', exitSimulationMode);
-    }
-    banner.style.display = 'flex';
-
-    // 2) 왼쪽 하단 배지 카운터 가상 반영
-    const clubElement = document.getElementById('club-count');
-    const totalElement = document.getElementById('online-count');
-    if (clubElement) clubElement.textContent = '10';
-    if (totalElement) totalElement.textContent = '11';
-
-    // 3) 가상 대기열 카드 강제 주입 (alert 전에 즉시 렌더링)
-    renderMockQueues();
-
-    // 4) 기존 "현재 대기 중인 게임 방이 없습니다" 메시지 강제 숨김
-    const emptyMsg = document.querySelector('.empty-queue-msg');
-    if (emptyMsg) {
-        emptyMsg.style.display = 'none';
-    }
-
-    console.log('✅ 가상 봇 10명 배치 및 대기열 구성 완료!');
-
-    alert('가상 체험존이 활성화되었습니다!\n가상 회원 10명이 대기열 및 코트에 배치됩니다.');
-}
-
-// 5. 시뮬레이션 종료
-function exitSimulationMode() {
-    isSimulationMode = false;
-    const banner = document.getElementById('simulation-banner');
-    if (banner) banner.style.display = 'none';
-
-    // 원래 서버 실제 상태로 복귀
-    location.reload();
-}
-// ==========================================
-// 🎨 [시뮬레이션 모드] 가상 화면 렌더링 엔진 (난타 2인 + 잔여 대기열 유지)
-// ==========================================
-
-function renderMockQueues() {
-    // 🏸 1) 게임 대기열 주입 (#game-slot-list)
-    const gameSlotList = document.getElementById('game-slot-list');
-    if (gameSlotList) {
-        gameSlotList.innerHTML = `
-            <!-- 1번 방: 3명 대기 중 -> 사용자 참여 시 4명 매칭 -->
-            <div class="slot-card sim-slot-game" style="background: #1e293b; border: 1px solid #3b82f6; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
-                    <span style="font-weight: bold; color: #60a5fa; font-size: 14px;">🏸 [체험] 게임 1번방 (3/4명)</span>
-                    <span class="sim-game-status" style="font-size: 12px; color: #94a3b8;">1명 모집 중</span>
-                </div>
-                <div class="game-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
-                    <div style="background: rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #f1f5f9;">윤도현 (남/B)</div>
-                    <div style="background: rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #f1f5f9;">한소희 (여/C)</div>
-                    <div style="background: rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #f1f5f9;">장기용 (남/D)</div>
-                    <button onclick="joinGameCell('sim_game', 3)" style="background: #2563eb; color: #ffffff; border: none; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; transition: 0.2s;">
-                        + 터치하여 참여
-                    </button>
-                </div>
-            </div>
-
-            <!-- 2번 방: 잔여 가상 봇들이 대기 중 (실제 구장 북적거림 유지) -->
-            <div class="slot-card" style="background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; margin-bottom: 12px; opacity: 0.85;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
-                    <span style="font-weight: bold; color: #94a3b8; font-size: 14px;">🏸 [대기] 게임 2번방 (2/4명)</span>
-                    <span style="font-size: 12px; color: #64748b;">대기 순번 2</span>
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
-                    <div style="background: rgba(255,255,255,0.04); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #cbd5e1;">강민경 (여/D)</div>
-                    <div style="background: rgba(255,255,255,0.04); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #cbd5e1;">임시완 (남/B)</div>
-                    <div style="background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #64748b;">빈자리</div>
-                    <div style="background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; font-size: 13px; text-align: center; color: #64748b;">빈자리</div>
-                </div>
-            </div>
-        `;
-    }
-
-    // 🏸 2) 난타 대기열 주입 (#section-nanta 내부, 정원 2명 규칙 적용)
-    const nantaSection = document.getElementById('section-nanta');
-    if (nantaSection) {
-        let nantaSlotList = nantaSection.querySelector('#nanta-slot-list') || nantaSection.querySelector('.nanta-list') || nantaSection;
-        nantaSlotList.innerHTML = `
-            <div class="slot-card sim-slot-nanta" style="background: #1e293b; border: 1px solid #10b981; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
-                    <span style="font-weight: bold; color: #34d399; font-size: 14px;">🏸 [체험] 난타 랠리 1코트 (1/2명)</span>
-                    <span class="sim-nanta-status" style="font-size: 12px; color: #94a3b8;">파트너 1명 대기 중</span>
-                </div>
-                <div class="nanta-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-                    <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 8px; font-size: 13px; text-align: center; color: #f1f5f9;">정우성 (남/C)</div>
-                    <button onclick="joinNantaCell('sim_rally', 1)" style="background: #059669; color: #ffffff; border: none; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; transition: 0.2s;">
-                        + 난타 파트너 참여
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-}
-
-// 🏸 난타 참여 인터랙션 함수 (2인 완성 -> 코트 전환)
-async function joinNantaCell(slotId, idx) {
-    if (!window.isGymWifiConnected && !isSimulationMode) {
-        if (typeof promptSimulationModal === 'function') {
-            promptSimulationModal();
-        }
-        return;
-    }
-
-    const savedUser = localStorage.getItem("currentUser");
-    let formattedPlayerInfo = "체험회원/남/30대/C";
-    if (savedUser) {
-        try {
-            const u = JSON.parse(savedUser);
-            const name = (u.name || u.username || "").trim();
-            const gender = (u.gender || "").trim();
-            const age = (u.age || u.ageGroup || "").trim();
-            const level = (u.level || u.grade || "").trim();
-            if (name) formattedPlayerInfo = [name, gender, age, level].filter(Boolean).join("/");
-        } catch (e) {}
-    }
-
-    if (isSimulationMode) {
-        console.log('🧪 시뮬레이션 모드: 2인 난타 완성 및 코트 전환');
-
-        // 난타 카드의 버튼을 내 이름으로 변경
-        const nantaCard = document.querySelector('.sim-slot-nanta');
-        if (nantaCard) {
-            const joinBtn = nantaCard.querySelector('button');
-            if (joinBtn) {
-                const mySlot = document.createElement('div');
-                mySlot.style.cssText = "background: #059669; color: #fff; padding: 12px; border-radius: 8px; font-size: 13px; text-align: center; font-weight: bold; border: 2px solid #34d399;";
-                mySlot.textContent = formattedPlayerInfo;
-                joinBtn.replaceWith(mySlot);
-            }
-            const statusText = nantaCard.querySelector('.sim-nanta-status');
-            if (statusText) statusText.innerHTML = '<b style="color:#34d399;">난타 매칭 완료! (2/2명)</b>';
-        }
-
-        // 1.2초 후 코트 화면으로 이동 (난타 전용 코트 연출)
-        setTimeout(() => {
-            const secGame = document.getElementById('section-game');
-            const secNanta = document.getElementById('section-nanta');
-            const secCourt = document.getElementById('section-court');
-
-            if (secGame) secGame.style.display = 'none';
-            if (secNanta) secNanta.style.display = 'none';
-            if (secCourt) secCourt.style.display = 'block';
-
-            // 코트 탭 버튼 활성화
-            const tabs = document.querySelectorAll('.tab-menu button, .tab-menu div, .tab-btn');
-            tabs.forEach(t => {
-                if (t.innerText && t.innerText.includes('코트')) t.classList.add('active');
-                else t.classList.remove('active');
-            });
-
-            showSimulatedRallyCourtMatch(formattedPlayerInfo);
-        }, 1200);
-
-        return;
-    }
-
-    // 실제 서버 환경 참여
-    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-    if (activeSocket) {
-        activeSocket.emit('joinPlayer', { type: 'nanta', slotId, index: idx, name: formattedPlayerInfo });
-    }
-}
-
-// 🏸 난타 전용 코트 렌더링 함수 (정우성 vs 나 1대1 랠리)
-function showSimulatedRallyCourtMatch(myInfo) {
-    const courtSection = document.getElementById('section-court');
-    if (!courtSection) return;
-
-    courtSection.innerHTML = `
-        <div style="padding: 10px 4px;">
-            <!-- 난타 코트 현황 -->
-            <div style="background: #1e293b; border: 2px solid #10b981; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(16,185,129,0.2);">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <span style="font-size:15px; font-weight:bold; color:#34d399;">🏸 3코트 난타 랠리 진행 중 (체험)</span>
-                    <span style="background:#059669; color:#fff; font-size:11px; padding:2px 8px; border-radius:4px; font-weight:bold;">난타 코트</span>
-                </div>
-                <div style="display:flex; justify-content:space-around; align-items:center; background:rgba(0,0,0,0.25); padding:16px 10px; border-radius:8px;">
-                    <div style="text-align:center; flex:1;">
-                        <div style="font-size:14px; font-weight:bold; color:#fff;">정우성 (남/C)</div>
-                        <div style="color:#94a3b8; font-size:12px; margin-top:4px;">파트너 A</div>
-                    </div>
-                    <div style="font-size:18px; font-weight:bold; color:#10b981; padding:0 12px;">↔ 랠리 ↔</div>
-                    <div style="text-align:center; flex:1;">
-                        <div style="font-size:14px; font-weight:bold; color:#38bdf8;">${myInfo.split('/')[0]} (나)</div>
-                        <div style="color:#94a3b8; font-size:12px; margin-top:4px;">파트너 B</div>
-                    </div>
-                </div>
-                <div style="text-align:center; margin-top:12px; font-size:12px; color:#94a3b8; line-height:1.4;">
-                    🎾 2인 난타 랠리가 시작되었습니다.<br>
-                    몸 풀기 후 게임 대기열에 등록할 수 있습니다.
-                </div>
-            </div>
-
-            <!-- 다른 1코트 복식 게임 진행 중 (남은 봇 4명 경기 유지) -->
-            <div style="background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; opacity: 0.85;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <span style="font-size:13px; font-weight:bold; color:#94a3b8;">🏸 1코트 복식 경기 진행 중</span>
-                    <span style="font-size:11px; color:#64748b;">16 : 14</span>
-                </div>
-                <div style="font-size:12px; color:#cbd5e1; display:flex; justify-content:space-between;">
-                    <span>김민수 / 이영희</span>
-                    <span style="color:#64748b;">vs</span>
-                    <span>박준호 / 최수진</span>
-                </div>
-            </div>
-        </div>
-    `;
 }
