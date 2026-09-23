@@ -40,17 +40,46 @@ function renderAll() {
 }
 
 function renderNotifications() {
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000; // 24시간 (밀리초)
+    const now = Date.now();
+
+    // 🕒 1. 24시간이 지난 오래된 알림 자동 제거 (필터링)
+    if (Array.isArray(notificationsList)) {
+        notificationsList = notificationsList.filter(n => {
+            // 알림 객체에 timestamp(밀리초) 또는 createdAt이 있는 경우
+            const timeVal = n.timestamp || (n.createdAt ? new Date(n.createdAt).getTime() : null);
+            
+            // 만약 시간 정보가 아예 없다면 n.time(예: '14:30' 등 문자열)을 추정하거나 기본 유지
+            if (!timeVal) return true;
+
+            // 현재 시간과 차이가 24시간 이내인 것만 유지
+            return (now - timeVal) < ONE_DAY_MS;
+        });
+
+        // 💾 2. localStorage에 저장 중인 경우 필터링된 최신 목록으로 업데이트
+        try {
+            localStorage.setItem('notificationsList', JSON.stringify(notificationsList));
+        } catch (e) {}
+    }
+
+    // 🔔 3. 알림 개수 뱃지 업데이트
     const notiCountEl = document.getElementById('noti-count');
-    if (notiCountEl) notiCountEl.innerText = notificationsList.length;
+    if (notiCountEl) {
+        notiCountEl.innerText = notificationsList.length;
+        // 개수가 0개면 뱃지를 숨기거나 흐리게 처리하고 싶다면 스타일 조정 가능
+        notiCountEl.style.display = notificationsList.length > 0 ? 'inline-block' : 'none';
+    }
     
     const container = document.getElementById('noti-list');
     if (!container) return;
     
+    // 📭 4. 빈 목록 안내
     if (notificationsList.length === 0) {
         container.innerHTML = `<div style="text-align:center; color:#6b7280; font-size:12px; padding:20px 0;">새로운 알림이 없습니다.</div>`;
         return;
     }
 
+    // 📋 5. 알림 아이템 렌더링
     container.innerHTML = '';
     notificationsList.forEach(n => {
         const html = `

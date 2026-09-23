@@ -1039,15 +1039,23 @@ function broadcastState() {
 function addNotification(message) {
     const now = new Date();
     const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
     
-    // 💡 24시간 계산을 위한 절대 시간(timestamp)을 함께 저장합니다.
+    // 💡 1. 24시간 지난 오래된 알림 자동 제거
+    if (Array.isArray(notifications)) {
+        notifications = notifications.filter(n => (now.getTime() - (n.timestamp || 0)) < ONE_DAY_MS);
+    } else {
+        notifications = [];
+    }
+
+    // 💡 2. 새 알림 추가 (타임스탬프 포함)
     notifications.unshift({ 
         message, 
         time: timeStr, 
         timestamp: now.getTime() 
     });
     
-    // 최대 30개 제한 유지
+    // 💡 3. 최대 30개 제한 유지
     if (notifications.length > 30) notifications.pop();
 }
 
@@ -1221,6 +1229,16 @@ setInterval(() => {
                         message: '입장 시간 초과로 게임 대기방이 삭제되었습니다.<br>게임 대기를 원하시면 다시 등록해 주세요.'
                     });
 
+                    // 🔔 [개인 알림 발송] 해당 대기방에 있던 팀원들에게만 다이렉트 알림 전송
+                    const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 게임 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
+                    validPlayers.forEach(playerStr => {
+                        // '홍길동/01012345678' 형태인 경우 번호 또는 이름을 식별자로 추출
+                        const parts = playerStr.split('/');
+                        const userIdentifier = (parts[1] || parts[0]).trim();
+                        sendPersonalNotification(userIdentifier, cancelPersonalMsg);
+                    });
+
+                    // 📝 관리자/시스템 로그용 전체 알림 기록 유지
                     addNotification(`🗑️ [게임 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`);
                 }
             }
@@ -1310,6 +1328,15 @@ setInterval(() => {
                         message: '입장 시간 초과로 난타 대기방이 삭제되었습니다.<br>난타 대기를 원하시면 다시 등록해 주세요.'
                     });
 
+                    // 🔔 [개인 알림 발송] 해당 대기방에 있던 팀원들에게만 다이렉트 알림 전송
+                    const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 난타 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
+                    validPlayers.forEach(playerStr => {
+                        const parts = playerStr.split('/');
+                        const userIdentifier = (parts[1] || parts[0]).trim();
+                        sendPersonalNotification(userIdentifier, cancelPersonalMsg);
+                    });
+
+                    // 📝 관리자/시스템 로그용 전체 알림 기록 유지
                     addNotification(`🗑️ [난타 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`);
                 }
             }
@@ -1373,6 +1400,27 @@ if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
 }, 1000);
 
 // ==========================================
+// 🔔 [개인 알림 발송 헬퍼 함수]
+// ==========================================
+function sendPersonalNotification(targetIdentifier, message) {
+    if (!targetIdentifier || !io) return;
+    
+    // 특수문자/공백 제거하여 채널 ID 생성 (예: '010-1234-5678' -> '01012345678')
+    const cleanId = String(targetIdentifier).replace(/[^0-9a-zA-Z가-힣_]/g, '');
+    
+    const notiItem = {
+        id: 'noti_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        message: message,
+        time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        timestamp: Date.now()
+    };
+
+    // 해당 사용자 전용 소켓 룸으로만 다이렉트 전송
+    io.to(`user_${cleanId}`).emit('personalNotification', notiItem);
+    console.log(`🔔 [개인 알림 전송] -> [user_${cleanId}]: ${message}`);
+}
+
+// ==========================================
 // 6. Socket.IO 이벤트 핸들링 (기존 모든 소켓 기능 + 로그인 핸들러 완벽 통합)
 // ==========================================
 io.on('connection', (socket) => {
@@ -1382,6 +1430,16 @@ io.on('connection', (socket) => {
     socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(socket) });
 
     console.log('새 소켓 연결:', socket.id);
+
+    // 🔔 [1단계 연동] 로그인 사용자 개인 채널 조인 처리
+    socket.on('registerUser', (userData) => {
+        if (userData && userData.phone) {
+            const cleanPhone = String(userData.phone).replace(/[^0-9a-zA-Z가-힣_]/g, '');
+            socket.join(`user_${cleanPhone}`);
+            socket.userIdentifier = cleanPhone;
+            console.log(`👤 [소켓 룸 조인] Socket ID(${socket.id})가 user_${cleanPhone} 방에 입장했습니다.`);
+        }
+    });
 
     // 💡 사용자가 세션을 등록할 때 (로그인 완료 시점)
     socket.on('registerUserSession', (username) => {

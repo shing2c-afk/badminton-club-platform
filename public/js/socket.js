@@ -39,11 +39,43 @@ socket.on('wifiStatus', (data) => {
     }
 });
 
+// ==========================================
+// 🔔 [1단계] 로그인 사용자 전용 채널 등록 함수
+// ==========================================
+window.registerUserSocket = function() {
+    if (!socket || !socket.connected) return;
+    
+    const savedUser = localStorage.getItem("currentUser");
+    let userIdentifier = '';
+    let userName = '';
+
+    if (savedUser) {
+        try {
+            const parsed = JSON.parse(savedUser);
+            userIdentifier = (parsed.phone || parsed.username || parsed.id || '').trim();
+            userName = (parsed.name || parsed.username || '').split('/')[0].trim();
+        } catch (e) {
+            userIdentifier = savedUser.split('/')[0].trim();
+            userName = userIdentifier;
+        }
+    }
+
+    if (userIdentifier) {
+        // 서버의 개인 채널로 가입 요청
+        socket.emit('registerUser', {
+            phone: userIdentifier,
+            name: userName
+        });
+        console.log(`🔔 [개인 채널 등록] ${userName}(${userIdentifier}) 개인 알림 룸에 등록 요청`);
+    }
+};
+
 // 💡 서버와 웹소켓 연결 성공
 if (!socket.hasListeners('connect')) {
     socket.on('connect', () => {
         console.log("🟢 서버와 웹소켓 연결 성공 (ID:", socket.id, ")");
         
+        // 1. 기존 세션 등록 유지
         const savedUser = localStorage.getItem("currentUser");
         if (savedUser) {
             try {
@@ -56,8 +88,59 @@ if (!socket.hasListeners('connect')) {
                 console.error("세션 유저 파싱 에러:", e);
             }
         }
+
+        // 2. 🔔 개인 알림 전용 소켓 룸 자동 등록
+        window.registerUserSocket();
     });
 }
+
+// ==========================================
+// 🔔 [1단계] 내게 온 개인 알림 수신 (24시간 필터링)
+// ==========================================
+socket.off('personalNotification').on('personalNotification', (newNoti) => {
+    console.log("📬 개인 알림 도착:", newNoti);
+    
+    if (typeof notificationsList === 'undefined') {
+        window.notificationsList = [];
+    }
+
+    // 1. 새 알림 추가
+    notificationsList.unshift(newNoti);
+
+    // 2. 24시간 지난 알림 자동 정리
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    notificationsList = notificationsList.filter(n => {
+        const timeVal = n.timestamp || (n.createdAt ? new Date(n.createdAt).getTime() : null);
+        if (!timeVal) return true;
+        return (now - timeVal) < ONE_DAY_MS;
+    });
+
+    // 3. 브라우저 저장소 동기화
+    try {
+        localStorage.setItem("notificationsList", JSON.stringify(notificationsList));
+    } catch (e) {}
+
+    // 4. 종모양 UI 및 개수 뱃지 갱신
+    if (typeof renderNotifications === 'function') {
+        renderNotifications();
+    }
+
+    // 5. 토스트 알림 팝업 노출
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast-msg';
+    toast.innerHTML = `🔔 ${newNoti.message}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 4500);
+});
 
 // 📱 스마트폰 토스트 팝업 수신 및 렌더링
 socket.off('toastAlert').on('toastAlert', (message) => {
@@ -86,7 +169,12 @@ socket.off('stateUpdated').on('stateUpdated', (data) => {
     courtsData = data.courtsData || [];
     gameQueue = data.gameQueue || [];
     nantaQueue = data.nantaQueue || [];
-    notificationsList = data.notifications || [];
+    
+    // 전체 공지 알림이 있을 경우만 유지하거나, 기존 목록이 비어있을 때만 로컬 저장소에서 복원
+    if (data.notifications && data.notifications.length > 0) {
+        // 기존 개인 알림 체계와 충돌하지 않도록 처리
+    }
+
     if (typeof renderAll === 'function') {
         renderAll();
     }
@@ -250,7 +338,6 @@ socket.on('updateOnlineCount', (data) => {
         if (clubElement) clubElement.textContent = data.club || 0;
         if (totalElement) totalElement.textContent = data.total || 0;
     } else {
-        // 기존 단순 숫자 데이터 수신 시 예외 처리
         if (totalElement) totalElement.textContent = data || 0;
     }
 });
