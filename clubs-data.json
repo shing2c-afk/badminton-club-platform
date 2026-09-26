@@ -1,0 +1,278 @@
+{
+  "unjeong": {
+    "clubId": "unjeong",
+    "clubName": "운정배드민턴클럽",
+    "config": {
+      "ENTRY_TIMEOUT_SEC": 120,
+      "NANTA_COURT_LIMIT_SEC": 120,
+      "ADMIN_PASSWORD": "1234",
+      "cleaningSchedules": [
+        {
+          "start": "11:14",
+          "end": "11:15"
+        },
+        {
+          "start": "",
+          "end": ""
+        },
+        {
+          "start": "22:00",
+          "end": "22:01"
+        },
+        {
+          "start": "",
+          "end": ""
+        }
+      ],
+      "cleaningStartMsg": "운정클럽 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg": "운정클럽 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "useWifiRestriction": true,
+      "allowedGymIps": [
+        "::1"
+      ],
+      "soundSettings": {
+        "entryTimerNotice": true,
+        "nantaWarning": true,
+        "scheduleNotice": true
+      },
+      "soundEntryNotice": true,
+      "soundNantaWarning": true,
+      "soundScheduleNotice": true,
+      "cleaningStartMsg_1": "운정클럽 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg_1": "운정클럽 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "cleaningStartMsg_2": "오후 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg_2": "오후 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "cleaningStartMsg_3": "야간 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg_3": "야간 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "cleaningStartMsg_4": "구장 운영 마감 및 휴장 시간입니다. 이용해 주셔서 감사합니다.",
+      "cleaningEndMsg_4": "구장 휴장이 해제되었습니다. 즐거운 배드민턴 되세요.",
+      "queueGraceMinutes": 1,
+      "sessionExpireMinutes": 2
+    },
+    "courtsData": [
+      {
+        "id": 1,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 2,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 3,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 4,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 5,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 6,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 7,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 8,
+        "type": "lesson",
+        "note": "오후 레슨 전용 코트"
+      }
+    ]
+  },
+  "daewon": {
+    "clubId": "daewon",
+    "clubName": "대원배드민턴클럽",
+    "config": {
+      "ENTRY_TIMEOUT_SEC": 120,
+      "NANTA_COURT_LIMIT_SEC": 120,
+      "ADMIN_PASSWORD": "1234",
+      "cleaningSchedules": [
+        {
+          "start": "10:19",
+          "end": "10:20"
+        },
+        {
+          "start": "11:20",
+          "end": "11:21"
+        },
+        {
+          "start": "22:00",
+          "end": "22:01"
+        },
+        {
+          "start": "",
+          "end": ""
+        }
+      ],
+      "cleaningStartMsg": "대원클럽 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg": "대원클럽 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "useWifiRestriction": true,
+      "allowedGymIps": [
+        "::1"
+      ],
+      "soundSettings": {
+        "entryTimerNotice": true,
+        "nantaWarning": true,
+        "scheduleNotice": true
+      },
+      "soundEntryNotice": true,
+      "soundNantaWarning": true,
+      "soundScheduleNotice": true,
+      "cleaningStartMsg_1": "대원클럽 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg_1": "대원클럽 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "cleaningStartMsg_2": "오후 대원클럽 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg_2": "오후 대원클럽 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "cleaningStartMsg_3": "야간 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
+      "cleaningEndMsg_3": "야간 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
+      "cleaningStartMsg_4": "구장 운영 마감 및 휴장 시간입니다. 이용해 주셔서 감사합니다.",
+      "cleaningEndMsg_4": "구장 휴장이 해제되었습니다. 즐거운 배드민턴 되세요.",
+      "queueGraceMinutes": 2,
+      "sessionExpireMinutes": 3
+    },
+    "courtsData": [
+      {
+        "id": 1,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 2,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 3,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 4,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 5,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 6,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 7,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 8,
+        "type": "game",
+        "note": ""
+      }
+    ]
+  },
+  "gimpo": {
+    "clubId": "gimpo",
+    "clubName": "김포배드민턴클럽",
+    "config": {
+      "ENTRY_TIMEOUT_SEC": 180,
+      "NANTA_COURT_LIMIT_SEC": 900,
+      "ADMIN_PASSWORD": "1234",
+      "DISCONNECT_GRACE_SEC": 1800,
+      "SESSION_TIMEOUT_SEC": 3600,
+      "useWifiRestriction": false,
+      "allowedGymIps": []
+    },
+    "courtsData": [
+      {
+        "id": 1,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 2,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 3,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 4,
+        "type": "lesson",
+        "note": ""
+      }
+    ]
+  },
+  "paju": {
+    "clubId": "paju",
+    "clubName": "파주배드민턴클럽",
+    "config": {
+      "ENTRY_TIMEOUT_SEC": 180,
+      "NANTA_COURT_LIMIT_SEC": 900,
+      "ADMIN_PASSWORD": "1234",
+      "DISCONNECT_GRACE_SEC": 1800,
+      "SESSION_TIMEOUT_SEC": 3600,
+      "useWifiRestriction": false,
+      "allowedGymIps": []
+    },
+    "courtsData": [
+      {
+        "id": 1,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 2,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 3,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 4,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 5,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 6,
+        "type": "game",
+        "note": ""
+      },
+      {
+        "id": 7,
+        "type": "nanta",
+        "note": ""
+      },
+      {
+        "id": 8,
+        "type": "lesson",
+        "note": ""
+      }
+    ]
+  }
+}

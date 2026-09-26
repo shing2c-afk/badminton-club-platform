@@ -174,7 +174,7 @@
 </div>
 
     <div class="header">
-        <h1>🏸 체육관 실시간 종합 현황판</h1>
+        <h1 id="tv-header-title">체육관 실시간 종합 현황판</h1>
     </div>
 
     <!-- 📢 흘러가는 마퀴 애니메이션이 적용된 통합 공지 영역 -->
@@ -210,16 +210,72 @@
 </style>
 
 <script>
-const socket = io();
+// 🏢 [멀티 테넌트] URL 파라미터에서 TV 전광판 대상 클럽 식별 (기본값: 'unjeong')
+const urlParams = new URLSearchParams(window.location.search);
+const currentClubId = urlParams.get('club') || 'unjeong';
+window.currentClubId = currentClubId;
 
-// 💡 [추가] 페이지 로드 시 서버로부터 최초 설정값을 받아오기 위한 함수
+// 🏢 클럽별 한글 명칭 매핑
+const clubNames = {
+    'unjeong': '운정배드민턴클럽',
+    'daewon': '대원배드민턴클럽'
+};
+
+// 🏷️ [추가] 상단 타이틀 및 헤더 클럽명 자동 갱신
+function updateTvHeader() {
+    // 🏢 1. 브라우저 캐시에서 이전에 저장된 한글 이름 즉시 조회
+    const cachedName = localStorage.getItem(`tv_club_name_${currentClubId}`);
+    const clubDisplayName = window.currentClubName || 
+                            cachedName || 
+                            (typeof clubNames !== 'undefined' && clubNames[currentClubId]) || 
+                            '';
+
+    // 🏢 2. 서버에서 새 한글 이름을 받았다면 브라우저 캐시에 즉시 영구 보관
+    if (window.currentClubName) {
+        localStorage.setItem(`tv_club_name_${currentClubId}`, window.currentClubName);
+    }
+
+    // 🏢 3. 한글 이름이 아직 없으면 영문 임시값을 띄우지 않고 깔끔하게 기본 타이틀 유지
+    if (!clubDisplayName) {
+        document.title = '코트 현황판';
+        return;
+    }
+
+    // 브라우저 탭 타이틀 변경
+    document.title = `${clubDisplayName} - 코트 현황판`;
+
+    // 상단 헤더 엘리먼트 텍스트 변경
+    const headerTitleEl = document.getElementById('tv-header-title') || 
+                          document.getElementById('headerTitle') || 
+                          document.querySelector('.header-title') || 
+                          document.querySelector('header h1');
+    if (headerTitleEl) {
+        headerTitleEl.textContent = ` ${clubDisplayName} 코트 현황`;
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateTvHeader);
+} else {
+    updateTvHeader();
+}
+
+// 💡 소켓 접속 시 해당 클럽 룸으로 참여하도록 clubId 쿼리 전달
+const socket = io({
+    query: {
+        club: currentClubId
+    }
+});
+
+// 💡 [추가] 페이지 로드 시 서버로부터 해당 클럽의 최초 설정값을 받아오기 위한 함수
 async function loadInitialConfig() {
     try {
-        const response = await fetch('/api/config');
+        // 해당 클럽 전용 config API 호출
+        const response = await fetch(`/api/config?club=${encodeURIComponent(currentClubId)}`);
         if (response.ok) {
             const data = await response.json();
             window.currentConfig = data;
-            console.log('[TV Config] 최초 설정값 로드 완료:', window.currentConfig);
+            console.log(`[TV Config - ${currentClubId}] 최초 설정값 로드 완료:`, window.currentConfig);
         }
     } catch (e) {
         console.log('[TV Config] 최초 설정값 로드 실패, 기본값(전부 허용) 적용');
@@ -246,106 +302,142 @@ if (typeof window.pendingAnnouncements === 'undefined') {
     window.pendingAnnouncements = new Map();
 }
 
-    let tvPopupQueue = [];
-    let isTvPopupShowing = false;
+let tvPopupQueue = [];
+let isTvPopupShowing = false;
 
-    async function loadTvNotice() {
-        try {
-            const response = await fetch('/api/notices');
-            const notices = await response.json();
+async function loadTvNotice() {
+    try {
+        // 🏢 해당 클럽 전용 공지사항 요청 파라미터 전달
+        const response = await fetch(`/api/notices?club=${encodeURIComponent(currentClubId)}`);
+        const notices = await response.json();
 
-            const noticeElement = document.getElementById('tv-notice-text');
-            if (noticeElement && notices && notices.length > 0) {
-                noticeElement.textContent = `📢 [공지] ${notices[0].title}`;
-            } else if (noticeElement) {
-                noticeElement.textContent = '📢 등록된 공지사항이 없습니다.';
-            }
-        } catch (error) {
-            console.error('❌ TV 공지 로드 실패:', error);
+        const noticeElement = document.getElementById('tv-notice-text');
+        if (noticeElement && notices && notices.length > 0) {
+            noticeElement.textContent = `📢 [공지] ${notices[0].title}`;
+        } else if (noticeElement) {
+            noticeElement.textContent = '📢 등록된 공지사항이 없습니다.';
         }
+    } catch (error) {
+        console.error('❌ TV 공지 로드 실패:', error);
     }
+}
 
-    loadTvNotice();
+loadTvNotice();
 
-    if (typeof socket !== 'undefined') {
-        socket.on('noticeUpdated', (newNotice) => {
-            const noticeElement = document.getElementById('tv-notice-text');
-            if (noticeElement && newNotice) {
-                noticeElement.textContent = `📢 [공지] ${newNotice.title}`;
-            }
-        });
-    }
+if (typeof socket !== 'undefined') {
+    socket.on('noticeUpdated', (newNotice) => {
+        const noticeElement = document.getElementById('tv-notice-text');
+        if (noticeElement && newNotice) {
+            noticeElement.textContent = `📢 [공지] ${newNotice.title}`;
+        }
+    });
+}
 
-    function cancelVoiceAnnouncement(announcementId) {
-        if (!announcementId) return;
+function cancelVoiceAnnouncement(announcementId) {
+    if (!announcementId) return;
 
-        const possibleKeys = [
-            announcementId,
-            String(announcementId),
-            Number(announcementId)
-        ];
+    const possibleKeys = [
+        announcementId,
+        String(announcementId),
+        Number(announcementId)
+    ];
 
-        possibleKeys.forEach(key => {
-            if (window.pendingAnnouncements.has(key)) {
-                clearTimeout(window.pendingAnnouncements.get(key));
-                window.pendingAnnouncements.delete(key);
-                console.log(`[방송 취소 완료] 코트 ID (${key})의 30초 대기 방송이 성공적으로 취소되었습니다.`);
-            }
-        });
-    }
+    possibleKeys.forEach(key => {
+        if (window.pendingAnnouncements.has(key)) {
+            clearTimeout(window.pendingAnnouncements.get(key));
+            window.pendingAnnouncements.delete(key);
+            console.log(`[방송 취소 완료] 코트 ID (${key})의 30초 대기 방송이 성공적으로 취소되었습니다.`);
+        }
+    });
+}
 
-    let popupTimer = null;
-    function processTvPopupQueue() {
-        if (isTvPopupShowing || tvPopupQueue.length === 0) return;
+let popupTimer = null;
+function processTvPopupQueue() {
+    if (isTvPopupShowing || tvPopupQueue.length === 0) return;
 
-        isTvPopupShowing = true;
-        const popupData = tvPopupQueue.shift();
+    isTvPopupShowing = true;
+    const popupData = tvPopupQueue.shift();
 
-        const modal = document.getElementById('popupModal');
-        const title = document.getElementById('popupTitle');
-        const msg = document.getElementById('popupMessage');
+    const modal = document.getElementById('popupModal');
+    const title = document.getElementById('popupTitle');
+    const msg = document.getElementById('popupMessage');
 
-        if (modal && title && msg) {
-            if (popupData.matchType === '난타임박') {
-                title.innerText = `[난타 이용 시간 임박]`;
-                msg.innerHTML = popupData.message;
-            } else if (popupData.matchType.includes('입장요청')) {
-                title.innerText = `[${popupData.matchType}]`;
-                msg.innerHTML = popupData.message;
-            } else {
-                title.innerText = `[${popupData.matchType} 대기방 삭제]`;
-                msg.innerHTML = `<strong>${popupData.names.join(', ')}</strong> 팀<br>${popupData.message}`;
-            }
-            
-            modal.style.display = 'flex';
-
-            if (popupTimer) clearTimeout(popupTimer);
-            popupTimer = setTimeout(() => {
-                modal.style.display = 'none';
-                isTvPopupShowing = false;
-                setTimeout(processTvPopupQueue, 500); 
-            }, 10000); 
+    if (modal && title && msg) {
+        if (popupData.matchType === '난타임박') {
+            title.innerText = `[난타 이용 시간 임박]`;
+            msg.innerHTML = popupData.message;
+        } else if (popupData.matchType.includes('입장요청')) {
+            title.innerText = `[${popupData.matchType}]`;
+            msg.innerHTML = popupData.message;
         } else {
-            isTvPopupShowing = false;
+            title.innerText = `[${popupData.matchType} 대기방 삭제]`;
+            msg.innerHTML = `<strong>${popupData.names.join(', ')}</strong> 팀<br>${popupData.message}`;
         }
+        
+        modal.style.display = 'flex';
+
+        if (popupTimer) clearTimeout(popupTimer);
+        popupTimer = setTimeout(() => {
+            modal.style.display = 'none';
+            isTvPopupShowing = false;
+            setTimeout(processTvPopupQueue, 500); 
+        }, 10000); 
+    } else {
+        isTvPopupShowing = false;
+    }
+}
+
+function enqueueTvPopup(popupObj) {
+    tvPopupQueue.push(popupObj);
+    processTvPopupQueue();
+}
+
+// ==========================================
+// 📺 TV 화면 소켓 등록 및 실시간 이벤트 제어 (중복 선언 방어형)
+// ==========================================
+
+// 💡 1. TV 등록 및 룸(Room) 동시 접속 통합 함수
+function registerCurrentTV() {
+    if (!socket || !socket.connected) return;
+
+    // 기존 tv.html 상단에 이미 정의된 currentClubId를 그대로 안전하게 재사용
+    const targetClub = (typeof currentClubId !== 'undefined' && currentClubId) || 'unjeong';
+
+    console.log(`[TV Socket] TV 등록 및 룸 조인 시도 - 구장: ${targetClub}`);
+
+    // A. 기존 TV 식별 이벤트 전송
+    socket.emit('registerTV', { clubId: targetClub });
+
+    // B. 설정 동기화 룸 및 TV 전용 음성 안내 룸 동시 접속
+    socket.emit('joinRoom', `club_${targetClub}`);
+    socket.emit('joinRoom', `tv-room-${targetClub}`);
+}
+
+// 💡 2. 최초 로드 시 연결 상태 확인 및 재연결 이벤트 바인딩
+if (socket.connected) {
+    registerCurrentTV();
+}
+
+socket.on('connect', () => {
+    registerCurrentTV();
+});
+
+// 💡 3. TV 팝업 알림 수신 (타 구장 데이터 유입 차단 가드)
+socket.on('tvPopupAlert', (data) => {
+    if (!data) return;
+
+    const targetClub = (typeof currentClubId !== 'undefined' && currentClubId) || 'unjeong';
+    if (data.clubId && data.clubId !== targetClub) {
+        console.warn(`[TV Popup Ignored] 타 구장(${data.clubId}) 팝업 수신 차단`);
+        return;
     }
 
-    function enqueueTvPopup(popupObj) {
-        tvPopupQueue.push(popupObj);
-        processTvPopupQueue();
-    }
-
-    socket.on('connect', () => {
-        socket.emit('registerTV');
+    enqueueTvPopup({
+        matchType: data.matchType,
+        names: data.names,
+        message: data.message
     });
-
-    socket.on('tvPopupAlert', (data) => {
-        enqueueTvPopup({
-            matchType: data.matchType,
-            names: data.names,
-            message: data.message
-        });
-    });
+});
 
     socket.off('entryPopupAlert').on('entryPopupAlert', (data) => {
         const targetNames = (data.targetPlayers && Array.isArray(data.targetPlayers)) ? data.targetPlayers.join(', ') : '';
@@ -472,15 +564,43 @@ if (typeof window.pendingAnnouncements === 'undefined') {
     // 1. 서버 상태 업데이트 및 설정 동기화 수신
     socket.on('stateUpdated', (state) => {
         try {
+            // previousCourtStates 미선언으로 인한 중단 방지 안전장치
+            if (typeof previousCourtStates === 'undefined') {
+                window.previousCourtStates = {};
+            }
+
             if (state && state.config) {
                 window.currentConfig = state.config;
             } else if (state && state.courtsData && state.courtsData.config) {
                 window.currentConfig = state.courtsData.config;
             }
 
+            // 🏢 [클럽명 수신] 서버에서 전달된 한글 클럽명 저장 및 헤더 갱신
+            if (state && (state.clubName || state.name)) {
+                window.currentClubName = state.clubName || state.name;
+                if (typeof updateTvHeader === 'function') {
+                    updateTvHeader();
+                }
+            }
+
             const courts = state.courtsData || state.courts || [];
             const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
             const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
+
+            // 💡 [코트운영설정 자동 로드] 
+            // 1초 타이머로 인한 입력창 리셋을 방지하기 위해, 최초 1회만 서버 코트 데이터를 localCourts에 담아 화면에 표시합니다.
+            if (!window.isCourtConfigLoaded && Array.isArray(courts) && courts.length > 0) {
+                if (typeof localCourts !== 'undefined') {
+                    localCourts = courts.map(c => ({
+                        type: c.type || 'game',
+                        note: (c.type === 'lesson' ? (c.players || c.note || '') : (c.note || ''))
+                    }));
+                    if (typeof renderCourtConfig === 'function') {
+                        renderCourtConfig();
+                    }
+                }
+                window.isCourtConfigLoaded = true;
+            }
 
             if (Array.isArray(courts)) {
                 courts.forEach((court, idx) => {
@@ -510,8 +630,8 @@ if (typeof window.pendingAnnouncements === 'undefined') {
                 });
             }
 
-            renderTVCourts(courts);
-            renderTVQueues(gameQueue, nantaQueue);
+            if (typeof renderTVCourts === 'function') renderTVCourts(courts);
+            if (typeof renderTVQueues === 'function') renderTVQueues(gameQueue, nantaQueue);
         } catch (err) {
             console.error("stateUpdated 처리 중 오류 발생:", err);
         }

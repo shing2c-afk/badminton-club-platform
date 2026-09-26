@@ -148,9 +148,26 @@
 </div>
 
 <script>
+    // 💡 1. URL 쿼리스트링에서 현재 club 식별자 추출 (기본값: unjeong)
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentClubId = urlParams.get('club') || urlParams.get('clubId') || 'unjeong';
+
     let allMembers = []; // 전체 회원 데이터 캐싱
 
     document.addEventListener('DOMContentLoaded', () => {
+        // 💡 2. 관리자 메인으로 돌아가는 버튼 링크에 club 파라미터 유지
+        const backBtn = document.querySelector('.back-btn');
+        if (backBtn) {
+            backBtn.href = `/admin.html?club=${encodeURIComponent(currentClubId)}`;
+        }
+
+        // 💡 3. 상단 헤더에 현재 관리 중인 클럽 표시
+        const headerTitle = document.querySelector('h2 span');
+        if (headerTitle) {
+            const clubName = currentClubId === 'daewon' ? '대원클럽' : '운정클럽';
+            headerTitle.innerText = `👥 [${clubName}] 회원 통합 관리 모듈`;
+        }
+
         loadMemberList();
 
         // 실시간 검색 기능 (이름 또는 전화번호 매칭)
@@ -163,12 +180,12 @@
             renderTable(filtered);
         });
 
-        // 엑셀 다운로드 버튼 이벤트
+        // 💡 4. 엑셀 다운로드 시 해당 클럽 데이터만 요청
         document.getElementById('downloadCsvBtn').addEventListener('click', () => {
-            window.location.href = '/api/admin/download-excel';
+            window.location.href = `/api/admin/download-excel?club=${encodeURIComponent(currentClubId)}`;
         });
 
-        // 일괄 업로드 버튼 이벤트
+        // 💡 5. 일괄 업로드 시 해당 클럽 식별자(clubId) 동봉 전송
         document.getElementById('uploadExcelBtn').addEventListener('click', async () => {
             const fileInput = document.getElementById('excelFile');
             if (!fileInput.files[0]) {
@@ -178,6 +195,7 @@
 
             const formData = new FormData();
             formData.append('excelFile', fileInput.files[0]);
+            formData.append('clubId', currentClubId); // 💡 구장 ID 추가
 
             try {
                 const res = await fetch('/api/admin/upload-excel', {
@@ -197,10 +215,10 @@
         });
     });
 
-    // 회원 목록 불러오기
+    // 💡 6. 해당 클럽의 정회원 목록만 불러오기
     async function loadMemberList() {
         try {
-            const res = await fetch('/api/members');
+            const res = await fetch(`/api/members?club=${encodeURIComponent(currentClubId)}`);
             allMembers = await res.json();
             renderTable(allMembers);
         } catch (error) {
@@ -260,13 +278,13 @@
             const res = await fetch('/api/member/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, phone, grade, address })
+                body: JSON.stringify({ id, phone, grade, address, clubId: currentClubId })
             });
             const result = await res.json();
 
             if (result.success) {
                 alert(result.message);
-                loadMemberList(); // 최신 목록 새로고침
+                loadMemberList();
             } else {
                 alert(result.message || '수정에 실패했습니다.');
             }
@@ -276,7 +294,7 @@
         }
     }
 
-    // 회원 탈퇴 처리
+    // 💡 7. 회원 탈퇴 처리 시 현재 clubId 함께 전송
     async function withdrawMember(phone, name) {
         const confirmed = await confirm(`정말로 '${name}' 회원을 탈퇴 처리하시겠습니까?`);
         if (!confirmed) return;
@@ -285,7 +303,7 @@
             const res = await fetch('/api/member/withdraw', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone })
+                body: JSON.stringify({ phone, name, clubId: currentClubId }) // 💡 clubId 동봉
             });
             const result = await res.json();
 

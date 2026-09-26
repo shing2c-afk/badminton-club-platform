@@ -23,54 +23,85 @@ if (!fs.existsSync(DATA_DIR)) {
 
 // 영구 디스크 경로가 반영된 파일 경로 정의
 const dbPath = path.join(DATA_DIR, 'badminton.db');
-const CONFIG_FILE_PATH = path.join(DATA_DIR, 'config.json');
 
 // 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
 const activeUserSockets = new Map();
 
 // 유저별 연결 끊김 유예 타이머를 저장할 객체
 const disconnectTimers = {};
+const disconnectUserClubs = {}; // 끊긴 시점의 구장을 기억하는 메모장
+const disconnectRawUsers = {};  // 방 폭파용 회원 정보를 기억하는 메모장
+const sessionTimers = {}; // 👈 이 줄 추가 (60분 완전 만료 관리용)
 const userSockets = {};
 const expiredUsers = {}; // 유예 시간 초과로 만료된 유저를 기록할 객체
 const UserDictionary = require('./userDictionary'); // 파일 경로에 맞게 설정
 // 현재 로그인된 유저들의 소켓 ID 또는 유저 정보를 담는 Set
 const onlineUsers = new Set();
 
-// 서버 전용 음성 안내 큐 및 상태 관리 변수
-let serverAudioQueue = [];
-let isVoicePlayingOnServer = false;
-let isCleaningTime = false;
 // ==========================================
-// 🔊 서버 음성 큐 처리 프로세서 (약 10초 간격 순차 발송)
+// 🔊 [구장별 격리] 서버 음성 안내 큐 및 재생 상태 관리
+// ==========================================
+const clubAudioQueues = {
+    'unjeong': [],
+    'daewon': []
+};
+
+const clubVoicePlayingState = {
+    'unjeong': false,
+    'daewon': false
+};
+
+// 💡 안전한 큐 삽입 헬퍼 함수 (외부 이벤트에서 호출용)
+function pushVoiceAnnouncement(clubId, announcement) {
+    const targetClub = clubId || 'unjeong';
+    if (!clubAudioQueues[targetClub]) {
+        clubAudioQueues[targetClub] = [];
+        clubVoicePlayingState[targetClub] = false;
+    }
+    announcement.clubId = targetClub;
+    clubAudioQueues[targetClub].push(announcement);
+    console.log(`📢 [${targetClub} TV 음성 큐 등록]`, announcement.message || announcement);
+}
+
+// ==========================================
+// 🔊 구장별 독립 음성 큐 처리 프로세서 (각 구장별 10초 간격 독립 발송)
 // ==========================================
 setInterval(() => {
-    // 이미 재생 중이거나 큐에 보낼 데이터가 없으면 대기
-    if (isVoicePlayingOnServer || serverAudioQueue.length === 0) {
-        return;
-    }
+    // 등록된 모든 구장 키를 순회하며 독립적으로 처리
+    const activeClubIds = Object.keys(clubs);
 
-    // 큐에서 가장 먼저 들어온 안내 건을 꺼냄
-    const nextAnnouncement = serverAudioQueue.shift();
-    
-    // 재생 상태 플래그 켜기
-    isVoicePlayingOnServer = true;
+    activeClubIds.forEach(clubId => {
+        // 해당 구장의 큐가 없으면 초기화
+        if (!clubAudioQueues[clubId]) {
+            clubAudioQueues[clubId] = [];
+            clubVoicePlayingState[clubId] = false;
+        }
 
-    // TV로 소켓 신호 발송
-    io.to('tv-room').emit('requestVoiceAnnouncement', nextAnnouncement);
+        // 해당 구장이 이미 방송 중이거나 대기 중인 안내가 없으면 통과
+        if (clubVoicePlayingState[clubId] || clubAudioQueues[clubId].length === 0) {
+            return;
+        }
 
-    // 안내 음성 재생 소요 시간(약 10초) 동안 다음 발송을 차단
-    setTimeout(() => {
-        isVoicePlayingOnServer = false;
-    }, 10000); // 10초 (10000ms)
+        // 해당 구장의 큐에서 가장 앞의 안내를 꺼냄
+        const nextAnnouncement = clubAudioQueues[clubId].shift();
+        clubVoicePlayingState[clubId] = true;
 
-}, 1000); // 1초마다 큐 상태를 체크
+        // 💡 해당 구장 전용 TV 룸으로만 신호 발송 (타 구장 방송 간섭 차단)
+        const targetRoom = `tv-room-${clubId}`;
+        io.to(targetRoom).emit('requestVoiceAnnouncement', nextAnnouncement);
+        console.log(`🎙️ [${targetRoom} 전송] TV 음성 송출 시작`);
+
+        // 해당 구장의 음성 재생 시간(10초) 동안만 해당 구장의 다음 방송을 차단
+        setTimeout(() => {
+            clubVoicePlayingState[clubId] = false;
+        }, 10000);
+    });
+}, 1000);
 
 // ==========================================
-// 💾 환경 설정 영구 저장/불러오기 (config.json)
+// 1. 기본 설정 템플릿 및 전역 안전 변수선언
 // ==========================================
-// 💡 상단에서 정의한 영구 디스크 경로(DATA_DIR)를 사용하여 config.json 경로 설정
-// 1. config 객체를 먼저 기본값과 함께 선언
-let config = {
+const defaultConfig = {
     ENTRY_TIMEOUT_SEC: 180,
     NANTA_COURT_LIMIT_SEC: 900,
     ADMIN_PASSWORD: "1234",
@@ -81,64 +112,202 @@ let config = {
     allowedGymIps: []
 };
 
-// 2. 파일에서 불러와 config 객체에 덮어쓰기
-function loadConfigFromFile() {
-    try {
-        if (fs.existsSync(CONFIG_FILE_PATH)) {
-            const rawData = fs.readFileSync(CONFIG_FILE_PATH, 'utf-8');
-            const savedData = JSON.parse(rawData);
-            Object.assign(config, savedData);
-            console.log('✅ [설정 로드] config.json 파일에서 설정을 성공적으로 불러왔습니다.');
-        }
-    } catch (err) {
-        console.error('⚠️ [설정 로드 실패]:', err);
+// 레거시 호환용 전역 config
+let config = { ...defaultConfig };
+
+// ==========================================
+// 2. 🏸 모든 클럽 데이터를 보관하는 중앙 맵 (안전한 초기화 구조)
+// ==========================================
+const clubs = {
+    'unjeong': {
+        clubId: 'unjeong',
+        clubName: '운정배드민턴클럽',
+        config: { ...defaultConfig },
+        courtsData: [], // 💡 선언 전 참조 에러 방지를 위해 빈 배열로 초기화
+        gameQueue: [],
+        nantaQueue: [],
+        notifications: [],
+        slotIdCounter: 1
+    },
+    'daewon': {
+        clubId: 'daewon',
+        clubName: '대원배드민턴클럽',
+        config: { ...defaultConfig },
+        courtsData: [], // 💡 빈 배열로 초기화
+        gameQueue: [],
+        nantaQueue: [],
+        notifications: [],
+        slotIdCounter: 1000
     }
+};
+
+// ==========================================
+// 💾 [영구 저장] 클럽 설정 및 코트 구성 파일 입출력 로직
+// ==========================================
+const CLUBS_DATA_FILE = path.join(__dirname, 'clubs-data.json');
+
+// 1. 파일에서 설정 불러오기
+function loadClubsData() {
+    try {
+        if (!fs.existsSync(CLUBS_DATA_FILE)) {
+            console.log('ℹ️ 저장된 clubs-data.json 파일이 없습니다. 기본값으로 새로 생성합니다.');
+            saveClubsData();
+            return;
+        }
+
+        const rawData = fs.readFileSync(CLUBS_DATA_FILE, 'utf-8');
+        const savedData = JSON.parse(rawData);
+
+        Object.keys(savedData).forEach(cId => {
+            if (!clubs[cId]) {
+                clubs[cId] = {
+                    clubId: cId,
+                    clubName: savedData[cId].clubName || (cId === 'unjeong' ? '운정배드민턴클럽' : (cId === 'daewon' ? '대원배드민턴클럽' : `${cId.toUpperCase()} 배드민턴클럽`)),
+                    gameQueue: [],
+                    nantaQueue: [],
+                    notifications: [],
+                    slotIdCounter: 1
+                };
+            }
+
+            // 환경설정 복원
+            if (savedData[cId].config) {
+                clubs[cId].config = savedData[cId].config;
+            }
+
+            // 코트 구성 복원 (실시간 경기 데이터는 제외하고 코트 틀만 안전하게 생성)
+            if (Array.isArray(savedData[cId].courtsData)) {
+                clubs[cId].courtsData = savedData[cId].courtsData.map((c, idx) => {
+                    const id = c.id || (idx + 1);
+                    const type = c.type || 'game';
+                    const note = c.note || '';
+
+                    if (type === 'nanta') {
+                        return {
+                            id, type: 'nanta', nextType: 'nanta', note,
+                            sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+                            sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 }
+                        };
+                    } else if (type === 'lesson') {
+                        return {
+                            id, type: 'lesson', nextType: 'lesson', isEmpty: false,
+                            players: note || '레슨 코트', note
+                        };
+                    } else {
+                        return {
+                            id, type: 'game', nextType: 'game', isEmpty: true,
+                            players: '', note
+                        };
+                    }
+                });
+            }
+        });
+
+        console.log('✅ [clubs-data.json] 클럽별 영구 설정 로드 완료!');
+    } catch (err) {
+        console.error('❌ 클럽 데이터 로드 중 오류 발생:', err);
+    }
+}
+
+// 2. 파일에 설정 저장하기
+function saveClubsData() {
+    try {
+        const dataToSave = {};
+
+        Object.keys(clubs).forEach(cId => {
+            const club = clubs[cId];
+           dataToSave[cId] = {
+                clubId: club.clubId || cId,
+                clubName: club.clubName || (cId === 'unjeong' ? '운정배드민턴클럽' : (cId === 'daewon' ? '대원배드민턴클럽' : `${cId.toUpperCase()} 배드민턴클럽`)),
+                config: club.config,
+                courtsData: (club.courtsData || []).map(c => ({
+                    id: c.id,
+                    type: c.type || 'game',
+                    note: c.note || ''
+                }))
+            };
+        });
+
+        fs.writeFileSync(CLUBS_DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf-8');
+        
+        // 💡 [진단 로그] 실제 저장된 절대 경로와 구장별 설정 요약 출력
+        const absolutePath = path.resolve(CLUBS_DATA_FILE);
+        console.log(`💾 [저장 완료] 파일 절대경로: ${absolutePath}`);
+
+        // 운정클럽 핵심 설정 1줄 요약
+        const uCfg = (dataToSave['unjeong'] && dataToSave['unjeong'].config) || {};
+        console.log(`📝 [unjeong 요약] 입장:${uCfg.ENTRY_TIMEOUT_SEC ?? '-'}초 | 난타:${uCfg.NANTA_COURT_LIMIT_SEC ?? '-'}초 | 음성:[입장:${uCfg.soundEntryNotice !== false ? 'ON' : 'OFF'}, 난타:${uCfg.soundNantaWarning !== false ? 'ON' : 'OFF'}, 청소:${uCfg.soundScheduleNotice !== false ? 'ON' : 'OFF'}]`);
+
+        // 대원클럽 핵심 설정 1줄 요약 (데이터가 존재할 때만 자동 출력)
+        if (dataToSave['daewon'] && dataToSave['daewon'].config) {
+            const dCfg = dataToSave['daewon'].config;
+            console.log(`📝 [daewon 요약] 입장:${dCfg.ENTRY_TIMEOUT_SEC ?? '-'}초 | 난타:${dCfg.NANTA_COURT_LIMIT_SEC ?? '-'}초 | 음성:[입장:${dCfg.soundEntryNotice !== false ? 'ON' : 'OFF'}, 난타:${dCfg.soundNantaWarning !== false ? 'ON' : 'OFF'}, 청소:${dCfg.soundScheduleNotice !== false ? 'ON' : 'OFF'}]`);
+        }
+
+    } catch (err) {
+        console.error('❌ 클럽 데이터 저장 중 오류 발생:', err);
+    }
+}
+
+// 서버 시작 시 최초 1회 즉시 로드 실행
+loadClubsData();
+
+// ==========================================
+// 3. 클럽별 설정 파일 로드 (clubs-data.json 통합으로 인해 무력화)
+// ==========================================
+function loadConfigFromFile() {
+    // 💡 clubs-data.json에서 모든 설정을 단독 관리하므로, 옛날 config.json 로딩을 차단합니다.
+    return;
 }
 
 function saveConfigToFile() {
     try {
-        fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2), 'utf-8');
-        console.log('💾 [설정 저장] config.json 파일에 영구 기록되었습니다.');
-
-        // 🎛️ [추가] 설정이 변경·저장될 때 TV 등 모든 클라이언트에 실시간으로 동기화 신호 전송
-        if (typeof io !== 'undefined') {
-            io.emit('syncConfig', config);
-            console.log('📡 [실시간 동기화] 모든 클라이언트에 syncConfig 전송 완료');
+        // 💾 clubs-data.json 파일에 모든 클럽 설정 영구 저장
+        if (typeof saveClubsData === 'function') {
+            saveClubsData();
+            console.log('💾 [설정 저장] clubs-data.json 파일에 클럽별 설정이 영구 기록되었습니다.');
         }
 
+        const clubIds = Object.keys(clubs);
+        if (typeof io !== 'undefined') {
+            clubIds.forEach(cId => {
+                if (clubs[cId] && clubs[cId].config) {
+                    io.to(`club_${cId}`).emit('syncConfig', clubs[cId].config);
+                }
+            });
+            console.log('📡 [실시간 동기화] 각 클럽별 클라이언트에 syncConfig 전송 완료');
+        }
     } catch (err) {
         console.error('❌ [설정 저장 실패]:', err);
     }
 }
 
 // ==========================================
-// 🌐 접속자 실제 공인 IP 추출 및 구장 Wi-Fi 판별
+// 4. 구장 Wi-Fi 판별 및 getClub 헬퍼 함수
 // ==========================================
 function getClientIp(socket) {
     const forwarded = socket.handshake.headers['x-forwarded-for'];
     if (forwarded) {
-        // 프록시 환경에서는 여러 IP가 쉼표로 연결될 수 있으므로 첫 번째 IP 추출
         return forwarded.split(',')[0].trim();
     }
     return socket.handshake.address;
 }
 
-// 구장 Wi-Fi 접속 여부 확인 (config에 등록된 IP와 일치하는지 비교)
-function isGymWifiUser(socket) {
-    // 🎛️ [추가] 관리자가 Wi-Fi 제한 기능을 껐다면(false) 누구나 통과
-    if (config.useWifiRestriction === false) {
+function isGymWifiUser(socket, clubId) {
+    // 💡 호출 시 넘겨준 clubId -> 소켓에 등록된 socket.clubId -> 기본값 'unjeong' 순서로 확인
+    const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
+    const club = (typeof clubs !== 'undefined' && clubs[targetClubId]) ? clubs[targetClubId] : null;
+    const targetConfig = (club && club.config) ? club.config : (typeof config !== 'undefined' ? config : {});
+
+    if (targetConfig.useWifiRestriction === false) {
         return true;
     }
-    // 아직 구장 IP가 설정되지 않았거나 빈 배열이면 테스트를 위해 모두 허용
-    if (!config.allowedGymIps || config.allowedGymIps.length === 0) {
+    if (!targetConfig.allowedGymIps || targetConfig.allowedGymIps.length === 0) {
         return true; 
     }
-    const clientIp = getClientIp(socket);
-    return config.allowedGymIps.includes(clientIp);
+    const clientIp = typeof getClientIp === 'function' ? getClientIp(socket) : '';
+    return targetConfig.allowedGymIps.includes(clientIp);
 }
-
-// 서버 시작 시 파일에서 기존 설정 로드
-loadConfigFromFile();
 
 // ==========================
 // 2. 서버 및 미들웨어 초기화
@@ -149,7 +318,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const server = http.createServer(app);
 
-// 💡 [수정완료] 실서버(Render) WebSocket 400 에러 방지를 위한 transports 및 cors 설정 추가
+// 💡 실서버(Render) WebSocket 400 에러 방지를 위한 transports 및 cors 설정 추가
 const io = new Server(server, {
     cors: {
         origin: "*",
@@ -174,36 +343,43 @@ function calculateAgeGroup(birthDateStr) {
 // 정회원 가입 및 관리자 승인 관련 API
 // ==========================================
 
-// 1. 정회원 가입 신청 접수 API
-app.post('/api/register', async (req, res) => {
+// 1. 정회원 가입 신청 접수 API (구장별 격리 적용)
+// 💡 수정 후: 두 경로 모두 수신 가능하도록 지정
+app.post(['/api/register', '/api/register-request'], async (req, res) => {
     try {
-        const { name, phone, gender, birthDate, grade, address } = req.body; // 📌 address 받기
+        const { name, phone, gender, birthDate, grade, address, clubId: reqClubId, club } = req.body;
+        // 💡 신청한 구장 식별자 추출 (기본값 unjeong)
+        const clubId = reqClubId || club || 'unjeong';
 
         if (!name || !phone || !gender || !birthDate || !grade) {
             return res.status(400).json({ success: false, message: '필수 항목을 모두 입력해주세요.' });
         }
 
-        // 1단계: 이미 정회원(regular_members)으로 등록된 전화번호인지 확인
-        db.get(`SELECT * FROM regular_members WHERE phone = ?`, [phone], (err, existingMember) => {
+        // 1단계: 해당 구장(club_id)에 이미 정회원으로 등록되어 있는지 확인
+        db.get(`SELECT * FROM regular_members WHERE phone = ? AND club_id = ?`, [phone, clubId], (err, existingMember) => {
             if (existingMember) {
-                return res.status(400).json({ success: false, message: '이미 정회원으로 가입되어 있는 연락처입니다.' });
+                return res.status(400).json({ success: false, message: '이미 해당 클럽에 정회원으로 등록되어 있는 연락처입니다.' });
             }
 
-            // 2단계: 이미 대기 목록(pending_registrations)에 신청되어 있는 전화번호인지 확인
-            db.get(`SELECT * FROM pending_registrations WHERE phone = ?`, [phone], (err, existingPending) => {
+            // 2단계: 해당 구장(club_id) 대기 목록에 이미 신청되어 있는지 확인
+            db.get(`SELECT * FROM pending_registrations WHERE phone = ? AND club_id = ?`, [phone, clubId], (err, existingPending) => {
                 if (existingPending) {
-                    return res.status(400).json({ success: false, message: '이미 가입 대기 중인 연락처입니다. 관리자 승인을 기다려주세요.' });
+                    return res.status(400).json({ success: false, message: '이미 해당 클럽에 가입 대기 중인 연락처입니다. 관리자 승인을 기다려주세요.' });
                 }
 
-                // 3단계: 중복이 없다면 주소까지 포함해서 대기 테이블에 INSERT
+                // 3단계: club_id를 포함하여 대기 테이블에 INSERT
                 const createdAt = new Date().toISOString();
-                const query = `INSERT INTO pending_registrations (name, phone, gender, birthDate, grade, address, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`;
+                const query = `
+                    INSERT INTO pending_registrations (name, phone, gender, birthDate, grade, address, status, createdAt, club_id) 
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                `;
                 
-                db.run(query, [name, phone, gender, birthDate, grade, address || '', createdAt], function(err) {
+                db.run(query, [name, phone, gender, birthDate, grade, address || '', createdAt, clubId], function(err) {
                     if (err) {
                         console.error('가입 신청 DB 저장 오류:', err.message);
                         return res.status(500).json({ success: false, message: '데이터베이스 저장 중 오류가 발생했습니다.' });
                     }
+                    console.log(`📝 [신규 가입 신청 접수 - ${clubId}] ${name} (${phone})`);
                     res.json({ success: true, message: '정회원 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.' });
                 });
             });
@@ -214,26 +390,32 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// 2. 관리자용: 가입 신청 대기 목록 조회 API (SQLite 조회 구현)
+// 2. 관리자용: 가입 신청 대기 목록 조회 API (구장별 필터링 적용)
 app.get('/api/admin/pending-members', async (req, res) => {
+    const clubId = req.query.clubId || req.query.club || 'unjeong';
+
     try {
-        db.all(`SELECT * FROM pending_registrations WHERE status = 'pending'`, [], (err, rows) => {
-            if (err) {
-                console.error('대기 목록 조회 오류:', err.message);
-                return res.status(500).json({ success: false, message: '데이터베이스 조회 중 오류가 발생했습니다.' });
+        db.all(
+            `SELECT * FROM pending_registrations WHERE status = 'pending' AND club_id = ? ORDER BY id DESC`,
+            [clubId],
+            (err, rows) => {
+                if (err) {
+                    console.error('대기 목록 조회 오류:', err.message);
+                    return res.status(500).json({ success: false, message: '데이터베이스 조회 중 오류가 발생했습니다.' });
+                }
+                res.json({ success: true, data: rows });
             }
-            res.json({ success: true, data: rows });
-        });
+        );
     } catch (error) {
         console.error('대기 목록 조회 오류:', error);
         res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
     }
 });
 
-// 3. 관리자용: 가입 신청 승인 처리 API
+// 3. 관리자용: 가입 신청 승인 처리 API (구장별 격리 적용)
 app.post('/api/admin/approve-member', async (req, res) => {
     try {
-        const { phone, action } = req.body;
+        const { phone, action, clubId: reqClubId } = req.body;
 
         if (!phone || !action) {
             return res.status(400).json({ success: false, message: '잘못된 요청입니다.' });
@@ -245,17 +427,21 @@ app.post('/api/admin/approve-member', async (req, res) => {
                     return res.status(404).json({ success: false, message: '신청 내역을 찾을 수 없습니다.' });
                 }
 
-                // 생년월일로부터 연령대 자동 계산 ("50대" 형태로 반환된다고 가정)
-                const ageGroup = calculateAgeGroup(user.birthDate);
+                // 💡 승인 시 적용할 클럽 식별자 결정 (요청값 우선, 없으면 대기정보의 club_id, 기본값 unjeong)
+                const clubId = reqClubId || user.club_id || 'unjeong';
+
+                // 생년월일로부터 연령대 자동 계산
+                const ageGroup = typeof calculateAgeGroup === 'function' ? calculateAgeGroup(user.birthDate) : '';
                 const memberId = 'reg_' + Date.now();
                 const joinedAt = new Date().toISOString().split('T')[0];
                 
+                // 💡 club_id 컬럼 추가 (총 13개 컬럼)
                 const insertQuery = `
-                    INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt, club_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `;
 
-                // 물음표 12개에 대응하는 파라미터 12개 정확히 매칭
+                // 💡 물음표 13개에 대응하는 파라미터 13개 매칭
                 const params = [
                     memberId,           // 1. id
                     'regular',          // 2. type
@@ -268,7 +454,8 @@ app.post('/api/admin/approve-member', async (req, res) => {
                     user.grade,         // 9. grade
                     user.phone,         // 10. phone
                     user.address || '', // 11. address
-                    joinedAt            // 12. joinedAt
+                    joinedAt,           // 12. joinedAt
+                    clubId              // 13. club_id
                 ];
 
                 db.run(insertQuery, params, (insertErr) => {
@@ -280,12 +467,14 @@ app.post('/api/admin/approve-member', async (req, res) => {
                         return res.status(500).json({ success: false, message: '정회원 등록 중 오류가 발생했습니다.' });
                     }
 
+                    // 💡 해당 구장의 승인 대기 내역에서 삭제
                     db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], () => {
                         res.json({ success: true, message: '정회원 가입이 승인되었습니다.' });
                     });
                 });
             });
         } else {
+            // 반려 처리
             db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], (err) => {
                 if (err) {
                     return res.status(500).json({ success: false, message: '반려 처리 중 오류가 발생했습니다.' });
@@ -299,35 +488,78 @@ app.post('/api/admin/approve-member', async (req, res) => {
     }
 });
 
-// 4. 정회원 탈퇴 처리 API (수정본)
+// 4. 정회원 탈퇴 처리 API (구장별 격리 및 대기열 정리 적용)
 app.post('/api/member/withdraw', async (req, res) => {
     try {
-        const { phone, name } = req.body;
+        const { phone, name, clubId: reqClubId, club } = req.body;
+        const clubId = reqClubId || club || 'unjeong'; // 💡 클럽 식별자 추출
 
         if (!phone) {
             return res.status(400).json({ success: false, message: '회원 정보를 확인할 수 없습니다.' });
         }
 
-        // 1. regular_members 테이블에서 삭제
-        db.run(`DELETE FROM regular_members WHERE phone = ?`, [phone], function(err) {
+        // 1. regular_members 테이블에서 해당 클럽(club_id)의 회원만 특정하여 삭제
+        db.run(`DELETE FROM regular_members WHERE phone = ? AND club_id = ?`, [phone, clubId], function(err) {
             if (err) {
-                console.error('회원 탈퇴 처리 오류 (regular_members):', err.message);
+                console.error(`❌ 회원 탈퇴 처리 오류 (${clubId} regular_members):`, err.message);
                 return res.status(500).json({ success: false, message: '탈퇴 처리 중 서버 오류가 발생했습니다.' });
             }
 
-            // 2. 혹시 남아있을 수 있는 pending_registrations 대기/신청 데이터도 함께 깔끔하게 삭제
-            db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], (pendingErr) => {
+            // 2. 해당 클럽의 pending_registrations 대기 내역만 삭제
+            db.run(`DELETE FROM pending_registrations WHERE phone = ? AND club_id = ?`, [phone, clubId], async (pendingErr) => {
                 if (pendingErr) {
-                    console.error('대기 테이블 정리 오류:', pendingErr.message);
+                    console.error(`❌ 대기 테이블 정리 오류 (${clubId}):`, pendingErr.message);
                 }
 
-                console.log(`🗑️ [회원 탈퇴 및 이력 정리 완료]: 전화번호 ${phone}`);
+                // 3. 💡 혹시 해당 구장의 코트나 대기열에 회원이 들어가 있다면 즉시 정리
+                if (typeof cleanupUser === 'function') {
+                    try {
+                        await cleanupUser(phone, clubId);
+                    } catch (cleanErr) {
+                        console.error('탈퇴 유저 대기열 정리 오류:', cleanErr);
+                    }
+                }
+
+                console.log(`🗑️ [${clubId} 회원 탈퇴 및 정리 완료]: 전화번호 ${phone} (${name || '이름미확인'})`);
                 res.json({ success: true, message: '정상적으로 탈퇴 처리되었습니다.' });
             });
         });
     } catch (error) {
         console.error('회원 탈퇴 오류:', error);
         res.status(500).json({ success: false, message: '서버 오류가 발생했습니다.' });
+    }
+});
+
+// ==========================================
+// 🏢 [멀티 테넌트] 등록된 전체 클럽 목록 조회 API
+// ==========================================
+app.get('/api/clubs', (req, res) => {
+    try {
+        // clubs 데이터 객체에 등록된 구장들을 동적으로 추출
+        const clubList = Object.keys(clubs).map(clubId => {
+            const club = clubs[clubId] || {};
+            const config = club.config || {};
+
+            // 표시용 구장 이름 (clubName 속성 우선 참조 및 신규 클럽 자동 완성)
+            let displayName = club.clubName || club.name || config.clubName;
+            if (!displayName) {
+                if (clubId === 'unjeong') displayName = '운정배드민턴클럽';
+                else if (clubId === 'daewon') displayName = '대원배드민턴클럽';
+                else displayName = `${clubId.toUpperCase()} 배드민턴클럽`;
+            }
+
+            return {
+                id: clubId,                                                // 구장 식별자 (예: unjeong, daewon)
+                name: displayName,                                        // 화면에 보여줄 이름
+                courtCount: Array.isArray(club.courtsData) ? club.courtsData.length : 0, // 총 코트 수
+                isActive: true
+            };
+        });
+
+        res.json({ success: true, clubs: clubList });
+    } catch (err) {
+        console.error('클럽 목록 조회 에러:', err);
+        res.status(500).json({ success: false, message: '클럽 목록 조회 실패' });
     }
 });
 
@@ -346,79 +578,120 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 function initDatabase() {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS regular_members (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            username TEXT UNIQUE,
-            password TEXT,
-            name TEXT,
-            gender TEXT,
-            birthDate TEXT,
-            ageGroup TEXT,
-            grade TEXT,
-            phone TEXT UNIQUE,
-            address TEXT,
-            joinedAt TEXT
-        )
-    `, (err) => {
-        if (!err) {
-            // 혹시 기존 테이블에 컬럼이 없어 에러가 나는 경우를 대비해 안전하게 컬럼 추가 시도
-            db.run(`ALTER TABLE regular_members ADD COLUMN username TEXT`, () => {});
-            db.run(`ALTER TABLE regular_members ADD COLUMN password TEXT`, () => {});
-            checkAndInsertDefaultData();
-        }
-    });
+    // 1. 기존 테이블의 전체 UNIQUE 제약조건을 풀고 구장별 분리 구조로 안전 변환
+    db.serialize(() => {
+        db.run(`
+            CREATE TABLE IF NOT EXISTS regular_members (
+                id TEXT PRIMARY KEY,
+                club_id TEXT DEFAULT 'unjeong',
+                type TEXT,
+                username TEXT,
+                password TEXT,
+                name TEXT,
+                gender TEXT,
+                birthDate TEXT,
+                ageGroup TEXT,
+                grade TEXT,
+                phone TEXT,
+                address TEXT,
+                joinedAt TEXT
+            )
+        `);
 
-    db.run(`
-        CREATE TABLE IF NOT EXISTS daily_guests (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            name TEXT,
-            phone TEXT,
-            address TEXT,
-            visitedAt TEXT
-        )
-    `);
+        // 혹시 기존 테이블에 phone UNIQUE가 걸려 있다면 안전하게 새 구조로 이전
+        db.all(`PRAGMA index_list(regular_members)`, (err, indexes) => {
+            const hasGlobalUnique = indexes && indexes.some(idx => idx.unique && idx.origin === 'u');
+            if (hasGlobalUnique) {
+                console.log('🔄 [DB 마이그레이션] 정회원 테이블을 구장별 독립 가입 구조로 갱신합니다...');
+                db.run(`ALTER TABLE regular_members RENAME TO old_regular_members`, () => {
+                    db.run(`
+                        CREATE TABLE regular_members (
+                            id TEXT PRIMARY KEY,
+                            club_id TEXT DEFAULT 'unjeong',
+                            type TEXT,
+                            username TEXT,
+                            password TEXT,
+                            name TEXT,
+                            gender TEXT,
+                            birthDate TEXT,
+                            ageGroup TEXT,
+                            grade TEXT,
+                            phone TEXT,
+                            address TEXT,
+                            joinedAt TEXT
+                        )
+                    `, () => {
+                        db.run(`
+                            INSERT INTO regular_members 
+                            SELECT id, COALESCE(club_id, 'unjeong'), type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt 
+                            FROM old_regular_members
+                        `, () => {
+                            db.run(`DROP TABLE old_regular_members`);
+                            // 구장 + 전화번호 조합으로만 중복 검사 (구장별 1회 가입 허용)
+                            db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_member_club_phone ON regular_members(club_id, phone)`);
+                            console.log('✅ [DB 마이그레이션 완료] 구장별 독립 정회원 등록이 가능해졌습니다.');
+                        });
+                    });
+                });
+            } else {
+                // 구장별 유니크 인덱스 생성
+                db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_member_club_phone ON regular_members(club_id, phone)`);
+            }
+        });
 
-    // 📌 정회원 가입 신청 대기 테이블 생성
-    db.run(`
-        CREATE TABLE IF NOT EXISTS pending_registrations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            phone TEXT UNIQUE NOT NULL,
-            gender TEXT,
-            birthDate TEXT,
-            grade TEXT,
-            address TEXT, 
-            status TEXT DEFAULT 'pending',
-            createdAt TEXT NOT NULL
-        )
-    `, (err) => {
-        if (!err) {
-            // 📌 테이블이 이미 있거나 해서 address 컬럼이 누락된 경우를 대비해 안전하게 추가 시도
+        // 2. 가입 대기 테이블 club_id 보정
+        db.run(`
+            CREATE TABLE IF NOT EXISTS pending_registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                club_id TEXT DEFAULT 'unjeong',
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                gender TEXT,
+                birthDate TEXT,
+                grade TEXT,
+                address TEXT, 
+                status TEXT DEFAULT 'pending',
+                createdAt TEXT NOT NULL
+            )
+        `, () => {
+            db.run(`ALTER TABLE pending_registrations ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {});
             db.run(`ALTER TABLE pending_registrations ADD COLUMN address TEXT`, () => {});
-        }
-    });
+        });
 
-    db.run(`
-        CREATE TABLE IF NOT EXISTS notices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            author TEXT DEFAULT '관리자',
-            createdAt TEXT NOT NULL
-        )
-    `, (err) => {
-        if (!err) {
-            db.get(`SELECT COUNT(*) as count FROM notices`, (err, row) => {
-                if (row && row.count === 0) {
-                    db.run(`INSERT INTO notices (title, content, author, createdAt) VALUES (?, ?, ?, ?)`,
-                        ['체육관 이용 수칙 안내', '체육관 내 음료 및 음식물 반입을 금지합니다. 즐거운 배드민턴 되세요!', '관리자', '2026-09-03']
-                    );
-                }
-            });
-        }
+        // 3. 일일 게스트 테이블
+        db.run(`
+            CREATE TABLE IF NOT EXISTS daily_guests (
+                id TEXT PRIMARY KEY,
+                type TEXT,
+                name TEXT,
+                phone TEXT,
+                address TEXT,
+                visitedAt TEXT
+            )
+        `);
+
+        // 4. 공지사항 테이블
+        db.run(`
+            CREATE TABLE IF NOT EXISTS notices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                author TEXT DEFAULT '관리자',
+                createdAt TEXT NOT NULL
+            )
+        `, (err) => {
+            if (!err) {
+                db.get(`SELECT COUNT(*) as count FROM notices`, (err, row) => {
+                    if (row && row.count === 0) {
+                        db.run(`INSERT INTO notices (title, content, author, createdAt) VALUES (?, ?, ?, ?)`,
+                            ['체육관 이용 수칙 안내', '체육관 내 음료 및 음식물 반입을 금지합니다. 즐거운 배드민턴 되세요!', '관리자', '2026-09-03']
+                        );
+                    }
+                });
+            }
+        });
+
+        checkAndInsertDefaultData();
     });
 }
 
@@ -484,6 +757,19 @@ function insertDefaultDummyData() {}
 // 정적 파일 및 라우팅 설정
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ==========================================
+// ⚙️ [멀티 테넌트] 클럽별 환경 설정 조회 API
+// ==========================================
+app.get('/api/config', (req, res) => {
+    const clubId = req.query.club || 'unjeong';
+    const targetClub = getClub(clubId);
+    
+    if (targetClub && targetClub.config) {
+        return res.json(targetClub.config);
+    }
+    res.json(config);
+});
+
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
@@ -496,13 +782,19 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/super-admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'super-admin.html'));
+});
+
 // ==========================
-// [추가] 공지사항 관련 API 및 라우트
+// [수정] 클럽별 분리된 공지사항 관련 API 및 라우트
 // ==========================
 
-// 1. 공지사항 목록 조회 API (인덱스 화면 및 게시판용)
+// 1. 공지사항 목록 조회 API (구장별 필터링)
 app.get('/api/notices', (req, res) => {
-    db.all(`SELECT * FROM notices ORDER BY id DESC`, (err, rows) => {
+    const clubId = req.query.clubId || req.query.club || 'unjeong';
+
+    db.all(`SELECT * FROM notices WHERE clubId = ? ORDER BY id DESC`, [clubId], (err, rows) => {
         if (err) {
             console.error('❌ 공지사항 조회 실패:', err.message);
             return res.status(500).json({ success: false, message: '공지사항을 불러오지 못했습니다.' });
@@ -511,7 +803,36 @@ app.get('/api/notices', (req, res) => {
     });
 });
 
-// 2. 공지사항 수정 API
+// 2. 관리자용 공지사항 등록 API (클럽별 저장 및 해당 구장에만 실시간 전송)
+app.post('/api/admin/notice', (req, res) => {
+    const { title, content, author, clubId: reqClubId, club } = req.body;
+    const clubId = reqClubId || club || 'unjeong';
+
+    if (!title || !content) {
+        return res.status(400).json({ success: false, message: '제목과 내용을 모두 입력해 주세요.' });
+    }
+
+    const createdAt = new Date().toISOString().split('T')[0];
+    db.run(
+        `INSERT INTO notices (title, content, author, createdAt, clubId) VALUES (?, ?, ?, ?, ?)`,
+        [title, content, author || '관리자', createdAt, clubId],
+        function(err) {
+            if (err) {
+                console.error('❌ 공지 등록 실패:', err.message);
+                return res.status(500).json({ success: false, message: '공지 등록 중 오류가 발생했습니다.' });
+            }
+            
+            const newNotice = { id: this.lastID, title, content, author: author || '관리자', createdAt, clubId };
+
+            // 📌 해당 구장 룸(club_${clubId}) 사용자들에게만 실시간 공지 전송
+            io.to(`club_${clubId}`).emit('noticeUpdated', newNotice);
+
+            res.json({ success: true, message: '공지사항이 성공적으로 등록되었습니다.', id: this.lastID });
+        }
+    );
+});
+
+// 3. 공지사항 수정 API
 app.put('/api/notices/:id', (req, res) => {
     const noticeId = req.params.id;
     const { title, content } = req.body;
@@ -528,7 +849,7 @@ app.put('/api/notices/:id', (req, res) => {
     });
 });
 
-// 3. 공지사항 삭제 API
+// 4. 공지사항 삭제 API
 app.delete('/api/notices/:id', (req, res) => {
     const noticeId = req.params.id;
 
@@ -544,47 +865,22 @@ app.delete('/api/notices/:id', (req, res) => {
     });
 });
 
-// 2. 관리자용 공지사항 등록 API
-app.post('/api/admin/notice', (req, res) => {
-    const { title, content, author } = req.body;
-    if (!title || !content) {
-        return res.status(400).json({ success: false, message: '제목과 내용을 모두 입력해 주세요.' });
-    }
-
-    const createdAt = new Date().toISOString().split('T')[0];
-    db.run(`INSERT INTO notices (title, content, author, createdAt) VALUES (?, ?, ?, ?)`,
-        [title, content, author || '관리자', createdAt],
-        function(err) {
-            if (err) {
-                console.error('❌ 공지 등록 실패:', err.message);
-                return res.status(500).json({ success: false, message: '공지 등록 중 오류가 발생했습니다.' });
-            }
-            
-            const newNotice = { id: this.lastID, title, content, author: author || '관리자', createdAt };
-
-            // 📌 [핵심 추가] 연결된 모든 클라이언트(인덱스, TV 등)에게 실시간 공지 전송!
-            io.emit('noticeUpdated', newNotice);
-
-            res.json({ success: true, message: '공지사항이 성공적으로 등록되었습니다.', id: this.lastID });
-        }
-    );
-});
-
-// 3. 공지사항 상세 게시판 페이지 라우트
+// 5. 공지사항 상세 게시판 페이지 라우트
 app.get('/notice', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'notice.html'));
 });
 
-// 1. 회원 목록 조회 API (어드민 드롭다운 및 게임방 연동용)
+// 1. 회원 목록 조회 API (구장별 필터링 적용)
 app.get('/api/members', (req, res) => {
-    // 📌 ageGroup 계산을 위해 birthDate 컬럼을 함께 조회합니다.
-    db.all(`SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address FROM regular_members`, (err, rows) => {
+    const clubId = req.query.clubId || req.query.club || 'unjeong';
+
+    // 💡 club_id 컬럼으로 해당 클럽 회원만 필터링하여 조회
+    db.all(`SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address, club_id FROM regular_members WHERE club_id = ?`, [clubId], (err, rows) => {
         if (err) {
             console.error('❌ 회원 목록 조회 실패:', err.message);
             return res.status(500).json({ success: false, error: '데이터베이스 조회 실패', message: '회원 목록을 불러오지 못했습니다.' });
         }
 
-        // 📌 DB에 ageGroup이 누락되어 있거나 비어 있는 경우 생년월일(birthDate)로 실시간 계산
         const processedRows = rows.map(member => {
             if ((!member.ageGroup || member.ageGroup.trim() === '' || member.ageGroup === '/ /') && member.birthDate) {
                 member.ageGroup = calculateAgeGroup(member.birthDate);
@@ -693,7 +989,7 @@ app.post('/api/member/update', (req, res) => {
 });
 
 // 3. 🧹 [디버깅 로그가 강화된 슬롯 청소 및 자동 방 폭파 함수]
-async function cleanupUser(usernameOrObj) {
+async function cleanupUser(usernameOrObj, clubId = null) { // 💡 특정 구장이 없으면 전 구장 자동 청소
     if (!usernameOrObj) {
         console.log("⚠️ [청소 중단] 전달된 유저 정보가 없습니다.");
         return;
@@ -721,11 +1017,7 @@ async function cleanupUser(usernameOrObj) {
         }
     }
 
-    console.log(`\n========================================`);
-    console.log(`🧹 [청소 시작] 입력받은 원본 데이터:`, usernameOrObj);
-    console.log(`🔍 1차 파싱값 -> targetId: "${targetId}", targetName: "${targetName}"`);
-
-    // DB에서 해당 유저의 정확한 정보(이름, ID 등)를 확실하게 조회
+    // DB에서 해당 유저의 정확한 정보(이름, ID 등)를 조회
     let dbRow = null;
     if (targetId === '010-0000-0000' || targetName === '관리자' || targetId === '관리자') {
         dbRow = { id: '010-0000-0000', name: '관리자' };
@@ -749,113 +1041,110 @@ async function cleanupUser(usernameOrObj) {
     const realId = dbRow ? dbRow.id : targetId;
     const realName = dbRow ? dbRow.name : targetName;
 
-    console.log(`🎯 [확정된 청소 대상] realId: "${realId}", realName: "${realName}"`);
+    // 💡 구장이 특정되지 않은 경우 모든 활성 구장(운정, 대원 등)을 대상으로 청소
+    const targetClubs = (clubId && clubId !== 'all') 
+        ? [clubId] 
+        : (typeof clubs !== 'undefined' ? Object.keys(clubs) : ['unjeong', 'daewon']);
 
-    // 1️⃣ 게임 대기열 디버깅 및 청소
-    if (typeof gameQueue !== 'undefined' && Array.isArray(gameQueue)) {
-        console.log(`📋 [게임 대기열 검사 전 상태] 현재 대기 방 개수: ${gameQueue.length}개`);
-        
-        const validGameQueue = [];
-        
-        gameQueue.forEach((slot, index) => {
-            console.log(`\n    - [방 #${index + 1} 검사중] ID: ${slot.id}, 플레이어 목록:`, slot.players);
-            
-            const slotStr = JSON.stringify(slot);
-            const isMatched = 
-                (realId && slotStr.includes(realId)) ||
-                (realName && slotStr.includes(realName));
+    console.log(`\n========================================`);
+    console.log(`🧹 [청소 시작] 대상: "${realName}" (ID: ${realId}), 검사 대상 구장:`, targetClubs);
 
-            console.log(`     -> 유저 매칭 여부 (isMatched): ${isMatched}`);
+    for (const cid of targetClubs) {
+        const club = (typeof getClub === 'function') ? getClub(cid) : (typeof clubs !== 'undefined' ? clubs[cid] : null);
+        if (!club) continue;
 
-            if (isMatched) {
-                if (slot.userIds && Array.isArray(slot.userIds)) {
-                    slot.userIds = slot.userIds.filter(id => id !== realId);
+        const gameQueue = club.gameQueue;
+        const nantaQueue = club.nantaQueue;
+
+        // 1️⃣ 게임 대기열 청소
+        if (Array.isArray(gameQueue)) {
+            const validGameQueue = [];
+            gameQueue.forEach((slot) => {
+                const slotStr = JSON.stringify(slot);
+                const isMatched = 
+                    (realId && slotStr.includes(realId)) ||
+                    (realName && slotStr.includes(realName));
+
+                if (isMatched) {
+                    if (slot.userIds && Array.isArray(slot.userIds)) {
+                        slot.userIds = slot.userIds.filter(id => id !== realId);
+                    }
+                    if (slot.players && Array.isArray(slot.players)) {
+                        slot.players = slot.players.map(p => {
+                            if (!p) return '';
+                            const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
+                            if (
+                                (realId && pStr.includes(realId)) ||
+                                (realName && pStr.includes(realName))
+                            ) {
+                                return '';
+                            }
+                            return p;
+                        });
+                    }
                 }
-                if (slot.players && Array.isArray(slot.players)) {
-                    slot.players = slot.players.map(p => {
-                        if (!p) return '';
-                        const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
-                        if (
-                            (realId && pStr.includes(realId)) ||
-                            (realName && pStr.includes(realName))
-                        ) {
-                            console.log(`     ✂️ 플레이어 칸에서 유저 [${p}] 삭제 완료`);
-                            return '';
-                        }
-                        return p;
-                    });
+
+                const validPlayers = (typeof getValidPlayers === 'function') 
+                    ? getValidPlayers(slot.players) 
+                    : (slot.players || []).filter(p => p && p !== '');
+                
+                if (validPlayers.length > 0) {
+                    validGameQueue.push(slot);
                 }
-            }
+            });
 
-            // 💡 [수정 완료] hasValidIds 조건을 완전히 제거하고, 오직 실제 플레이어(사람)의 수만 검사합니다.
-            const validPlayers = getValidPlayers(slot.players);
-            
-            console.log(`     -> 유저 삭제 후 남은 유효 인원수 (validPlayers.length): ${validPlayers.length}`);
+            gameQueue.length = 0;
+            gameQueue.push(...validGameQueue);
+        }
 
-            if (validPlayers.length > 0) {
-                console.log(`     ✅ 사람이 남아있으므로 방을 유지합니다.`);
-                validGameQueue.push(slot);
-            } else {
-                console.log(`     💥 [방 폭파 성공!] 남은 인원이 0명이므로 게임방(${slot.id})을 대기열에서 삭제합니다.`);
-            }
-        });
+        // 2️⃣ 난타 대기열 청소
+        if (Array.isArray(nantaQueue)) {
+            const validNantaQueue = [];
+            nantaQueue.forEach((slot) => {
+                const slotStr = JSON.stringify(slot);
+                const isMatched = 
+                    (realId && slotStr.includes(realId)) ||
+                    (realName && slotStr.includes(realName));
 
-        gameQueue.length = 0;
-        gameQueue.push(...validGameQueue);
-        console.log(`📋 [게임 대기열 검사 후 상태] 남은 대기 방 개수: ${gameQueue.length}개`);
-    }
-
-    // 2️⃣ 난타 대기열 디버깅 및 청소
-    if (typeof nantaQueue !== 'undefined' && Array.isArray(nantaQueue)) {
-        console.log(`📋 [난타 대기열 검사 전 상태] 현재 대기 방 개수: ${nantaQueue.length}개`);
-        const validNantaQueue = [];
-
-        nantaQueue.forEach((slot, index) => {
-            const slotStr = JSON.stringify(slot);
-            const isMatched = 
-                (realId && slotStr.includes(realId)) ||
-                (realName && slotStr.includes(realName));
-
-            if (isMatched) {
-                if (slot.userIds && Array.isArray(slot.userIds)) {
-                    slot.userIds = slot.userIds.filter(id => id !== realId);
+                if (isMatched) {
+                    if (slot.userIds && Array.isArray(slot.userIds)) {
+                        slot.userIds = slot.userIds.filter(id => id !== realId);
+                    }
+                    if (slot.players && Array.isArray(slot.players)) {
+                        slot.players = slot.players.map(p => {
+                            if (!p) return '';
+                            const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
+                            if (
+                                (realId && pStr.includes(realId)) ||
+                                (realName && pStr.includes(realName))
+                            ) {
+                                return '';
+                            }
+                            return p;
+                        });
+                    }
                 }
-                if (slot.players && Array.isArray(slot.players)) {
-                    slot.players = slot.players.map(p => {
-                        if (!p) return '';
-                        const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
-                        if (
-                            (realId && pStr.includes(realId)) ||
-                            (realName && pStr.includes(realName))
-                        ) {
-                            return '';
-                        }
-                        return p;
-                    });
+
+                const validPlayers = (typeof getValidPlayers === 'function') 
+                    ? getValidPlayers(slot.players) 
+                    : (slot.players || []).filter(p => p && p !== '');
+
+                if (validPlayers.length > 0) {
+                    validNantaQueue.push(slot);
                 }
-            }
+            });
 
-            // 💡 [수정 완료] 난타 대기열도 동일하게 인원수가 0명일 때만 폭파
-            const validPlayers = getValidPlayers(slot.players);
+            nantaQueue.length = 0;
+            nantaQueue.push(...validNantaQueue);
+        }
 
-            if (validPlayers.length > 0) {
-                validNantaQueue.push(slot);
-            } else {
-                console.log(`     💥 [난타 방 폭파 성공!] 난타 방(${slot.id})이 삭제되었습니다.`);
-            }
-        });
-
-        nantaQueue.length = 0;
-        nantaQueue.push(...validNantaQueue);
+        // 💡 각 구장에 대기방 삭제 최신 상태를 실시간 방송
+        if (typeof broadcastState === 'function') {
+            broadcastState(cid);
+        }
     }
 
     console.log(`========================================\n`);
-
-    if (typeof broadcastState === 'function') {
-        broadcastState();
-    } else if (typeof io !== 'undefined') {
-        io.emit('updateState', { gameQueue, nantaQueue });
-    }
 }
 
 // 4. 로그아웃 API
@@ -872,52 +1161,59 @@ app.post('/api/logout', async (req, res) => {
 // 관리자 모드: 강제 퇴장 API
 app.post('/api/admin/kick-user', async (req, res) => {
     const target = req.body.targetUsername || req.body.targetId || req.body.username;
+    const clubId = req.body.clubId || req.body.club || 'unjeong'; // 💡 1. 클럽 아이디 추출
 
     if (!target) {
         console.log('❌ [관리자 강제 퇴장 실패] 전달된 회원 식별자가 없습니다.', req.body);
         return res.status(400).json({ success: false, message: '퇴장시킬 회원 정보가 없습니다.' });
     }
 
-    console.log(`🚨 [관리자 강제 퇴장 요청] 타겟 식별자:`, target);
+    console.log(`🚨 [관리자 강제 퇴장 요청 - ${clubId}] 타겟 식별자:`, target);
 
-    // 비동기 청소 완료를 기다림
-    await cleanupUser(target);
+    // 💡 2. cleanupUser 호출할 때 반드시 뒤에 clubId를 함께 넘겨줍니다!
+    await cleanupUser(target, clubId);
 
     res.json({ success: true, message: `해당 회원을 성공적으로 강제 퇴장 및 정리했습니다.` });
 });
 
 app.post('/api/admin/delete-room', (req, res) => {
-    const { roomType, roomId } = req.body;
+    const { roomType, roomId, clubId = 'unjeong' } = req.body; // 💡 요청에서 clubId를 함께 받습니다 (기본값 unjeong)
 
     if (!roomType || roomId === undefined) {
         return res.status(400).json({ success: false, message: '잘못된 요청입니다.' });
     }
 
-    if (roomType === 'game' && typeof gameQueue !== 'undefined') {
-        gameQueue = gameQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
-        console.log(`💥 [관리자 게임방 강제 종료] 게임방(${roomId})이 삭제되었습니다.`);
-    } else if (roomType === 'nanta' && typeof nantaQueue !== 'undefined') {
-        nantaQueue = nantaQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
-        console.log(`💥 [관리자 난타방 강제 종료] 난타방(${roomId})이 삭제되었습니다.`);
+    // 💡 해당 클럽의 데이터를 가져옵니다.
+    const club = getClub(clubId);
+
+    if (roomType === 'game' && Array.isArray(club.gameQueue)) {
+        club.gameQueue = club.gameQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
+        console.log(`💥 [관리자 게임방 강제 종료 - ${clubId}] 게임방(${roomId})이 삭제되었습니다.`);
+    } else if (roomType === 'nanta' && Array.isArray(club.nantaQueue)) {
+        club.nantaQueue = club.nantaQueue.filter(slot => slot.id !== roomId && slot.slotId !== roomId);
+        console.log(`💥 [관리자 난타방 강제 종료 - ${clubId}] 난타방(${roomId})이 삭제되었습니다.`);
     } else {
         return res.json({ success: false, message: '존재하지 않는 방이거나 타입 오류입니다.' });
     }
 
+    // 💡 빈 괄호 대신 명확히 해당 클럽 아이디를 전달합니다.
     if (typeof broadcastState === 'function') {
-        broadcastState();
+        broadcastState(clubId);
     }
 
     res.json({ success: true, message: '해당 방이 강제 종료되었습니다.' });
 });
 
 app.post('/api/admin/clear-court', (req, res) => {
-    const { courtId, side } = req.body;
+    const { courtId, side, clubId = 'unjeong' } = req.body; // 💡 요청에서 clubId를 함께 받습니다
 
     if (courtId === undefined) {
         return res.status(400).json({ success: false, message: '코트 번호가 지정되지 않았습니다.' });
     }
 
-    const targetCourt = courtsData.find(c => c.id === Number(courtId));
+    // 💡 해당 클럽의 코트 데이터를 가져옵니다.
+    const club = getClub(clubId);
+    const targetCourt = club.courtsData.find(c => c.id === Number(courtId));
 
     if (!targetCourt) {
         return res.status(404).json({ success: false, message: '해당 코트를 찾을 수 없습니다.' });
@@ -969,12 +1265,17 @@ app.post('/api/admin/clear-court', (req, res) => {
         noticeMessage = `[관리자 알림] ${targetCourt.id}번 레슨코트는 관리자에 의해 종료되었습니다.`;
     }
 
+    // 💡 해당 클럽 룸에만 실시간 상태 및 알림 브로드캐스트
     if (typeof io !== 'undefined') {
-        io.emit('courtClearedNotice', {
+        io.to(`club_${clubId}`).emit('courtClearedNotice', {
             courtId: targetCourt.id,
             category: courtCategory,
             message: noticeMessage
         });
+    }
+
+    if (typeof broadcastState === 'function') {
+        broadcastState(clubId); // 💡 클럽 아이디 전달
     }
 
     res.json({ success: true, message: `${targetCourt.id}번 코트가 성공적으로 강제 비워졌습니다.` });
@@ -1012,51 +1313,166 @@ let notifications = [];
 let slotIdCounter = 1;
 
 // ==========================================
+// 🏢 [멀티 테넌트 1단계] 클럽별 상태 통합 저장소
+// ==========================================
+
+// 각 클럽이 처음 생성될 때 사용할 기본 코트 템플릿
+function createDefaultCourts() {
+    return [
+        { id: 1, type: 'game', isEmpty: true, players: '', note: '' },
+        { id: 2, type: 'game', isEmpty: true, players: '', note: '' },
+        { id: 3, type: 'game', isEmpty: true, players: '', note: '' },
+        { id: 4, type: 'game', isEmpty: true, players: '', note: '' },
+        { id: 5, type: 'game', isEmpty: true, players: '', note: '' },
+        { 
+            id: 6, 
+            type: 'nanta', 
+            sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+            sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+            note: '' 
+        },
+        { 
+            id: 7, 
+            type: 'nanta', 
+            sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+            sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+            note: '' 
+        },
+        { id: 8, type: 'lesson', isEmpty: false, players: '오후 레슨 전용 코트', note: '' }
+    ];
+}
+
+// 클럽 ID로 해당 클럽 데이터 객체를 안전하게 가져오는 헬퍼 함수
+function getClub(clubId) {
+    const id = clubId || 'unjeong'; // 지정이 없으면 기본값은 무조건 'unjeong'
+    
+    // 🏢 기본 한글 클럽 명칭 매핑
+    const defaultClubNames = {
+        'unjeong': '운정배드민턴클럽',
+        'daewon': '대원배드민턴클럽'
+    };
+
+    if (!clubs[id]) {
+        // 새 클럽이 처음 호출되면 기본 틀을 자동 생성
+        clubs[id] = {
+            clubId: id,
+            clubName: defaultClubNames[id] || `${id}배드민턴클럽`,
+            config: {
+                ...(typeof defaultConfig !== 'undefined' ? defaultConfig : {}),
+                // ⏱️ 클럽별 유예 시간 기본값 (관리자가 변경 가능)
+                queueGraceMinutes: 30,    // 대기방 유지 시간 (기본 30분)
+                sessionExpireMinutes: 60  // 세션 완전 만료 시간 (기본 60분)
+            },
+            courtsData: typeof createDefaultCourts === 'function' ? createDefaultCourts() : (typeof courtsData !== 'undefined' ? JSON.parse(JSON.stringify(courtsData)) : []),
+            gameQueue: [],
+            nantaQueue: [],
+            notifications: [],
+            slotIdCounter: 1
+        };
+    }
+    return clubs[id];
+}
+// ==========================================
 // 5. 유틸리티 및 브로드캐스트 함수
 // ==========================================
-function broadcastState() {
-    // 💡 브로드캐스트하기 전, 24시간(하루)이 지난 알림은 자동으로 걸러냅니다.
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    
-    if (Array.isArray(notifications)) {
-        notifications = notifications.filter(item => {
-            // timestamp가 있는 경우 24시간 경과 여부 체크 (없으면 기본 유지)
-            if (!item.timestamp) return true;
-            return (now - item.timestamp) < ONE_DAY_MS;
+// ==========================================
+// 📡 [멀티 테넌트] 클럽별 실시간 상태 브로드캐스트
+// ==========================================
+function broadcastState(targetClubId) {
+    if (!io) return;
+
+    const sendClubState = (cid) => {
+        const club = (typeof getClub === 'function') ? getClub(cid) : (typeof clubs === 'object' ? clubs[cid] : {});
+        
+        // 💡 club 내부에 데이터가 아직 연결되지 않았을 경우, 운정 기본 전역 변수로 안전하게 대체(fallback)
+        const cCourtsData = (club && Array.isArray(club.courtsData) && club.courtsData.length > 0)
+            ? club.courtsData
+            : (cid === 'unjeong' && typeof courtsData !== 'undefined' ? courtsData : (club ? club.courtsData : []));
+
+        const cGameQueue = (club && Array.isArray(club.gameQueue))
+            ? club.gameQueue
+            : (cid === 'unjeong' && typeof gameQueue !== 'undefined' ? gameQueue : []);
+
+        const cNantaQueue = (club && Array.isArray(club.nantaQueue))
+            ? club.nantaQueue
+            : (cid === 'unjeong' && typeof nantaQueue !== 'undefined' ? nantaQueue : []);
+
+        const cNotifications = (club && club.notifications) || (typeof notifications !== 'undefined' ? notifications : []);
+        const cConfig = (club && club.config) || (typeof config !== 'undefined' ? config : {});
+
+        // 💡 [진단 로그 추가] 서버가 화면으로 실제로 보내고 있는 설정값 확인
+        // console.log(`📡 [${cid}] 화면 전송 설정값 -> 입장제한: ${cConfig.ENTRY_TIMEOUT_SEC}초, 비밀번호: ${cConfig.ADMIN_PASSWORD}`);
+
+        io.to(`club_${cid}`).emit('stateUpdated', {
+            clubId: (club && club.clubId) || cid,
+            // 🏢 [수정] 하드코딩 제거: clubName -> name -> cid 순서로 유연하게 매칭
+            clubName: (club && (club.clubName || club.name)) || cid,
+            courtsData: cCourtsData || [],
+            gameQueue: cGameQueue || [],
+            nantaQueue: cNantaQueue || [],
+            notifications: cNotifications,
+            config: cConfig
         });
+    };
+
+    // 1. 특정 클럽만 갱신할 때
+    if (targetClubId) {
+        sendClubState(targetClubId);
+        return;
     }
 
-    io.emit('stateUpdated', {
-        config: config,
-        courtsData: courtsData,
-        gameQueue: gameQueue,
-        nantaQueue: nantaQueue,
-        notifications: notifications
+    // 2. 전체 클럽 갱신할 때
+    const clubIds = (typeof clubs === 'object' && Object.keys(clubs).length > 0) ? Object.keys(clubs) : ['unjeong'];
+    clubIds.forEach((cid) => {
+        sendClubState(cid);
     });
 }
 
-function addNotification(message) {
+// ==========================================
+// 🔔 개인 이벤트 알림 처리 (구장 식별 및 당일 자동 정리)
+// ==========================================
+function addNotification(message, clubId = 'default', targetUser = null) {
     const now = new Date();
+    // 📅 오늘 날짜 추출 (YYYY-MM-DD)
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    
-    // 💡 1. 24시간 지난 오래된 알림 자동 제거
+
+    // 💡 1. 당일(오늘) 알림만 서버 메모리에 유지 (어제 이전 알림 자동 정리)
     if (Array.isArray(notifications)) {
-        notifications = notifications.filter(n => (now.getTime() - (n.timestamp || 0)) < ONE_DAY_MS);
+        notifications = notifications.filter(n => {
+            if (!n) return false;
+            let itemDate = n.date;
+            if (!itemDate && n.timestamp) {
+                const d = new Date(n.timestamp);
+                itemDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+            return itemDate === todayStr;
+        });
     } else {
         notifications = [];
     }
 
-    // 💡 2. 새 알림 추가 (타임스탬프 포함)
-    notifications.unshift({ 
+    // 💡 2. 새 알림 객체 생성 (구장 ID 및 대상자 포함)
+    const newNoti = { 
         message, 
+        clubId: clubId || 'default',
+        targetUser: targetUser || null,
         time: timeStr, 
+        date: todayStr,
         timestamp: now.getTime() 
-    });
-    
-    // 💡 3. 최대 30개 제한 유지
-    if (notifications.length > 30) notifications.pop();
+    };
+
+    notifications.unshift(newNoti);
+    if (notifications.length > 50) notifications.pop();
+
+    // 💡 3. 소켓 브로드캐스트 (클라이언트에서 본인 및 구장 필터링 수행)
+    try {
+        if (typeof io !== 'undefined' && io) {
+            io.emit('newNotification', newNoti);
+        }
+    } catch (err) {
+        console.error('알림 소켓 전송 에러:', err);
+    }
 }
 
 function getValidPlayers(playersArr) {
@@ -1065,338 +1481,348 @@ function getValidPlayers(playersArr) {
 
 setInterval(() => {
     const now = Date.now();
-
-    // -------------------------------------------------------------
-    // 🧹 [신규] 구장 청소 시간 감지, 음성 안내 송출 및 타이머 동결 처리
-    // -------------------------------------------------------------
     const nowObj = new Date();
     const currentHHMM = `${String(nowObj.getHours()).padStart(2, '0')}:${String(nowObj.getMinutes()).padStart(2, '0')}`;
 
-    const schedules = config.cleaningSchedules || [];
-    // 현재 시각이 등록된 청소 구간(start <= 현재 < end)에 속하는지 판별
-    const activeSchedule = schedules.find(s => currentHHMM >= s.start && currentHHMM < s.end);
+    // 🏢 [멀티 테넌트] 등록된 각 클럽별로 독립적으로 청소 시간, 대기열 및 코트 타이머 순회
+    const clubIdsToRun = (typeof clubs === 'object' && Object.keys(clubs).length > 0) ? Object.keys(clubs) : ['unjeong'];
 
-    // 1) 청소 시작 시점 감지
-    if (activeSchedule && !isCleaningTime) {
-        isCleaningTime = true;
-
-        // 관리자가 설정한 시작 멘트 가져오기 (없으면 기본값)
-        const startMsg = config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
-
-        // 음성 큐
-        serverAudioQueue.push({
-            matchType: '공지',
-            names: [],
-            message: startMsg
-        });
-
-        // 📱 [수정] 스마트폰 팝업에도 관리자가 수정한 멘트(startMsg)를 전송
-        io.emit('toastAlert', `🧹 ${startMsg}`);
-
-        // 🖥️ TV 전광판 대형 팝업 전송
-        io.to('tv-room').emit('tvCleaningAlert', {
-            type: 'start',
-            title: '🧹 구장 청소 및 코트 정비 시간',
-            message: startMsg,
-            duration: 10000
-        });
-
-        if (typeof addNotification === 'function') {
-            addNotification(`🧹 [구장 청소 시작] ${startMsg}`);
-        }
-    }
-
-    // 2) 청소 종료 시점 감지
-    if (!activeSchedule && isCleaningTime) {
-        isCleaningTime = false;
-
-        // 관리자가 설정한 종료 멘트 가져오기 (없으면 기본값)
-        const endMsg = config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
-
-        // 음성 큐
-        serverAudioQueue.push({
-            matchType: '공지',
-            names: [],
-            message: endMsg
-        });
-
-        // 📱 [수정] 스마트폰 팝업에도 관리자가 수정한 멘트(endMsg)를 전송
-        io.emit('toastAlert', `🏸 ${endMsg}`);
-
-        // 🖥️ TV 전광판 대형 팝업 전송
-        io.to('tv-room').emit('tvCleaningAlert', {
-            type: 'end',
-            title: '🏸 구장 청소 완료 안내',
-            message: endMsg,
-            duration: 8000
-        });
-
-        if (typeof addNotification === 'function') {
-            addNotification(`✅ [구장 청소 종료] ${endMsg}`);
-        }
-    }
-
-    // 3) 청소 진행 중: 모든 타이머의 기준 시각을 매초 1초씩 뒤로 밀어 카운트다운 완전 동결
-    if (isCleaningTime) {
-        // 게임 대기방 입장 타이머 동결
-        if (Array.isArray(gameQueue)) {
-            gameQueue.forEach(slot => {
-                if (slot.fullAt) slot.fullAt += 1000;
-            });
-        }
-
-        // 난타 대기방 입장 타이머 동결
-        if (Array.isArray(nantaQueue)) {
-            nantaQueue.forEach(slot => {
-                if (slot.fullAt) slot.fullAt += 1000;
-            });
-        }
-
-        // 진행 중인 난타 코트 이용시간 동결
-        if (Array.isArray(courtsData)) {
-            courtsData.forEach(court => {
-                if (court.type === 'nanta') {
-                    ['sideA', 'sideB'].forEach(side => {
-                        if (court[side] && !court[side].isEmpty && court[side].startTime) {
-                            court[side].startTime += 1000;
-                        }
-                    });
-                }
-            });
-        }
-
-        // 전광판 화면에 동결된 잔여시간 그대로 상태 전송 후 아래 카운트다운 로직은 스킵
-        broadcastState();
-        return;
-    }
-    // -------------------------------------------------------------
-
-    const emptyGameCourtsCount = courtsData.filter(c => c.type === 'game' && c.isEmpty).length;
-    let activeTimerCount = 0;
-
-    gameQueue.forEach((slot) => {
-        const validCount = getValidPlayers(slot.players).length;
+    clubIdsToRun.forEach(cId => {
+        const club = clubs[cId] || {};
         
-        if (validCount === 4 && activeTimerCount < emptyGameCourtsCount) {
-            activeTimerCount++;
-            
-            if (!slot.fullAt) {
-                slot.fullAt = now;
-            }
-            
-            // 경과 시간 및 남은 시간 계산 (1번만 선언)
-            const elapsed = Math.floor((now - slot.fullAt) / 1000);
-            slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
-
-            // 💡 타이머 시작 후 정확히 30초가 지났을 때 음성 안내 및 개인 팝업 전송
-            if (elapsed === 30 && !slot.announced) {
-                slot.announced = true;
-                const validPlayers = getValidPlayers(slot.players);
-                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-                
-                // activeTimerCount 순서에 맞는 빈 코트를 정확히 매칭
-                const emptyGameCourts = courtsData.filter(c => c.type === 'game' && c.isEmpty);
-                const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
-                const courtNum = targetCourt ? targetCourt.id : '';
-
-                // 🚀 음성 안내 큐 푸시
-                serverAudioQueue.push({
-                    courtNumber: courtNum,
-                    names: memberNames,
-                    matchType: '게임'
-                });
-
-                // 📱 해당 대기방 회원들에게 입장 촉구 팝업 전송
-                io.emit('entryPopupAlert', {
-                    matchType: '게임',
-                    courtNumber: courtNum,
-                    targetPlayers: memberNames
-                });
-            }
-
-            // --- 게임 대기열 시간 초과 처리부 ---
-            if (slot.remainingSeconds === 0) {
-                const targetIdx = gameQueue.findIndex(s => s.id === slot.id);
-                if (targetIdx !== -1) {
-                    const expiredTeam = gameQueue.splice(targetIdx, 1)[0];
-                    const validPlayers = getValidPlayers(expiredTeam.players);
-                    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-
-                    // 🖥️ TV 전광판에 대기방 삭제 팝업 전송
-                    io.to('tv-room').emit('tvPopupAlert', {
-                        matchType: '게임',
-                        names: memberNames,
-                        message: '입장 시간 초과로 게임 대기방이 삭제되었습니다.<br>게임 대기를 원하시면 다시 등록해 주세요.'
-                    });
-
-                    // 🔔 [개인 알림 발송] 해당 대기방에 있던 팀원들에게만 다이렉트 알림 전송
-                    const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 게임 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
-                    validPlayers.forEach(playerStr => {
-                        // '홍길동/01012345678' 형태인 경우 번호 또는 이름을 식별자로 추출
-                        const parts = playerStr.split('/');
-                        const userIdentifier = (parts[1] || parts[0]).trim();
-                        sendPersonalNotification(userIdentifier, cancelPersonalMsg);
-                    });
-
-                    // 📝 관리자/시스템 로그용 전체 알림 기록 유지
-                    addNotification(`🗑️ [게임 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`);
-                }
-            }
-        } else {
-            slot.fullAt = null;
-            slot.remainingSeconds = null;
-            slot.announced = false;
+        // 💡 공용 config가 아니라 해당 클럽의 고유 config를 확실하게 보장
+        if (!club.config) {
+            club.config = JSON.parse(JSON.stringify(typeof config !== 'undefined' ? config : {}));
         }
-    });
+        const clubConfig = club.config; 
 
-    let emptyNantaSlotsCount = 0;
-    courtsData.forEach(court => {
-        if (court.type === 'nanta') {
-            if (court.isEmpty) {
-                emptyNantaSlotsCount += 2;
-            } else {
-                if (court.sideA && court.sideA.isEmpty) emptyNantaSlotsCount++;
-                if (court.sideB && court.sideB.isEmpty) emptyNantaSlotsCount++;
-            }
-        }
-    });
-
-    let activeNantaTimerCount = 0;
-    nantaQueue.forEach(slot => {
-        const validCount = getValidPlayers(slot.players).length;
+        // 타이머 체크 로그
+        // console.log(`🔍 [타이머 체크] 클럽: ${cId}, 현재 설정된 청소시작멘트:`, clubConfig.cleaningStartMsg);
         
-        if (validCount === 2 && activeNantaTimerCount < emptyNantaSlotsCount) {
-            activeNantaTimerCount++;
-            
-            if (!slot.fullAt) {
-                slot.fullAt = now;
+        // 클럽별 독립된 청소 상태 관리 (클럽 객체 내부에 isCleaningTime 유지)
+        if (typeof club.isCleaningTime === 'undefined') {
+            club.isCleaningTime = false;
+        }
+
+        const cGameQueue = club.gameQueue || (cId === 'unjeong' ? gameQueue : []);
+        const cNantaQueue = club.nantaQueue || (cId === 'unjeong' ? nantaQueue : []);
+        const cCourtsData = club.courtsData || (cId === 'unjeong' ? courtsData : []);
+
+        const schedules = clubConfig.cleaningSchedules || [];
+        const activeSchedule = schedules.find(s => currentHHMM >= s.start && currentHHMM < s.end);
+
+        // 1) 해당 클럽의 청소 시작 시점 감지
+        if (activeSchedule && !club.isCleaningTime) {
+            club.isCleaningTime = true;
+
+            const startMsg = clubConfig.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+           
+            // 💡 수정 후: 구장별 독립 큐로 전송
+            pushVoiceAnnouncement(cId, {
+                clubId: cId,
+                matchType: '공지',
+                names: [],
+                message: startMsg
+            });
+
+            // 해당 클럽 룸에만 전송
+            io.to(`club_${cId}`).emit('toastAlert', `🧹 ${startMsg}`);
+
+            io.to(`tv-room_${cId}`).emit('tvCleaningAlert', {
+                clubId: cId, // 💡 클럽 ID 명시
+                type: 'start',
+                title: '🧹 구장 청소 및 코트 정비 시간',
+                message: startMsg,
+                duration: 10000
+            });
+
+            if (typeof addNotification === 'function') {
+                addNotification(`🧹 [구장 청소 시작] ${startMsg}`, cId);
             }
+        }
 
-            // 경과 시간 및 남은 시간 계산
-            const elapsed = Math.floor((now - slot.fullAt) / 1000);
-            slot.remainingSeconds = Math.max(0, config.ENTRY_TIMEOUT_SEC - elapsed);
+        // 2) 해당 클럽의 청소 종료 시점 감지
+        if (!activeSchedule && club.isCleaningTime) {
+            club.isCleaningTime = false;
 
-            // 💡 난타 타이머 시작 후 정확히 30초가 지났을 때 음성 안내 및 개인 팝업 전송
-            if (elapsed === 30 && !slot.announced) {
-                slot.announced = true;
-                const validPlayers = getValidPlayers(slot.players);
-                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-                
-                // 비어있는 난타 반코트들을 순서대로 수집하여 activeNantaTimerCount에 맞게 매칭
-                let availableSides = [];
-                for (let court of courtsData) {
+            const endMsg = clubConfig.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+
+            pushVoiceAnnouncement(cId,  {
+                clubId: cId,
+                matchType: '공지',
+                names: [],
+                message: endMsg
+            });
+
+            io.to(`club_${cId}`).emit('toastAlert', `🏸 ${endMsg}`);
+
+            io.to(`tv-room_${cId}`).emit('tvCleaningAlert', {
+                clubId: cId, // 💡 클럽 ID 명시
+                type: 'end',
+                title: '🏸 구장 청소 완료 안내',
+                message: endMsg,
+                duration: 8000
+            });
+
+            if (typeof addNotification === 'function') {
+                addNotification(`✅ [구장 청소 종료] ${endMsg}`, cId);
+            }
+        }
+
+        // 3) 청소 진행 중인 경우 해당 클럽의 타이머 동결 처리
+        if (club.isCleaningTime) {
+            if (Array.isArray(cGameQueue)) {
+                cGameQueue.forEach(slot => { if (slot.fullAt) slot.fullAt += 1000; });
+            }
+            if (Array.isArray(cNantaQueue)) {
+                cNantaQueue.forEach(slot => { if (slot.fullAt) slot.fullAt += 1000; });
+            }
+            if (Array.isArray(cCourtsData)) {
+                cCourtsData.forEach(court => {
                     if (court.type === 'nanta') {
-                        if (court.sideA && court.sideA.isEmpty) {
-                            availableSides.push({ courtId: court.id, side: 'sideA' });
-                        }
-                        if (court.sideB && court.sideB.isEmpty) {
-                            availableSides.push({ courtId: court.id, side: 'sideB' });
+                        ['sideA', 'sideB'].forEach(side => {
+                            if (court[side] && !court[side].isEmpty && court[side].startTime) {
+                                court[side].startTime += 1000;
+                            }
+                        });
+                    }
+                });
+            }
+
+            if (typeof broadcastState === 'function') {
+                broadcastState(cId);
+            }
+            return; // 이 클럽의 이번 틱은 청소로 인해 대기/진행 타이머 동결
+        }
+
+        // -------------------------------------------------------------
+        // 아래부터는 기존의 게임 및 난타 대기열/코트 타이머 루프 로직 그대로 유지
+        // -------------------------------------------------------------
+
+        // 1. 게임 코트 및 게임 대기열 처리
+        const emptyGameCourtsCount = cCourtsData.filter(c => c.type === 'game' && c.isEmpty).length;
+        let activeTimerCount = 0;
+
+        cGameQueue.forEach((slot) => {
+            const validCount = getValidPlayers(slot.players).length;
+            
+            if (validCount === 4 && activeTimerCount < emptyGameCourtsCount) {
+                activeTimerCount++;
+                
+                if (!slot.fullAt) {
+                    slot.fullAt = now;
+                }
+                
+                const elapsed = Math.floor((now - slot.fullAt) / 1000);
+                slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
+
+                if (elapsed === 30 && !slot.announced) {
+                    slot.announced = true;
+                    const validPlayers = getValidPlayers(slot.players);
+                    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                    
+                    const emptyGameCourts = cCourtsData.filter(c => c.type === 'game' && c.isEmpty);
+                    const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
+                    const courtNum = targetCourt ? targetCourt.id : '';
+
+                    // 💡 수정 후: 구장별 독립 큐로 전송
+                    pushVoiceAnnouncement(cId, {
+                        clubId: cId,
+                        courtNumber: courtNum,
+                        names: memberNames,
+                        matchType: '게임'
+                    });
+
+                    io.to(`club_${cId}`).emit('entryPopupAlert', {
+                        clubId: cId, // 💡 [추가] 클럽 ID 명시
+                        matchType: '게임',
+                        courtNumber: courtNum,
+                        targetPlayers: memberNames
+                    });
+                }
+
+                if (slot.remainingSeconds === 0) {
+                    const targetIdx = cGameQueue.findIndex(s => s.id === slot.id);
+                    if (targetIdx !== -1) {
+                        const expiredTeam = cGameQueue.splice(targetIdx, 1)[0];
+                        const validPlayers = getValidPlayers(expiredTeam.players);
+                        const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+
+                        io.to(`club_${cId}`).emit('tvPopupAlert', {
+                            clubId: cId, // 💡 [추가] 클럽 ID 명시
+                            matchType: '게임',
+                            names: memberNames,
+                            message: '입장 시간 초과로 게임 대기방이 삭제되었습니다.<br>게임 대기를 원하시면 다시 등록해 주세요.'
+                        });
+
+                        const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 게임 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
+                        validPlayers.forEach(playerStr => {
+                            const parts = playerStr.split('/');
+                            const userIdentifier = (parts[1] || parts[0]).trim();
+                            sendPersonalNotification(userIdentifier, cancelPersonalMsg);
+                        });
+
+                        if (typeof addNotification === 'function') {
+                            addNotification(`🗑️ [게임 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`, cId);
                         }
                     }
                 }
+            } else {
+                slot.fullAt = null;
+                slot.remainingSeconds = null;
+                slot.announced = false;
+            }
+        });
+
+        // 2. 난타 코트 및 난타 대기열 처리
+        let emptyNantaSlotsCount = 0;
+        cCourtsData.forEach(court => {
+            if (court.type === 'nanta') {
+                if (court.isEmpty) {
+                    emptyNantaSlotsCount += 2;
+                } else {
+                    if (court.sideA && court.sideA.isEmpty) emptyNantaSlotsCount++;
+                    if (court.sideB && court.sideB.isEmpty) emptyNantaSlotsCount++;
+                }
+            }
+        });
+
+        let activeNantaTimerCount = 0;
+        cNantaQueue.forEach(slot => {
+            const validCount = getValidPlayers(slot.players).length;
+            
+            if (validCount === 2 && activeNantaTimerCount < emptyNantaSlotsCount) {
+                activeNantaTimerCount++;
                 
-                const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
-                const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
+                if (!slot.fullAt) {
+                    slot.fullAt = now;
+                }
 
-                // 🚀 음성 안내 큐 푸시
-                serverAudioQueue.push({
-                    courtNumber: targetCourtNum,
-                    names: memberNames,
-                    matchType: '난타'
-                });
+                const elapsed = Math.floor((now - slot.fullAt) / 1000);
+                slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                // 📱 해당 대기방 회원들에게 입장 촉구 팝업 전송
-                io.emit('entryPopupAlert', {
-                    matchType: '난타',
-                    courtNumber: targetCourtNum,
-                    targetPlayers: memberNames
-                });
-            }
-
-            // --- 난타 대기열 시간 초과 처리부 ---
-            if (slot.remainingSeconds === 0) {
-                const index = nantaQueue.findIndex(s => s.id === slot.id);
-                if (index !== -1) {
-                    const expiredTeam = nantaQueue.splice(index, 1)[0];
-                    const validPlayers = getValidPlayers(expiredTeam.players);
+                if (elapsed === 30 && !slot.announced) {
+                    slot.announced = true;
+                    const validPlayers = getValidPlayers(slot.players);
                     const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-
-                    // 🖥️ TV 전광판에 대기방 삭제 팝업 전송
-                    io.to('tv-room').emit('tvPopupAlert', {
-                        matchType: '난타',
-                        names: memberNames,
-                        message: '입장 시간 초과로 난타 대기방이 삭제되었습니다.<br>난타 대기를 원하시면 다시 등록해 주세요.'
-                    });
-
-                    // 🔔 [개인 알림 발송] 해당 대기방에 있던 팀원들에게만 다이렉트 알림 전송
-                    const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 난타 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
-                    validPlayers.forEach(playerStr => {
-                        const parts = playerStr.split('/');
-                        const userIdentifier = (parts[1] || parts[0]).trim();
-                        sendPersonalNotification(userIdentifier, cancelPersonalMsg);
-                    });
-
-                    // 📝 관리자/시스템 로그용 전체 알림 기록 유지
-                    addNotification(`🗑️ [난타 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`);
-                }
-            }
-        } else {
-            slot.fullAt = null;
-            slot.remainingSeconds = null;
-            slot.announced = false;
-        }
-    });
-
-    courtsData.forEach(court => {
-        if (court.type === 'nanta') {
-            ['sideA', 'sideB'].forEach(side => {
-                if (court[side] && !court[side].isEmpty && court[side].startTime) {
-                    const elapsed = Math.floor((now - court[side].startTime) / 1000);
-                    court[side].remainingSeconds = Math.max(0, config.NANTA_COURT_LIMIT_SEC - elapsed);
                     
-      // 💡 난타 종료 임박(60초 전) 처리 부분
-if (court[side].remainingSeconds === 60 && !court[side].warned1Min) {
-    court[side].warned1Min = true; // 중복 방송 방지 플래그
-    
-    const sideName = (side === 'sideA') ? 'A면' : 'B면';
-    
-    // 🚀 서버 음성 큐에 안내 푸시 (이 안에서 음성과 팝업이 순서대로 함께 처리됨)
-    serverAudioQueue.push({
-        courtNumber: court.id,
-        names: [], 
-        matchType: '난타1분전',
-        message: `${court.id}번 코트 ${sideName} 난타 이용 시간이 잠시 후 종료됩니다. 다음 대기자를 위해 정리를 준비해 주시기 바랍니다.`
-    });
+                    let availableSides = [];
+                    for (let court of cCourtsData) {
+                        if (court.type === 'nanta') {
+                            if (court.sideA && court.sideA.isEmpty) {
+                                availableSides.push({ courtId: court.id, side: 'sideA' });
+                            }
+                            if (court.sideB && court.sideB.isEmpty) {
+                                availableSides.push({ courtId: court.id, side: 'sideB' });
+                            }
+                        }
+                    }
+                    
+                    const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
+                    const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
 
-    // ❌ (삭제) 중복 팝업을 유발하던 직접 emit 코드는 제거합니다!
-    // io.to('tv-room').emit('tvPopupAlert', { ... });
+                    pushVoiceAnnouncement(cId,  {
+                        clubId: cId,
+                        courtNumber: targetCourtNum,
+                        names: memberNames,
+                        matchType: '난타'
+                    });
 
-    addNotification(`⏰ [난타 임박] ${court.id}번 코트 (${sideName}) 이용 시간 1분 전 (종료 준비 안내 송출)`);
-}
-
-if (court[side].remainingSeconds === 0) {
-    const exitedPlayers = court[side].players;
-    // 💡 초기화할 때 warned1Min도 반드시 false로 리셋되도록 설정
-    court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0, warned1Min: false };
-    
-    addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`);
-}
-
-const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
-if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
-    const applyType = court.nextType;
-    court.type = applyType;
-    court.isEmpty = (applyType !== 'lesson');
-    court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
-    delete court.sideA;
-    delete court.sideB;
-}
+                    io.to(`club_${cId}`).emit('entryPopupAlert', {
+                        clubId: cId, // 💡 [추가] 클럽 ID 명시
+                        matchType: '난타',
+                        courtNumber: targetCourtNum,
+                        targetPlayers: memberNames
+                    });
                 }
-            });
+
+                if (slot.remainingSeconds === 0) {
+                    const index = cNantaQueue.findIndex(s => s.id === slot.id);
+                    if (index !== -1) {
+                        const expiredTeam = cNantaQueue.splice(index, 1)[0];
+                        const validPlayers = getValidPlayers(expiredTeam.players);
+                        const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+
+                        io.to(`club_${cId}`).emit('tvPopupAlert', {
+                            clubId: cId, // 💡 [추가] 클럽 ID 명시
+                            matchType: '난타',
+                            names: memberNames,
+                            message: '입장 시간 초과로 난타 대기방이 삭제되었습니다.<br>난타 대기를 원하시면 다시 등록해 주세요.'
+                        });
+
+                        const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 난타 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
+                        validPlayers.forEach(playerStr => {
+                            const parts = playerStr.split('/');
+                            const userIdentifier = (parts[1] || parts[0]).trim();
+                            sendPersonalNotification(userIdentifier, cancelPersonalMsg);
+                        });
+
+                        if (typeof addNotification === 'function') {
+                            addNotification(`🗑️ [난타 대기방 삭제] ${expiredTeam.players.join(', ')} 팀의 입장 시간이 초과되어 대기열에서 삭제되었습니다.`, cId);
+                        }
+                    }
+                }
+            } else {
+                slot.fullAt = null;
+                slot.remainingSeconds = null;
+                slot.announced = false;
+            }
+        });
+
+        // 3. 진행 중인 난타 코트 잔여시간 처리
+        cCourtsData.forEach(court => {
+            if (court.type === 'nanta') {
+                ['sideA', 'sideB'].forEach(side => {
+                    if (court[side] && !court[side].isEmpty && court[side].startTime) {
+                        const elapsed = Math.floor((now - court[side].startTime) / 1000);
+                        court[side].remainingSeconds = Math.max(0, clubConfig.NANTA_COURT_LIMIT_SEC - elapsed);
+                        
+                        if (court[side].remainingSeconds === 60 && !court[side].warned1Min) {
+                            court[side].warned1Min = true;
+                            const sideName = (side === 'sideA') ? 'A면' : 'B면';
+                            
+                            // 💡 수정 후: 구장별 독립 큐로 전송
+                            pushVoiceAnnouncement(cId, {
+                                clubId: cId,
+                                courtNumber: court.id,
+                                names: [], 
+                                matchType: '난타1분전',
+                                message: `${court.id}번 코트 ${sideName} 난타 이용 시간이 잠시 후 종료됩니다. 다음 대기자를 위해 정리를 준비해 주시기 바랍니다.`
+                            });
+
+                            if (typeof addNotification === 'function') {
+                                addNotification(`⏰ [난타 임박] ${court.id}번 코트 (${sideName}) 이용 시간 1분 전`, cId);
+                            }
+                        }
+
+                        if (court[side].remainingSeconds === 0) {
+                            const exitedPlayers = court[side].players;
+                            court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0, warned1Min: false };
+                            
+                            if (typeof addNotification === 'function') {
+                                addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`, cId);
+                            }
+                        }
+
+                        const isBothEmpty = (!court.sideA || court.sideA.isEmpty) && (!court.sideB || court.sideB.isEmpty);
+                        if (isBothEmpty && court.nextType && court.nextType !== 'nanta') {
+                            const applyType = court.nextType;
+                            court.type = applyType;
+                            court.isEmpty = (applyType !== 'lesson');
+                            court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
+                            delete court.sideA;
+                            delete court.sideB;
+                        }
+                    }
+                });
+            }
+        });
+
+        // 4. 해당 클럽에만 최신 상태 실시간 전송
+        if (typeof broadcastState === 'function') {
+            broadcastState(cId);
         }
     });
-
-    broadcastState();
 }, 1000);
 
 // ==========================================
@@ -1431,22 +1857,69 @@ io.on('connection', (socket) => {
 
     console.log('새 소켓 연결:', socket.id);
 
-    // 🔔 [1단계 연동] 로그인 사용자 개인 채널 조인 처리
+    // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정
+    // 클라이언트가 쿼리스트링(?club=xxx)이나 핸드셰이크로 보낸 clubId 확인 (기본값: 'unjeong')
+    // 수정 후
+    const clientClubId = (socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong';
+    socket.clubId = clientClubId;
+    socket.join(`club_${clientClubId}`);
+    console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
+    
+    // ✅ [추가] 룸 입장 직후 해당 클럽 접속자 수 즉시 계산 및 화면 전송
+    broadcastOnlineCount(clientClubId);
+
+    // 🔔 로그인 사용자 소켓 등록 처리
     socket.on('registerUser', (userData) => {
         if (userData && userData.phone) {
             const cleanPhone = String(userData.phone).replace(/[^0-9a-zA-Z가-힣_]/g, '');
             socket.join(`user_${cleanPhone}`);
-            socket.userIdentifier = cleanPhone;
+            socket.userIdentifier = cleanPhone; // 소켓에 로그인 식별자 저장
+            socket.userId = userData.id || cleanPhone;
+            
             console.log(`👤 [소켓 룸 조인] Socket ID(${socket.id})가 user_${cleanPhone} 방에 입장했습니다.`);
+
+            // ✅ 로그인 성공 시점에 해당 클럽 접속자 카운트 즉시 갱신!
+            broadcastOnlineCount(socket.clubId);
         }
     });
 
-    // 💡 사용자가 세션을 등록할 때 (로그인 완료 시점)
-    socket.on('registerUserSession', (username) => {
-        if (!username) return;
+   // 💡 사용자가 세션을 등록할 때 (자동 복귀 검증 및 신규 로그인 승인)
+    socket.on('registerUserSession', (data) => {
+        if (!data) return;
 
-        const cleanUsername = String(username).split('/')[0].trim();
+        // 1. 객체 형태({ username, isAutoRestore })와 기존 문자열 형태 모두 안전하게 처리
+        let rawUsername = '';
+        let isAutoRestore = false;
 
+        if (typeof data === 'object' && data !== null) {
+            rawUsername = data.username || data.user || data.id || '';
+            isAutoRestore = Boolean(data.isAutoRestore);
+        } else {
+            rawUsername = String(data);
+        }
+
+        const cleanUsername = String(rawUsername).split('/')[0].trim();
+        if (!cleanUsername) return;
+
+        // 🚨 [세션 만료 검증 분기]
+        if (typeof expiredUsers !== 'undefined' && expiredUsers[cleanUsername]) {
+            if (isAutoRestore) {
+                // 🛑 자동 복귀 시도: 이미 만료되었으므로 브라우저 열리자마자 즉시 쫓아냄
+                delete expiredUsers[cleanUsername];
+                if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
+                if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
+                console.log(`[접속 차단] 유저(${cleanUsername})는 세션이 완전 만료되어 브라우저 오픈 즉시 강제 로그아웃 신호를 전송합니다.`);
+                
+                socket.emit('forceLogout', { message: '장시간 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.' });
+                return; // ⛔ 소켓 등록을 중단하고 즉시 종료
+            } else {
+                // 🟢 직접 신규 로그인 시도: 이전 만료 기록을 지워주고 정상 통과
+                delete expiredUsers[cleanUsername];
+                console.log(`[신규 로그인] 유저(${cleanUsername})가 직접 로그인하여 이전 만료 상태를 초기화하고 정상 접속합니다.`);
+            }
+        }
+
+        // 중복 로그인 감지 (다른 창/기기 연결 끊기)
         if (activeUserSockets.has(cleanUsername)) {
             const oldSocketId = activeUserSockets.get(cleanUsername);
             if (oldSocketId !== socket.id) {
@@ -1458,46 +1931,143 @@ io.on('connection', (socket) => {
             }
         }
 
-        // 🔄 [추가] 15분 외출 유예 타이머 해제 (대기열 순번 복구 유지)
+        // 🔄 [수정] 1. 구장 식별자 먼저 추출 (구장별 독립 세션 키 생성)
+        const incomingClubId = socket.clubId || 'unjeong';
+        const clubUserKey = `${incomingClubId}_${cleanUsername}`;
+
+        // 🚪 [수정] 동일 구장 내 중복 로그인만 감지 (다른 구장은 서로 튕겨내지 않음)
+        if (activeUserSockets.has(clubUserKey)) {
+            const oldSocketId = activeUserSockets.get(clubUserKey);
+            if (oldSocketId !== socket.id) {
+                io.to(oldSocketId).emit('forceLogout', {
+                    username: cleanUsername,
+                    clubId: incomingClubId,
+                    reason: 'duplicate_login',
+                    message: '동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.'
+                });
+            }
+        }
+
+        // 🔄 [수정] 유예 타이머 해제 및 클럽 변경 감지 (이전 구장 대기방 정리)
+        const previousClubId = (typeof disconnectUserClubs !== 'undefined') ? disconnectUserClubs[cleanUsername] : null;
+
+        // ⏱️ 정상 유예 시간 내 복귀한 경우: 대기 타이머 해제
         if (disconnectTimers[cleanUsername]) {
             clearTimeout(disconnectTimers[cleanUsername]);
             delete disconnectTimers[cleanUsername];
-            console.log(`[복귀 확인] 유저(${cleanUsername}) 15분 이내 재접속 -> 대기열 자동 퇴장 취소 및 순번 유지`);
-        }
-        if (expiredUsers[cleanUsername]) {
-            delete expiredUsers[cleanUsername];
+
+            // 다른 클럽으로 들어온 경우 -> 이전 클럽 대기방 즉시 폭파!
+            if (previousClubId && previousClubId !== incomingClubId) {
+                const prevUser = (typeof disconnectRawUsers !== 'undefined' && disconnectRawUsers[cleanUsername])
+                    ? disconnectRawUsers[cleanUsername]
+                    : cleanUsername;
+
+                if (typeof cleanupUser === 'function') {
+                    cleanupUser(prevUser);
+                }
+                console.log(`[클럽 변경 감지] 유저(${cleanUsername})가 '${previousClubId}' ➔ '${incomingClubId}'(으)로 이동: 이전 대기방 즉시 삭제 완료`);
+            } else {
+                console.log(`[복귀 확인] 유저(${cleanUsername}) 동일 구장(${incomingClubId}) 재접속: 대기열 순번 유지`);
+            }
+
+            if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
+            if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
         }
 
-        activeUserSockets.set(cleanUsername, socket.id);
+        // ⏱️ 세션 타이머도 함께 해제 (정상 사용 중 만료되는 현상 방지)
+        if (typeof sessionTimers !== 'undefined' && sessionTimers[cleanUsername]) {
+            clearTimeout(sessionTimers[cleanUsername]);
+            delete sessionTimers[cleanUsername];
+        }
+
+        // 💾 [수정] 구장별 세션 키로 소켓 등록
+        activeUserSockets.set(clubUserKey, socket.id);
         socket.username = cleanUsername;
-        broadcastOnlineCount();
+        socket.clubUserKey = clubUserKey;
+
+        if (typeof broadcastOnlineCount === 'function') {
+            broadcastOnlineCount(incomingClubId);
+        }
     });
 
-    // 서버 소켓 연결 - TV 전광판 등록
-    socket.on('registerTV', () => {
-        socket.join('tv-room');
-        console.log("📺 TV 전광판 화면이 'tv-room'에 등록되었습니다.");
+    // ==========================================
+    // 📺 TV 전광판 등록 (하이픈/언더바 룸 동시 지원 및 완벽 격리)
+    // ==========================================
+    socket.on('registerTV', (data) => {
+        const clubId = (data && data.clubId) ? data.clubId : (socket.clubId || 'unjeong');
+        
+        // 1. 기존 방 정리 (Socket.io Set 및 Array 완벽 호환)
+        if (socket.rooms) {
+            const currentRooms = Array.from(socket.rooms);
+            currentRooms.forEach(room => {
+                if (room.startsWith('tv-room') || room.startsWith('club_')) {
+                    socket.leave(room);
+                }
+            });
+        }
+
+        socket.clubId = clubId;
+        socket.isTV = true;
+        
+        // 💡 2. 하이픈(-)과 언더바(_) 방을 둘 다 참가시켜 발송 방식 불일치 완벽 방어!
+        socket.join(`tv-room-${clubId}`);
+        socket.join(`tv-room_${clubId}`);
+        socket.join(`club_${clubId}`);
+
+        console.log(`📺 TV 전광판 등록 완료: [클럽: ${clubId}] -> 룸: tv-room-${clubId}, club_${clubId}`);
+
+        if (typeof broadcastState === 'function') {
+            broadcastState(clubId);
+        }
     });
 
+    // ==========================================
+    // 🚪 [추가] 범용 룸 조인 리스너 (tv.html의 joinRoom 신호 수신)
+    // ==========================================
+   // ==========================================
+    // 🚪 [보강] 범용 룸 조인 리스너 (방 이름 자동 매칭 및 이중 격리 보장)
+    // ==========================================
+    socket.on('joinRoom', (roomName) => {
+        if (!roomName) return;
+
+        // 1. 전달받은 원본 방 이름으로 조인 (예: 'gimpo' 또는 'club_gimpo')
+        socket.join(roomName);
+
+        // 2. 만약 'club_' 접두사가 없는 순수 ID라면 'club_' 접두사 룸에도 동시 참가
+        const cleanId = roomName.replace(/^club_/, '');
+        const clubRoomName = `club_${cleanId}`;
+        socket.join(clubRoomName);
+
+        console.log(`🚪 [소켓 룸 조인] 소켓(${socket.id}) -> 방 등록: [${roomName}, ${clubRoomName}]`);
+    });
+    
     // 🔑 [추가 완료] 정회원 로그인 처리 소켓 이벤트
+    // 🔑 [수정] 정회원 로그인 처리 소켓 이벤트 (클럽별 회원 분리)
     socket.on('loginMember', ({ name, phone }, callback) => {
         const trimmedName = name ? name.trim() : '';
         const cleanInputPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
+        const currentClubId = socket.clubId || 'unjeong'; // 🏢 접속한 클럽 확인
 
         if (!trimmedName || !cleanInputPhone) {
             return callback({ success: false, message: '이름과 전화번호를 모두 입력해 주세요.' });
         }
 
-        const query = `SELECT * FROM regular_members WHERE TRIM(name) = ? AND REPLACE(REPLACE(phone, '-', ''), ' ', '') = ?`;
+        // 🏢 해당 클럽 소속 회원만 조회 (기존 데이터 누락 시 기본 unjeong 매핑)
+        const query = `
+            SELECT * FROM regular_members 
+            WHERE TRIM(name) = ? 
+              AND REPLACE(REPLACE(phone, '-', ''), ' ', '') = ?
+              AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))
+        `;
 
-        db.get(query, [trimmedName, cleanInputPhone], (err, row) => {
+        db.get(query, [trimmedName, cleanInputPhone, currentClubId, currentClubId], (err, row) => {
             if (err) {
                 console.error('❌ 로그인 DB 조회 에러:', err.message);
                 return callback({ success: false, message: '서버 에러가 발생했습니다.' });
             }
 
             if (!row) {
-                return callback({ success: false, message: '등록된 정회원 정보가 일치하지 않습니다.' });
+                return callback({ success: false, message: '해당 클럽에 등록된 정회원 정보를 찾을 수 없습니다.' });
             }
 
             const genderStr = row.gender ? row.gender : '미입력';
@@ -1506,6 +2076,7 @@ io.on('connection', (socket) => {
 
             const user = {
                 id: row.id,
+                clubId: row.club_id || currentClubId,
                 username: row.username,
                 name: row.name,
                 rawName: row.name,
@@ -1522,14 +2093,17 @@ io.on('connection', (socket) => {
     });
 
     // 🔑 [추가 완료] 일일회원 로그인 처리 소켓 이벤트
+    // 🔑 [수정 완료] 일일회원 로그인 처리 소켓 이벤트 (클럽 식별자 부여)
     socket.on('loginGuest', ({ name, phone, payCode }, callback) => {
         if (!payCode || payCode.length !== 6) {
             return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
         }
 
+        const currentClubId = socket.clubId || 'unjeong'; // 🏢 접속한 클럽 식별
         const guestId = `guest_${Date.now()}`;
         const user = {
             id: guestId,
+            clubId: currentClubId, // 🏢 [추가] 일일회원 객체에도 현재 클럽 ID 부여
             username: guestId,
             name: name,
             rawName: name,
@@ -1544,25 +2118,48 @@ io.on('connection', (socket) => {
         callback({ success: true, user });
     });
 
-    // 🎛️ [관리자] Wi-Fi 제한 ON/OFF 토글 및 구장 IP 등록 이벤트
-    socket.on('updateWifiSettings', ({ useWifiRestriction, allowedGymIps }) => {
-        if (typeof useWifiRestriction === 'boolean') {
-            config.useWifiRestriction = useWifiRestriction;
+    // 🎛️ [관리자] Wi-Fi 제한 ON/OFF 토글 및 구장 IP 등록 이벤트 (클럽별 독립 분리)
+    socket.on('updateWifiSettings', ({ clubId: reqClubId, useWifiRestriction, allowedGymIps }) => {
+        try {
+            const clubId = reqClubId || socket.clubId || 'unjeong';
+            const club = (typeof getClub === 'function') ? getClub(clubId) : (clubs && clubs[clubId]);
+
+            if (!club) return;
+            if (!club.config) club.config = {};
+
+            if (typeof useWifiRestriction === 'boolean') {
+                club.config.useWifiRestriction = useWifiRestriction;
+            }
+            if (Array.isArray(allowedGymIps)) {
+                club.config.allowedGymIps = allowedGymIps;
+            }
+
+            // 💾 1. clubs-data.json에 영구 저장
+            if (typeof saveClubsData === 'function') {
+                saveClubsData();
+            }
+
+            console.log(`📡 [${clubId}] Wi-Fi 제한: ${club.config.useWifiRestriction ? 'ON' : 'OFF'}, 등록 IP:`, club.config.allowedGymIps);
+
+            // 📡 2. 해당 클럽 화면/관리자에 설정 동기화
+            if (typeof broadcastState === 'function') {
+                broadcastState(clubId);
+            }
+
+            // 📡 3. 해당 클럽 방(club_${clubId})에 접속 중인 사용자들에게만 Wi-Fi 인증 상태 재검증 전송
+            const roomSockets = io.sockets.adapter.rooms.get(`club_${clubId}`);
+            if (roomSockets) {
+                roomSockets.forEach((sId) => {
+                    const s = io.sockets.sockets.get(sId);
+                    if (s) {
+                        const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(s, clubId) : true;
+                        s.emit('wifiStatus', { isGymWifi: isGym, clientIp: (typeof getClientIp === 'function' ? getClientIp(s) : '') });
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('Wi-Fi 설정 변경 에러:', err);
         }
-        if (Array.isArray(allowedGymIps)) {
-            config.allowedGymIps = allowedGymIps;
-        }
-
-        // config.json 파일에 영구 저장
-        saveConfigToFile();
-
-        console.log(`📡 [설정 변경] Wi-Fi 제한: ${config.useWifiRestriction ? 'ON' : 'OFF'}, 등록 IP:`, config.allowedGymIps);
-
-        // 접속 중인 모든 사용자에게 새로운 Wi-Fi 인증 상태를 즉시 재전송
-        io.sockets.sockets.forEach((s) => {
-            const isGym = isGymWifiUser(s);
-            s.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(s) });
-        });
     });
 
     socket.on('verifyAdminPassword', (inputPw, callback) => {
@@ -1575,39 +2172,76 @@ io.on('connection', (socket) => {
         }
     });
 
-   socket.on('updateConfig', (newConfig) => {
+  socket.on('updateConfig', (newConfig) => {
         try {
             if (newConfig) {
-                if (newConfig.ENTRY_TIMEOUT_SEC !== undefined) config.ENTRY_TIMEOUT_SEC = newConfig.ENTRY_TIMEOUT_SEC;
-                if (newConfig.NANTA_COURT_LIMIT_SEC !== undefined) config.NANTA_COURT_LIMIT_SEC = newConfig.NANTA_COURT_LIMIT_SEC;
+                const clubId = newConfig.clubId || socket.clubId || 'unjeong';
+
+                if (!clubs[clubId]) clubs[clubId] = {};
+                if (!clubs[clubId].config) {
+                    clubs[clubId].config = JSON.parse(JSON.stringify(typeof config !== 'undefined' ? config : {}));
+                }
+                const targetConfig = clubs[clubId].config;
+
+                // 💡 전달된 필드만 안전하게 개별 갱신 (전달되지 않은 값은 기존 값 유지)
+                if (newConfig.ENTRY_TIMEOUT_SEC !== undefined) targetConfig.ENTRY_TIMEOUT_SEC = newConfig.ENTRY_TIMEOUT_SEC;
+                if (newConfig.NANTA_COURT_LIMIT_SEC !== undefined) targetConfig.NANTA_COURT_LIMIT_SEC = newConfig.NANTA_COURT_LIMIT_SEC;
                 if (newConfig.ADMIN_PASSWORD !== undefined && newConfig.ADMIN_PASSWORD.trim() !== '') {
-                    config.ADMIN_PASSWORD = newConfig.ADMIN_PASSWORD;
+                    targetConfig.ADMIN_PASSWORD = newConfig.ADMIN_PASSWORD;
                 }
 
-                // 🧹 구장 청소 스케줄 및 안내 방송 멘트 저장
+                // ⏱️ 유예 시간 관리자 설정 갱신 (대기방 보존 분, 세션 만료 분)
+                if (newConfig.queueGraceMinutes !== undefined) {
+                    targetConfig.queueGraceMinutes = Number(newConfig.queueGraceMinutes) || 30;
+                }
+                if (newConfig.sessionExpireMinutes !== undefined) {
+                    targetConfig.sessionExpireMinutes = Number(newConfig.sessionExpireMinutes) || 60;
+                }
+
                 if (newConfig.cleaningSchedules !== undefined) {
-                    config.cleaningSchedules = newConfig.cleaningSchedules;
+                    targetConfig.cleaningSchedules = newConfig.cleaningSchedules;
                 }
                 if (newConfig.cleaningStartMsg !== undefined) {
-                    config.cleaningStartMsg = newConfig.cleaningStartMsg;
+                    targetConfig.cleaningStartMsg = newConfig.cleaningStartMsg;
                 }
                 if (newConfig.cleaningEndMsg !== undefined) {
-                    config.cleaningEndMsg = newConfig.cleaningEndMsg;
+                    targetConfig.cleaningEndMsg = newConfig.cleaningEndMsg;
                 }
 
-                // 🔊 [추가] TV 음성 안내(TTS) 개별 제어 설정 저장
                 if (newConfig.soundEntryNotice !== undefined) {
-                    config.soundEntryNotice = newConfig.soundEntryNotice;
+                    targetConfig.soundEntryNotice = newConfig.soundEntryNotice;
                 }
                 if (newConfig.soundNantaWarning !== undefined) {
-                    config.soundNantaWarning = newConfig.soundNantaWarning;
+                    targetConfig.soundNantaWarning = newConfig.soundNantaWarning;
                 }
                 if (newConfig.soundScheduleNotice !== undefined) {
-                    config.soundScheduleNotice = newConfig.soundScheduleNotice;
+                    targetConfig.soundScheduleNotice = newConfig.soundScheduleNotice;
                 }
+
+                // 1~4번 개별 청소 메시지 설정 안전 갱신
+                for (let i = 1; i <= 4; i++) {
+                    if (newConfig[`cleaningStartMsg_${i}`] !== undefined) {
+                        targetConfig[`cleaningStartMsg_${i}`] = newConfig[`cleaningStartMsg_${i}`];
+                    }
+                    if (newConfig[`cleaningEndMsg_${i}`] !== undefined) {
+                        targetConfig[`cleaningEndMsg_${i}`] = newConfig[`cleaningEndMsg_${i}`];
+                    }
+                }
+
+                console.log(`📌 [클럽별 설정 안전 병합 완료] 클럽: ${clubId} (대기유예: ${targetConfig.queueGraceMinutes}분, 세션만료: ${targetConfig.sessionExpireMinutes}분)`);
             }
-            saveConfigToFile();
-            broadcastState();
+
+            const targetClubId = newConfig.clubId || socket.clubId || 'unjeong';
+            
+            // 1. 해당 클럽에 변경된 설정 실시간 전송
+            if (typeof broadcastState === 'function') {
+                broadcastState(targetClubId);
+            }
+
+            // 2. 💾 구장 환경설정 파일에 영구 저장 (1회 실행)
+            if (typeof saveClubsData === 'function') {
+                saveClubsData();
+            }
         } catch (err) {
             console.error('환경 설정 변경 에러:', err);
         }
@@ -1618,74 +2252,99 @@ io.on('connection', (socket) => {
             if (newPassword) {
                 config.ADMIN_PASSWORD = newPassword; 
             }
-            broadcastState();
+            broadcastState(socket.clubId); // 👈 소켓이 속한 클럽 아이디를 넣어줍니다.
         } catch (err) {
             console.error('비밀번호 변경 에러:', err);
         }
     });
 
-    socket.on('updateCourtsConfig', (newCourtsConfig) => {
-        try {
-            if (!Array.isArray(newCourtsConfig)) return;
+    socket.on('updateCourtsConfig', (payload) => {
+    try {
+        // 💡 데이터가 객체({ clubId, courts })인지 단순 배열([])인지 모두 호환 처리
+        let courtsList = [];
+        let targetClubId = socket.clubId || 'unjeong';
 
-            courtsData = newCourtsConfig.map((court, idx) => {
-                const id = idx + 1;
-                const targetType = court ? (court.type || 'game') : 'game';
-                const targetNote = court ? (court.note || '') : '';
-                const existingCourt = courtsData.find(c => c.id === id);
-
-                const isGameActive = existingCourt && existingCourt.type === 'game' && !existingCourt.isEmpty && existingCourt.players && existingCourt.players.trim() !== '';
-                const isNantaActive = existingCourt && existingCourt.type === 'nanta' && ((existingCourt.sideA && !existingCourt.sideA.isEmpty) || (existingCourt.sideB && !existingCourt.sideB.isEmpty));
-                const isInUse = isGameActive || isNantaActive;
-
-                if (!isInUse) {
-                    if (targetType === 'nanta') {
-                        return { 
-                            id, type: 'nanta', nextType: 'nanta', note: targetNote,
-                            sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
-                            sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 } 
-                        };
-                    } else if (targetType === 'lesson') {
-                        return { 
-                            id, type: 'lesson', nextType: 'lesson', isEmpty: false, 
-                            players: targetNote || '레슨 코트', note: targetNote 
-                        };
-                    } else {
-                        return { 
-                            id, type: 'game', nextType: 'game', isEmpty: true, 
-                            players: '', note: targetNote 
-                        };
-                    }
-                }
-
-                return {
-                    ...existingCourt,
-                    nextType: targetType,
-                    note: targetNote
-                };
-            });
-            broadcastState();
-        } catch (err) {
-            console.error('코트 설정 변경 에러:', err);
+        if (Array.isArray(payload)) {
+            courtsList = payload;
+        } else if (payload && typeof payload === 'object') {
+            if (payload.clubId) targetClubId = payload.clubId;
+            if (Array.isArray(payload.courts)) courtsList = payload.courts;
         }
-    });
+
+        if (!Array.isArray(courtsList)) return;
+
+        const club = getClub(targetClubId);
+
+        // 해당 클럽의 courtsData 갱신
+        club.courtsData = courtsList.map((court, idx) => {
+            const id = idx + 1;
+            const targetType = court ? (court.type || 'game') : 'game';
+            const targetNote = court ? (court.note || '') : '';
+            const existingCourt = Array.isArray(club.courtsData) ? club.courtsData.find(c => c.id === id) : null;
+
+            const isGameActive = existingCourt && existingCourt.type === 'game' && !existingCourt.isEmpty && existingCourt.players && existingCourt.players.trim() !== '';
+            const isNantaActive = existingCourt && existingCourt.type === 'nanta' && ((existingCourt.sideA && !existingCourt.sideA.isEmpty) || (existingCourt.sideB && !existingCourt.sideB.isEmpty));
+            const isInUse = isGameActive || isNantaActive;
+
+            if (!isInUse) {
+                if (targetType === 'nanta') {
+                    return { 
+                        id, type: 'nanta', nextType: 'nanta', note: targetNote,
+                        sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+                        sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 } 
+                    };
+                } else if (targetType === 'lesson') {
+                    return { 
+                        id, type: 'lesson', nextType: 'lesson', isEmpty: false, 
+                        players: targetNote || '레슨 코트', note: targetNote 
+                    };
+                } else {
+                    return { 
+                        id, type: 'game', nextType: 'game', isEmpty: true, 
+                        players: '', note: targetNote 
+                    };
+                }
+            }
+
+            return {
+                ...existingCourt,
+                nextType: targetType,
+                note: targetNote
+            };
+        });
+
+        // 💡 수정한 해당 클럽에만 변경 상태 브로드캐스트
+        if (typeof broadcastState === 'function') {
+            broadcastState(targetClubId);
+        }
+
+        console.log(`✅ [${targetClubId}] 코트 설정 변경 완료: 총 ${club.courtsData.length}개 코트 등록됨`);
+        saveClubsData(); // 💾 코트 구성 영구 저장 실행
+    } catch (err) {
+        console.error('코트 설정 변경 에러:', err);
+    }
+});
 
     // 🔒 방 개설 시 현재 코트 플레이 여부 및 중복 체크
     socket.on('createSlot', ({ type, userId, user }) => {
+        // 🏢 [멀티 테넌트] 현재 소켓이 접속한 클럽 데이터 가져오기
+        const club = getClub(socket.clubId);
+
         if (!isGymWifiUser(socket)) {
             socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
             return;
         }
         const myName = user.split(' / ')[0].trim();
 
-        const isInGameCourt = courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(myName));
+        // ✅ 해당 클럽 코트만 검사
+        const isInGameCourt = club.courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(myName));
         if (isInGameCourt) {
             socket.emit('alertMessage', `⚠️ ${myName} 님은 현재 게임 코트에서 플레이 중이므로 새로운 방을 개설할 수 없습니다.`);
             return;
         }
 
         if (type === 'nanta') {
-            const isInNantaCourt = courtsData.some(c => c.type === 'nanta' && (
+            const isInNantaCourt = club.courtsData.some(c => c.type === 'nanta' && (
                 (c.sideA && !c.sideA.isEmpty && c.sideA.players && c.sideA.players.includes(myName)) ||
                 (c.sideB && !c.sideB.isEmpty && c.sideB.players && c.sideB.players.includes(myName))
             ));
@@ -1695,8 +2354,9 @@ io.on('connection', (socket) => {
             }
         }
 
-        const existingGameSlot = gameQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
-        const existingNantaSlot = nantaQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
+        // ✅ 해당 클럽의 대기열만 검사
+        const existingGameSlot = club.gameQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
+        const existingNantaSlot = club.nantaQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
 
         const targetType = type; 
         const sameSlot = targetType === 'game' ? existingGameSlot : existingNantaSlot;
@@ -1716,19 +2376,24 @@ io.on('connection', (socket) => {
     });
 
     socket.on('forceCreateSlot', ({ type, userId, user }) => {
+        // 🏢 [멀티 테넌트] 현재 소켓이 접속한 클럽 데이터 가져오기
+        const club = getClub(socket.clubId);
+
         if (!isGymWifiUser(socket)) {
             socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
             return;
         }
         const myName = user.split(' / ')[0].trim();
-        const isInGameCourt = courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(myName));
+        
+        // ✅ 해당 클럽 코트만 검사
+        const isInGameCourt = club.courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(myName));
         if (isInGameCourt) {
             socket.emit('alertMessage', `⚠️ ${myName} 님은 현재 게임 코트에서 플레이 중이므로 방을 개설할 수 없습니다.`);
             return;
         }
 
         if (type === 'nanta') {
-            const isInNantaCourt = courtsData.some(c => c.type === 'nanta' && (
+            const isInNantaCourt = club.courtsData.some(c => c.type === 'nanta' && (
                 (c.sideA && !c.sideA.isEmpty && c.sideA.players && c.sideA.players.includes(myName)) ||
                 (c.sideB && !c.sideB.isEmpty && c.sideB.players && c.sideB.players.includes(myName))
             ));
@@ -1738,8 +2403,9 @@ io.on('connection', (socket) => {
             }
         }
 
-        const existingGameSlot = gameQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
-        const existingNantaSlot = nantaQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
+        // ✅ 해당 클럽의 대기열만 검사
+        const existingGameSlot = club.gameQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
+        const existingNantaSlot = club.nantaQueue.find(slot => slot.userIds && slot.userIds.includes(userId));
         const sameSlot = type === 'game' ? existingGameSlot : existingNantaSlot;
         
         if (sameSlot) {
@@ -1747,24 +2413,33 @@ io.on('connection', (socket) => {
             return;
         }
 
-        createNewSlotDirectly(type, userId, user);
+        // 💡 실제 슬롯 생성 함수 호출 시에도 클럽 정보를 넘겨주어야 함
+        if (typeof createNewSlotDirectly === 'function') {
+            createNewSlotDirectly(type, userId, user, socket.clubId);
+        }
     });
 
+    // 🏸 대기 슬롯 참가 처리 (클럽별 멀티 테넌트 반영)
     socket.on('joinPlayer', ({ type, slotId, index, name }) => {
         if (!isGymWifiUser(socket)) {
             socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 대기 방에 입장할 수 있습니다.');
             return;
         }
-        const cleanName = name.split('/')[0].trim();
 
-        const isInGameCourt = courtsData.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(cleanName));
+        const currentClubId = socket.clubId || 'unjeong';
+        const club = clubs[currentClubId] || clubs['unjeong'];
+        const cleanName = name ? name.split('/')[0].trim() : '';
+
+        // 1. 해당 클럽의 코트에서 이미 플레이 중인지 검사
+        const currentCourts = club.courtsData || [];
+        const isInGameCourt = currentCourts.some(c => c.type === 'game' && !c.isEmpty && c.players && c.players.includes(cleanName));
         if (isInGameCourt) {
             socket.emit('alertMessage', `⚠️ ${cleanName} 님은 현재 게임 코트에서 플레이 중이므로 대기 방에 입장할 수 없습니다.`);
             return;
         }
 
         if (type === 'nanta') {
-            const isInNantaCourt = courtsData.some(c => c.type === 'nanta' && (
+            const isInNantaCourt = currentCourts.some(c => c.type === 'nanta' && (
                 (c.sideA && !c.sideA.isEmpty && c.sideA.players && c.sideA.players.includes(cleanName)) ||
                 (c.sideB && !c.sideB.isEmpty && c.sideB.players && c.sideB.players.includes(cleanName))
             ));
@@ -1774,18 +2449,27 @@ io.on('connection', (socket) => {
             }
         }
 
-        const queue = type === 'game' ? gameQueue : nantaQueue;
-        const slot = queue.find(s => s.id === slotId);
+        // 2. 해당 클럽의 대기열에서 슬롯 탐색
+        const queue = type === 'game' ? club.gameQueue : club.nantaQueue;
+        const slot = queue ? queue.find(s => s.id === slotId) : null;
         
         if (slot && index >= 0 && index < slot.players.length) {
             slot.players[index] = name;
-            addNotification(`👤 [참가] ${name} 님이 대기 방에 입장하셨습니다.`);
-            broadcastState();
+            if (typeof addNotification === 'function') {
+                addNotification(`👤 [참가] ${name} 님이 대기 방에 입장하셨습니다.`, currentClubId);
+            }
+            // 3. 해당 클럽 방에만 최신 상태 실시간 브로드캐스트
+            if (typeof broadcastState === 'function') {
+                broadcastState(currentClubId);
+            }
         }
     });
 
-    function createNewSlotDirectly(type, userId, user) {
+   function createNewSlotDirectly(type, userId, user, clubId = 'unjeong') {
         const myName = user.split(' / ')[0].trim();
+        
+        // 🏢 [멀티 테넌트] 대상 클럽 데이터 가져오기
+        const club = getClub(clubId);
 
         const newSlot = {
             id: 'slot_' + (slotIdCounter++),
@@ -1797,39 +2481,62 @@ io.on('connection', (socket) => {
             remainingSeconds: null
         };
 
-        if (type === 'game') gameQueue.push(newSlot);
-        else nantaQueue.push(newSlot);
+        // ✅ 해당 클럽의 대기열에만 방 추가
+        if (type === 'game') {
+            club.gameQueue.push(newSlot);
+        } else {
+            club.nantaQueue.push(newSlot);
+        }
 
-        addNotification(`📢 [방 개설] 새로운 ${type === 'game' ? '게임' : '난타'} 방이 개설되었습니다 (${myName}).`);
-        broadcastState();
+        // 해당 클럽 전용 공지 알림 추가 (addNotification 함수가 clubId를 지원하도록 연결)
+        if (typeof addNotification === 'function') {
+            addNotification(`📢 [방 개설] 새로운 ${type === 'game' ? '게임' : '난타'} 방이 개설되었습니다 (${myName}).`, clubId);
+        }
+
+        // ✅ 해당 클럽 사용자들에게만 화면 갱신 브로드캐스트
+        broadcastState(clubId);
     }
 
     socket.on('exitPlayer', ({ type, slotId, index }) => {
-        const queue = type === 'game' ? gameQueue : nantaQueue;
+        // 🏢 [멀티 테넌트] 현재 소켓이 속한 클럽의 데이터 가져오기
+        const club = getClub(socket.clubId);
+        const queue = type === 'game' ? club.gameQueue : club.nantaQueue;
         const slotIdx = queue.findIndex(s => s.id === slotId);
 
         if (slotIdx !== -1) {
             const slot = queue[slotIdx];
             slot.players[index] = '';
             
+            // 해당 자리의 userId도 함께 정리 (대기열 중복 방지 해제)
+            if (slot.userIds && slot.userIds[index]) {
+                slot.userIds[index] = null;
+            }
+            
             if (getValidPlayers(slot.players).length === 0) {
                 queue.splice(slotIdx, 1);
             }
-            broadcastState();
+            // ✅ 해당 클럽에만 상태 갱신 전송
+            broadcastState(socket.clubId);
         }
     });
 
+    // 🏟️ [코트 입장 처리] (멀티 테넌트 반영)
     socket.on('enterCourtFromSlot', ({ type, slotId }) => {
         try {
+            const currentClubId = socket.clubId || 'unjeong';
+            const club = clubs[currentClubId] || clubs['unjeong'];
+            const clubCourts = club.courtsData || [];
+
             if (type === 'game') {
-                const slotIdx = gameQueue.findIndex(s => s.id === slotId);
+                const queue = club.gameQueue || [];
+                const slotIdx = queue.findIndex(s => s.id === slotId);
                 if (slotIdx === -1) return;
-                const slot = gameQueue[slotIdx];
+                const slot = queue[slotIdx];
                 const validPlayers = getValidPlayers(slot.players);
 
                 if (validPlayers.length < 4) return;
 
-                const emptyCourt = courtsData.find(c => c.type === 'game' && c.isEmpty);
+                const emptyCourt = clubCourts.find(c => c.type === 'game' && c.isEmpty);
                 if (!emptyCourt) return;
 
                 emptyCourt.isEmpty = false;
@@ -1837,21 +2544,24 @@ io.on('connection', (socket) => {
                 emptyCourt.startTime = Date.now();
                 emptyCourt.remainingSeconds = 0;
 
-                gameQueue.splice(slotIdx, 1);
+                queue.splice(slotIdx, 1);
 
+                // 다른 큐 및 난타 코트에서 중복 플레이어 정리
                 validPlayers.forEach(p => {
                     const cleanPName = p.split('/')[0].trim();
 
-                    nantaQueue.forEach(nSlot => {
-                        nSlot.players.forEach((np, idx) => {
-                            if (np && np.includes(cleanPName)) {
-                                nSlot.players[idx] = '';
-                            }
+                    if (club.nantaQueue) {
+                        club.nantaQueue.forEach(nSlot => {
+                            nSlot.players.forEach((np, idx) => {
+                                if (np && np.includes(cleanPName)) {
+                                    nSlot.players[idx] = '';
+                                }
+                            });
                         });
-                    });
-                    nantaQueue = nantaQueue.filter(nSlot => getValidPlayers(nSlot.players).length > 0);
+                        club.nantaQueue = club.nantaQueue.filter(nSlot => getValidPlayers(nSlot.players).length > 0);
+                    }
 
-                    courtsData.forEach(court => {
+                    clubCourts.forEach(court => {
                         if (court.type === 'nanta') {
                             if (court.sideA && !court.sideA.isEmpty && court.sideA.players && court.sideA.players.includes(cleanPName)) {
                                 court.sideA = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
@@ -1863,13 +2573,18 @@ io.on('connection', (socket) => {
                     });
                 });
 
-                addNotification(`🏟️ [코트 입장] 게임 코트 (${emptyCourt.id}번)에 팀이 입장했습니다.`);
-                broadcastState();
+                if (typeof addNotification === 'function') {
+                    addNotification(`🏟️ [코트 입장] 게임 코트 (${emptyCourt.id}번)에 팀이 입장했습니다.`, currentClubId);
+                }
+                if (typeof broadcastState === 'function') {
+                    broadcastState(currentClubId);
+                }
 
             } else if (type === 'nanta') {
-                const slotIdx = nantaQueue.findIndex(s => s.id === slotId);
+                const queue = club.nantaQueue || [];
+                const slotIdx = queue.findIndex(s => s.id === slotId);
                 if (slotIdx === -1) return;
-                const slot = nantaQueue[slotIdx];
+                const slot = queue[slotIdx];
                 const validPlayers = getValidPlayers(slot.players);
 
                 if (validPlayers.length < 2) return;
@@ -1877,7 +2592,7 @@ io.on('connection', (socket) => {
                 let targetCourt = null;
                 let targetSide = null;
 
-                for (let court of courtsData) {
+                for (let court of clubCourts) {
                     if (court.type === 'nanta') {
                         if (court.sideA && court.sideA.isEmpty) {
                             targetCourt = court;
@@ -1900,18 +2615,27 @@ io.on('connection', (socket) => {
                     remainingSeconds: config.NANTA_COURT_LIMIT_SEC || 900
                 };
 
-                nantaQueue.splice(slotIdx, 1);
+                queue.splice(slotIdx, 1);
 
-                addNotification(`🏟️ [코트 입장] 난타 코트 (${targetCourt.id}번 - ${targetSide === 'sideA' ? 'A반' : 'B반'})에 팀이 입장했습니다.`);
-                broadcastState();
+                if (typeof addNotification === 'function') {
+                    addNotification(`🏟️ [코트 입장] 난타 코트 (${targetCourt.id}번 - ${targetSide === 'sideA' ? 'A반' : 'B반'})에 팀이 입장했습니다.`, currentClubId);
+                }
+                if (typeof broadcastState === 'function') {
+                    broadcastState(currentClubId);
+                }
             }
         } catch (err) {
             console.error('코트 입장 처리 에러:', err);
         }
     });
 
+    // 🔔 [난타 코트 종료] (멀티 테넌트 반영)
     socket.on('endNantaCourt', ({ courtId, side }) => {
-        const targetCourt = courtsData.find(c => c.id === Number(courtId));
+        const currentClubId = socket.clubId || 'unjeong';
+        const club = clubs[currentClubId] || clubs['unjeong'];
+        const clubCourts = club.courtsData || [];
+
+        const targetCourt = clubCourts.find(c => c.id === Number(courtId));
         if (!targetCourt || targetCourt.type !== 'nanta') return;
 
         let isCleared = false;
@@ -1926,30 +2650,49 @@ io.on('connection', (socket) => {
         }
 
         if (isCleared) {
-            addNotification(`🔔 [난타종료] ${targetCourt.id}번 코트 (${cleanSide}면)가 수동 종료되었습니다.`);
-            broadcastState();
+            if (typeof addNotification === 'function') {
+                addNotification(`🔔 [난타종료] ${targetCourt.id}번 코트 (${cleanSide}면)가 수동 종료되었습니다.`, currentClubId);
+            }
+            if (typeof broadcastState === 'function') {
+                broadcastState(currentClubId);
+            }
         }
     });
 
+    // 🏁 [게임 코트 종료] (멀티 테넌트 반영)
     socket.on('endGameCourt', ({ courtId }) => {
         try {
-            const court = courtsData.find(c => c.id === courtId && c.type === 'game');
+            const currentClubId = socket.clubId || 'unjeong';
+            const club = clubs[currentClubId] || clubs['unjeong'];
+            const clubCourts = club.courtsData || [];
+
+            const court = clubCourts.find(c => c.id === courtId && c.type === 'game');
             if (court) {
                 court.isEmpty = true;
                 court.players = '';
                 court.startTime = null;
                 court.remainingSeconds = 0;
-                addNotification(`🏁 [게임 종료] ${court.id}번 코트 게임이 종료되었습니다.`);
-                broadcastState();
+
+                if (typeof addNotification === 'function') {
+                    addNotification(`🏁 [게임 종료] ${court.id}번 코트 게임이 종료되었습니다.`, currentClubId);
+                }
+                if (typeof broadcastState === 'function') {
+                    broadcastState(currentClubId);
+                }
             }
         } catch (err) {
             console.error('게임 종료 처리 에러:', err);
         }
     });
 
+    // 🔄 [한게임 더 연장] (멀티 테넌트 반영)
     socket.on('extendGameCourt', ({ courtId }) => {
         try {
-            const court = courtsData.find(c => c.id === courtId && c.type === 'game');
+            const currentClubId = socket.clubId || 'unjeong';
+            const club = clubs[currentClubId] || clubs['unjeong'];
+            const clubCourts = club.courtsData || [];
+
+            const court = clubCourts.find(c => c.id === courtId && c.type === 'game');
             if (!court || court.isEmpty || !court.players) return;
 
             const playersArr = court.players.split(',').map(p => p.trim()).filter(Boolean);
@@ -1970,15 +2713,20 @@ io.on('connection', (socket) => {
                 remainingSeconds: null
             };
 
-            gameQueue.push(newSlot);
+            if (!club.gameQueue) club.gameQueue = [];
+            club.gameQueue.push(newSlot);
 
             court.isEmpty = true;
             court.players = '';
             court.startTime = null;
             court.remainingSeconds = 0;
 
-            addNotification(`🔄 [한게임 더] ${court.id}번 코트 팀이 대기열 최후순위로 재등록되었습니다.`);
-            broadcastState();
+            if (typeof addNotification === 'function') {
+                addNotification(`🔄 [한게임 더] ${court.id}번 코트 팀이 대기열 최후순위로 재등록되었습니다.`, currentClubId);
+            }
+            if (typeof broadcastState === 'function') {
+                broadcastState(currentClubId);
+            }
         } catch (err) {
             console.error('한게임 더 처리 에러:', err);
         }
@@ -1986,8 +2734,12 @@ io.on('connection', (socket) => {
 
     socket.on('adminForceExit', ({ targetType, targetId, index }) => {
         try {
+            // 💡 현재 소켓이 속한 클럽 아이디 가져오기
+            const clubId = socket.clubId || 'unjeong';
+            const club = getClub(clubId);
+
             if (targetType === 'gameQueue' || targetType === 'nantaQueue') {
-                const queue = targetType === 'gameQueue' ? gameQueue : nantaQueue;
+                const queue = targetType === 'gameQueue' ? club.gameQueue : club.nantaQueue;
                 const slot = queue.find(s => s.id === targetId);
                 if (slot && slot.players[index] !== undefined) {
                     const kickedName = slot.players[index];
@@ -1998,28 +2750,38 @@ io.on('connection', (socket) => {
                         if (qIndex !== -1) queue.splice(qIndex, 1);
                     }
                     
-                    addNotification(`⚠️ [관리자 강제퇴장] ${kickedName} 님이 대기 방에서 강제 퇴장되었습니다.`);
-                    broadcastState();
+                    // 클럽별 알림 추가 함수가 있다면 활용, 또는 기존 방식 유지
+                    if (typeof addNotificationForClub === 'function') {
+                        addNotificationForClub(clubId, `⚠️ [관리자 강제퇴장] ${kickedName} 님이 대기 방에서 강제 퇴장되었습니다.`);
+                    } else if (typeof addNotification === 'function') {
+                        addNotification(`⚠️ [관리자 강제퇴장] ${kickedName} 님이 대기 방에서 강제 퇴장되었습니다.`);
+                    }
+
+                    broadcastState(clubId); // 💡 클럽 아이디 전달
                 }
             } 
             else if (targetType === 'court') {
-                const court = courtsData.find(c => c.id === targetId);
+                const court = club.courtsData.find(c => c.id === targetId);
                 if (court) {
                     if (court.type === 'game') {
                         court.isEmpty = true;
                         court.players = '';
                         court.startTime = null;
                         court.remainingSeconds = 0;
-                        addNotification(`⚠️ [관리자 강제퇴장] 게임 코트(${court.id}번)가 강제 종료 및 비워졌습니다.`);
+                        if (typeof addNotification === 'function') {
+                            addNotification(`⚠️ [관리자 강제퇴장] 게임 코트(${court.id}번)가 강제 종료 및 비워졌습니다.`);
+                        }
                     } else if (court.type === 'nanta') {
                         if (index === 'A' && court.sideA) {
                             court.sideA = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
                         } else if (index === 'B' && court.sideB) {
                             court.sideB = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
                         }
-                        addNotification(`⚠️ [관리자 강제퇴장] 난타 코트(${court.id}번 - ${index}면)가 강제 비워졌습니다.`);
+                        if (typeof addNotification === 'function') {
+                            addNotification(`⚠️ [관리자 강제퇴장] 난타 코트(${court.id}번 - ${index}면)가 강제 비워졌습니다.`);
+                        }
                     }
-                    broadcastState();
+                    broadcastState(clubId); // 💡 클럽 아이디 전달
                 }
             }
         } catch (err) {
@@ -2027,9 +2789,15 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 🤝 [방 통합 처리] (멀티 테넌트 반영)
     socket.on('mergeSlot', ({ mySlotId, targetSlotId }) => {
-        const mySlot = gameQueue.find(s => s.id === mySlotId);
-        const targetSlot = gameQueue.find(s => s.id === targetSlotId);
+        const currentClubId = socket.clubId || 'unjeong';
+        const club = clubs[currentClubId] || clubs['unjeong'];
+        
+        if (!club || !Array.isArray(club.gameQueue)) return;
+
+        const mySlot = club.gameQueue.find(s => s.id === mySlotId);
+        const targetSlot = club.gameQueue.find(s => s.id === targetSlotId);
 
         if (mySlot && targetSlot) {
             const myPlayers = getValidPlayers(mySlot.players);
@@ -2043,81 +2811,280 @@ io.on('connection', (socket) => {
                     combined[2] || '',
                     combined[3] || ''
                 ];
-                gameQueue = gameQueue.filter(s => s.id !== mySlotId);
-                addNotification(`🤝 [방 통합] 대기 팀이 하나로 통합되었습니다.`);
-                broadcastState();
+
+                // 해당 클럽 큐에서 내 슬롯 제거
+                club.gameQueue = club.gameQueue.filter(s => s.id !== mySlotId);
+
+                if (typeof addNotification === 'function') {
+                    addNotification(`🤝 [방 통합] 대기 팀이 하나로 통합되었습니다.`, currentClubId);
+                }
+                if (typeof broadcastState === 'function') {
+                    broadcastState(currentClubId);
+                }
             }
         }
     });
 
-    // ==========================================
-    // 통합된 단 하나의 disconnect (연결 해제 처리)
-    // ==========================================
+   // =================================================================
+    // 🚪 1. 명시적 로그아웃 (버튼 클릭 / 클럽 변경 즉시 대기열 파기)
+    // =================================================================
+    socket.on('explicitLogout', () => {
+        socket.isExplicitLogout = true;
+        const currentSocketId = socket.id;
+        const rawUser = userSockets[currentSocketId] || socket.username;
+
+        let userKey = '';
+        if (rawUser) {
+            userKey = (typeof rawUser === 'object' && rawUser !== null)
+                ? (rawUser.id || rawUser.username || rawUser.name || '')
+                : String(rawUser);
+        }
+
+        if (userKey) {
+            // 실행 중이던 유예 타이머 모두 제거
+            if (disconnectTimers[userKey]) {
+                clearTimeout(disconnectTimers[userKey]);
+                delete disconnectTimers[userKey];
+            }
+            if (typeof sessionTimers !== 'undefined' && sessionTimers[userKey]) {
+                clearTimeout(sessionTimers[userKey]);
+                delete sessionTimers[userKey];
+            }
+
+            // 💥 유예 없이 즉시 대기열/대기방 정리 (진행 중인 코트는 건드리지 않음)
+            cleanupUser(rawUser);
+            delete expiredUsers[userKey];
+            console.log(`[즉시 퇴장] 유저(${userKey}) 명시적 로그아웃으로 대기열 즉시 삭제 완료`);
+        }
+    });
+
+    // =================================================================
+    // ⏱️ 2. 통합된 disconnect (화면 꺼짐, 와이파이 단절 시 2단계 유예)
+    // =================================================================
     socket.on('disconnect', () => {
         const currentSocketId = socket.id;
+        const currentClubId = socket.clubId || 'unjeong';
         const rawUser = userSockets[currentSocketId] || socket.username;
         
         let userKey = '';
         if (rawUser) {
-            if (typeof rawUser === 'object' && rawUser !== null) {
-                userKey = rawUser.id || rawUser.username || rawUser.name || '';
-            } else {
-                userKey = String(rawUser);
-            }
+            userKey = (typeof rawUser === 'object' && rawUser !== null)
+                ? (rawUser.id || rawUser.username || rawUser.name || '')
+                : String(rawUser);
         }
 
-        // 현재 끊긴 소켓 정보 정리
+        // 소켓 매핑 정보 정리
         delete userSockets[currentSocketId];
-
         if (userKey && activeUserSockets.get(userKey) === currentSocketId) {
             activeUserSockets.delete(userKey);
-            if (typeof broadcastOnlineCount === 'function') {
-                broadcastOnlineCount();
-            }
         }
 
-        // 대기열 유예 타이머: 구장 밖으로 잠깐 나간 경우(담배, 외출 등) 15분 대기
+        // 접속자 수 갱신
+        if (typeof broadcastOnlineCount === 'function') {
+            broadcastOnlineCount(currentClubId);
+        }
+
+        // 💡 이미 명시적 로그아웃(버튼/클럽변경)을 했다면 유예 타이머를 걸지 않고 즉시 종료
+        if (socket.isExplicitLogout) {
+            return;
+        }
+
+        // -------------------------------------------------------------
+        // 💡 비명시적 단절 (와이파이 단절, 화면 꺼짐): 2단계 유예 타이머 가동
+        // -------------------------------------------------------------
         if (userKey) {
+            // 기존에 돌고 있던 타이머가 있다면 초기화
             if (disconnectTimers[userKey]) {
                 clearTimeout(disconnectTimers[userKey]);
             }
+            if (typeof sessionTimers !== 'undefined' && sessionTimers[userKey]) {
+                clearTimeout(sessionTimers[userKey]);
+            }
 
+            // 💡 끊긴 시점의 구장과 유저 정보 저장 (클럽 변경 감지용)
+            if (typeof disconnectUserClubs !== 'undefined') disconnectUserClubs[userKey] = currentClubId;
+            if (typeof disconnectRawUsers !== 'undefined') disconnectRawUsers[userKey] = rawUser;
+
+            // ⏱️ 해당 클럽의 설정값(분 단위) 불러오기 (설정이 없으면 기본 30분 / 60분 적용)
+            const currentClub = (typeof getClub === 'function') ? getClub(currentClubId) : null;
+            const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 30;
+            const expireMinutes = (currentClub && currentClub.config && currentClub.config.sessionExpireMinutes) ? currentClub.config.sessionExpireMinutes : 60;
+
+            // [1단계: 설정된 유예 시간] 대기열 유지 시간 (폰 화면 꺼짐/몸풀기 배려)
             disconnectTimers[userKey] = setTimeout(() => {
-                cleanupUser(rawUser);
-                expiredUsers[userKey] = true;
+                if (typeof cleanupUser === 'function') {
+                    cleanupUser(rawUser);
+                }
                 delete disconnectTimers[userKey];
-                console.log(`[자동 퇴장] 유저(${userKey}) 15분 유예 시간 종료로 대기열 및 방 정리 완료`);
-            }, 15 * 60 * 1000); // 15분 유예 시간
+                if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[userKey];
+                if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[userKey];
+                console.log(`[대기열 정리] 유저(${userKey}) ${graceMinutes}분 미접속으로 대기방/슬롯에서 제외되었습니다.`);
+            }, graceMinutes * 60 * 1000);
+
+            // [2단계: 설정된 만료 시간] 운동 마치고 귀가한 것으로 간주하여 세션 만료
+            if (typeof sessionTimers !== 'undefined') {
+                sessionTimers[userKey] = setTimeout(() => {
+                    expiredUsers[userKey] = true;
+                    delete sessionTimers[userKey];
+                    console.log(`[세션 완전 만료] 유저(${userKey}) ${expireMinutes}분 경과로 세션이 만료되었습니다.`);
+                }, expireMinutes * 60 * 1000);
+            }
         }
     });
 
-}); // <--- io.on('connection') 블록 닫는 괄호
+    // ==========================================
+    // 👑 [슈퍼 관리자] 멀티 클럽 생성 및 통합 관리
+    // ==========================================
+    const SUPER_ADMIN_KEY = 'super1234'; // 💡 슈퍼 관리자 마스터 비밀번호
 
-// ==========================================
-// 공통 함수 영역 (io 블록 바깥)
-// ==========================================
-function broadcastOnlineCount() {
-    const totalCount = activeUserSockets.size; // 전체 로그인 접속 인원
-    let clubCount = 0; // 구장 Wi-Fi 접속 인원
+    // 1. 슈퍼 관리자 로그인 및 클럽 목록 조회
+    socket.on('superAdmin:getClubs', (password, callback) => {
+        if (password !== SUPER_ADMIN_KEY) {
+            return callback({ success: false, message: '마스터 비밀번호가 일치하지 않습니다.' });
+        }
 
-    if (io && io.sockets && io.sockets.sockets) {
-        activeUserSockets.forEach((socketId) => {
-            const userSocket = io.sockets.sockets.get(socketId);
-            if (userSocket) {
-                // 이미 정의된 구장 Wi-Fi 판별 함수 활용
-                if (typeof isGymWifiUser === 'function' && isGymWifiUser(userSocket)) {
-                    clubCount++;
-                }
-            }
+        const clubList = Object.keys(clubs).map(cId => {
+            const c = clubs[cId];
+            // 🏢 JSON에 저장된 clubName을 최우선 적용
+            const displayName = c.clubName || c.name || cId;
+
+            return {
+                id: cId,
+                name: displayName,
+                clubName: displayName,
+                courtCount: Array.isArray(c.courtsData) ? c.courtsData.length : 0,
+                gameQueueCount: Array.isArray(c.gameQueue) ? c.gameQueue.length : 0,
+                nantaQueueCount: Array.isArray(c.nantaQueue) ? c.nantaQueue.length : 0,
+                useWifi: c.config ? Boolean(c.config.useWifiRestriction) : false
+            };
         });
-    }
 
-    // 클라이언트로 객체 형태로 전송
-    io.emit('updateOnlineCount', {
-        club: clubCount,
-        total: totalCount
+        callback({ success: true, clubs: clubList });
+    });
+
+    // 2. 새 클럽 자동 생성
+    socket.on('superAdmin:createClub', ({ password, clubId, clubName, courtCount, adminPassword }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) {
+            return callback({ success: false, message: '권한이 없습니다.' });
+        }
+
+        const cleanId = String(clubId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        const cleanName = String(clubName || '').trim();
+        const courtsNum = Math.max(2, Math.min(20, parseInt(courtCount, 10) || 6));
+        const adminPass = String(adminPassword || '1234').trim();
+
+        if (!cleanId) {
+            return callback({ success: false, message: '클럽 영문 ID(영문 소문자, 숫자)를 올바르게 입력해 주세요.' });
+        }
+        if (!cleanName) {
+            return callback({ success: false, message: '클럽 이름을 입력해 주세요.' });
+        }
+        if (clubs[cleanId]) {
+            return callback({ success: false, message: '이미 존재하는 클럽 ID입니다.' });
+        }
+
+        // 코트 기본 데이터 생성 (마지막 2코트는 난타 및 레슨 전용)
+        const generatedCourts = [];
+        for (let i = 1; i <= courtsNum; i++) {
+            if (i <= courtsNum - 2) {
+                generatedCourts.push({ id: i, type: 'game', isEmpty: true, players: '', note: '' });
+            } else if (i === courtsNum - 1) {
+                generatedCourts.push({
+                    id: i,
+                    type: 'nanta',
+                    sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+                    sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
+                    note: ''
+                });
+            } else {
+                generatedCourts.push({ id: i, type: 'lesson', isEmpty: false, players: '레슨 전용 코트', note: '' });
+            }
+        }
+
+        // 새 클럽 데이터 모델 구조화
+        clubs[cleanId] = {
+            clubId: cleanId,
+            clubName: cleanName,
+            name: cleanName, // 기존 호환성 유지용
+            config: {
+                ENTRY_TIMEOUT_SEC: 180,
+                NANTA_COURT_LIMIT_SEC: 900,
+                ADMIN_PASSWORD: adminPass,
+                DISCONNECT_GRACE_SEC: 1800,
+                SESSION_TIMEOUT_SEC: 3600,
+                useWifiRestriction: false,
+                allowedGymIps: []
+            },
+            courtsData: generatedCourts,
+            gameQueue: [],
+            nantaQueue: [],
+            notifications: []
+        };
+
+        // 💾 clubs-data.json에 즉시 영구 저장
+        if (typeof saveClubsData === 'function') {
+            saveClubsData();
+        }
+
+        console.log(`👑 [슈퍼 관리자] 새 클럽 등록 완료: ${cleanName} (${cleanId}), 코트: ${courtsNum}개`);
+        callback({ success: true, message: `[${cleanName}] 클럽이 성공적으로 생성되었습니다!` });
+    });
+
+    // 3. 클럽 삭제
+    socket.on('superAdmin:deleteClub', ({ password, clubId }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) {
+            return callback({ success: false, message: '권한이 없습니다.' });
+        }
+        if (!clubs[clubId]) {
+            return callback({ success: false, message: '존재하지 않는 클럽입니다.' });
+        }
+
+        const deletedName = clubs[clubId].name;
+        delete clubs[clubId];
+
+        if (typeof saveClubsData === 'function') {
+            saveClubsData();
+        }
+
+        console.log(`👑 [슈퍼 관리자] 클럽 삭제 완료: ${deletedName} (${clubId})`);
+        callback({ success: true, message: `[${deletedName}] 클럽이 삭제되었습니다.` });
+    });
+});
+
+// 🏢 [멀티 테넌트] 실제 로그인한 회원만 클럽별로 집계하여 전송
+function broadcastOnlineCount(targetClubId) {
+    if (!io || !io.sockets || !io.sockets.adapter) return;
+
+    const clubsToUpdate = targetClubId ? [targetClubId] : ['unjeong', 'daewon'];
+
+    clubsToUpdate.forEach((clubId) => {
+        const roomName = `club_${clubId}`;
+        const room = io.sockets.adapter.rooms.get(roomName);
+
+        let totalCount = 0; // 로그인 완료 회원 수
+        let clubCount = 0;  // 체육관 Wi-Fi 접속 회원 수
+
+        if (room) {
+            room.forEach((socketId) => {
+                const userSocket = io.sockets.sockets.get(socketId);
+                // 🔑 [핵심] 소켓에 로그인 사용자 정보(userId 또는 userIdentifier)가 등록된 경우만 카운트!
+                if (userSocket && (userSocket.userId || userSocket.userIdentifier)) {
+                    totalCount++;
+                    if (typeof isGymWifiUser === 'function' && isGymWifiUser(userSocket)) {
+                        clubCount++;
+                    }
+                }
+            });
+        }
+
+        // 해당 클럽 방에만 전송
+        io.to(roomName).emit('updateOnlineCount', {
+            club: clubCount,
+            total: totalCount
+        });
     });
 }
+
 // 1. 전체 회원 명부 CSV 다운로드 라우트 (프론트엔드 경로 /api/admin/download-excel와 일치시킴)
 app.get('/api/admin/download-excel', (req, res) => {
     db.all("SELECT * FROM regular_members", [], (err, rows) => {
@@ -2138,11 +3105,14 @@ app.get('/api/admin/download-excel', (req, res) => {
     });
 });
 
-// 2. 회원 명부 일괄 업로드(엑셀/CSV) 라우트 (프론트엔드 경로 /api/admin/upload-excel와 일치시킴)
+// 2. 회원 명부 일괄 업로드(엑셀/CSV) 라우트 (구장별 격리 적용)
 app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res) => {
     if (!req.file) {
         return res.json({ success: false, message: '파일이 업로드되지 않았습니다.' });
     }
+
+    // 💡 요청 바디 또는 쿼리에서 클럽 식별자 추출 (기본값 unjeong)
+    const clubId = req.body.clubId || req.query.clubId || req.body.club || req.query.club || 'unjeong';
 
     const filePath = req.file.path;
     const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
@@ -2154,17 +3124,17 @@ app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res)
     db.serialize(() => {
         db.run("BEGIN TRANSACTION");
         
-        // phone을 기준으로 충돌(Conflict)이 나면 기존 데이터를 UPDATE하는 문법 
-        // (※ 주의: regular_members 테이블의 phone 컬럼에 UNIQUE 제약조건이 걸려있어야 정상 동작합니다)
+        // 💡 club_id 컬럼 추가 및 충돌(Conflict) 시 소속 구장도 함께 갱신
         const stmt = db.prepare(`
-            INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, grade, phone, address, joinedAt) 
-            VALUES (?, 'regular', ?, '1234', ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+            INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, grade, phone, address, joinedAt, club_id) 
+            VALUES (?, 'regular', ?, '1234', ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
             ON CONFLICT(phone) DO UPDATE SET 
                 name = excluded.name,
                 gender = excluded.gender,
                 birthDate = excluded.birthDate,
                 grade = excluded.grade,
-                address = excluded.address
+                address = excluded.address,
+                club_id = excluded.club_id
         `);
 
         rl.on('line', (line) => {
@@ -2185,7 +3155,8 @@ app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res)
                 const uniqueId = 'reg_' + cleanPhone;
                 const username = 'user_' + cleanPhone;
 
-                stmt.run(uniqueId, username, name, gender, birthDate, grade, cleanPhone, address, (err) => {
+                // 💡 9번째 파라미터로 clubId 전달
+                stmt.run(uniqueId, username, name, gender, birthDate, grade, cleanPhone, address, clubId, (err) => {
                     if (!err) {
                         successCount++;
                     } else {
@@ -2205,7 +3176,8 @@ app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res)
                 if (err) {
                     return res.json({ success: false, message: 'DB 저장 중 오류가 발생했습니다.' });
                 }
-                res.json({ success: true, message: `총 ${successCount}명의 회원이 등록(갱신)되었습니다.` });
+                console.log(`📁 [회원 명부 일괄 등록 완료 - ${clubId}] 총 ${successCount}명 반영`);
+                res.json({ success: true, message: `총 ${successCount}명의 회원이 [${clubId}] 구장에 등록(갱신)되었습니다.` });
             });
         });
     });

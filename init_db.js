@@ -25,10 +25,11 @@ function initDatabase() {
     db.serialize(() => {
         // ⚠️ 주의: 기존 데이터를 보존하기 위해 DROP TABLE을 제거하고 CREATE TABLE IF NOT EXISTS 사용
 
-        // 1. 정회원 테이블 생성
+        // 1. 정회원 테이블 생성 (club_id 컬럼 포함)
         db.run(`
             CREATE TABLE IF NOT EXISTS regular_members (
                 id TEXT PRIMARY KEY,
+                club_id TEXT DEFAULT 'unjeong',
                 type TEXT,
                 username TEXT UNIQUE,
                 password TEXT,
@@ -46,13 +47,18 @@ function initDatabase() {
                 console.error('❌ 정회원 테이블 생성 실패:', err.message);
                 return;
             }
+            // 🏢 [멀티 테넌트] 기존 테이블이 이미 있어 club_id가 누락된 경우 안전하게 추가 및 기본값 보정
+            db.run(`ALTER TABLE regular_members ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {
+                db.run(`UPDATE regular_members SET club_id = 'unjeong' WHERE club_id IS NULL OR club_id = ''`, () => {});
+            });
             console.log('✅ regular_members 테이블 준비 완료');
         });
 
-        // 2. 승인 대기 회원 테이블 생성
+        // 2. 승인 대기 회원 테이블 생성 (club_id 컬럼 포함)
         db.run(`
             CREATE TABLE IF NOT EXISTS pending_members (
                 id TEXT PRIMARY KEY,
+                club_id TEXT DEFAULT 'unjeong',
                 name TEXT,
                 phone TEXT UNIQUE,
                 gender TEXT,
@@ -67,6 +73,10 @@ function initDatabase() {
                 console.error('❌ 승인 대기 테이블 생성 실패:', err.message);
                 return;
             }
+            // 🏢 [멀티 테넌트] 승인 대기 테이블에도 club_id 안전하게 추가
+            db.run(`ALTER TABLE pending_members ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {
+                db.run(`UPDATE pending_members SET club_id = 'unjeong' WHERE club_id IS NULL OR club_id = ''`, () => {});
+            });
             console.log('✅ pending_members (승인 대기) 테이블 준비 완료');
             createAdminAccount();
         });
@@ -74,13 +84,13 @@ function initDatabase() {
 }
 
 function createAdminAccount() {
-    // 기본 관리자 계정 추가 (이미 존재하면 무시 또는 갱신)
+    // 기본 관리자 계정 추가 (이미 존재하면 무시 또는 갱신, 기본 소속: unjeong)
     const stmt = db.prepare(`
-        INSERT OR IGNORE INTO regular_members (id, type, username, password, name, phone, gender, birthDate, ageGroup, grade, address, joinedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR IGNORE INTO regular_members (id, club_id, type, username, password, name, phone, gender, birthDate, ageGroup, grade, address, joinedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run("reg_admin", "admin", "admin", "1234", "관리자", "010-0000-0000", "남", "1975-01-01", "50대", "A조", "경기도 파주시", "2023-01-01", (err) => {
+    stmt.run("reg_admin", "unjeong", "admin", "admin", "1234", "관리자", "010-0000-0000", "남", "1975-01-01", "50대", "A조", "경기도 파주시", "2023-01-01", (err) => {
         if (err) {
             console.error('❌ 관리자 계정 확인/생성 실패:', err.message);
         } else {

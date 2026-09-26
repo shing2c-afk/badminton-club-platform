@@ -202,3 +202,20 @@ body.gym-wifi-active .online-status-badge {
     background-color: #22c55e !important;
     color: #000000; /* 가독성을 위한 진한 글자색 */
 }
+/* 로그인 타이틀 기본 스타일 */
+.login-card .login-title {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  margin: 0 0 20px 0;
+}
+
+/* '오늘민턴' 네온 발광 포인트 */
+.login-card .highlight-neon {
+  background: linear-gradient(135deg, #00f2fe 0%, #38ef7d 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 12px rgba(0, 242, 254, 0.45));
+}

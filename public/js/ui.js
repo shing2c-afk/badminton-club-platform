@@ -39,57 +39,174 @@ function renderAll() {
     renderNotifications();
 }
 
-function renderNotifications() {
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000; // 24시간 (밀리초)
-    const now = Date.now();
+// ==========================================
+// 🔔 [개인 알림] 키 관리, 렌더링, 실시간 필터링 수신 (통합본)
+// ==========================================
 
-    // 🕒 1. 24시간이 지난 오래된 알림 자동 제거 (필터링)
-    if (Array.isArray(notificationsList)) {
-        notificationsList = notificationsList.filter(n => {
-            // 알림 객체에 timestamp(밀리초) 또는 createdAt이 있는 경우
-            const timeVal = n.timestamp || (n.createdAt ? new Date(n.createdAt).getTime() : null);
-            
-            // 만약 시간 정보가 아예 없다면 n.time(예: '14:30' 등 문자열)을 추정하거나 기본 유지
-            if (!timeVal) return true;
+// 🔑 1. 구장 및 로그인 사용자별 전용 스토리지 키 생성
+function getNotiStorageKey() {
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
 
-            // 현재 시간과 차이가 24시간 이내인 것만 유지
-            return (now - timeVal) < ONE_DAY_MS;
-        });
-
-        // 💾 2. localStorage에 저장 중인 경우 필터링된 최신 목록으로 업데이트
+    const userKey = (typeof getClubStorageKey === 'function') 
+                    ? getClubStorageKey("currentUser") 
+                    : `currentUser_${clubId}`;
+    const savedUser = localStorage.getItem(userKey) || localStorage.getItem("currentUser");
+    
+    let userId = 'guest';
+    if (savedUser) {
         try {
-            localStorage.setItem('notificationsList', JSON.stringify(notificationsList));
+            const u = JSON.parse(savedUser);
+            userId = u.name || u.username || u.id || 'guest';
         } catch (e) {}
     }
+    return `notifications_${clubId}_${String(userId).replace(/\s+/g, '')}`;
+}
 
-    // 🔔 3. 알림 개수 뱃지 업데이트
+// 📋 2. 알림 UI 렌더링 및 당일 기준 자동 정리
+function renderNotifications() {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const notiStorageKey = getNotiStorageKey();
+
+    // 📥 로컬스토리지에서 내 알림 복원
+    try {
+        const stored = localStorage.getItem(notiStorageKey);
+        window.notificationsList = stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        window.notificationsList = [];
+    }
+    if (!Array.isArray(window.notificationsList)) window.notificationsList = [];
+
+    // 🧹 [핵심] 당일(오늘) 알림만 남기고 어제 이전 알림은 자동 삭제
+    window.notificationsList = window.notificationsList.filter(n => {
+        if (!n) return false;
+        let itemDateStr = n.date;
+        if (!itemDateStr && n.timestamp) {
+            const d = new Date(n.timestamp);
+            itemDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        return itemDateStr === todayStr;
+    });
+
+    // 💾 정리된 목록 저장
+    try {
+        localStorage.setItem(notiStorageKey, JSON.stringify(window.notificationsList));
+    } catch (e) {}
+
+    // 🔔 뱃지 숫자 갱신
     const notiCountEl = document.getElementById('noti-count');
     if (notiCountEl) {
-        notiCountEl.innerText = notificationsList.length;
-        // 개수가 0개면 뱃지를 숨기거나 흐리게 처리하고 싶다면 스타일 조정 가능
-        notiCountEl.style.display = notificationsList.length > 0 ? 'inline-block' : 'none';
+        notiCountEl.innerText = window.notificationsList.length;
+        notiCountEl.style.display = window.notificationsList.length > 0 ? 'inline-block' : 'none';
     }
-    
+
+    // 📄 목록 DOM 렌더링
     const container = document.getElementById('noti-list');
     if (!container) return;
-    
-    // 📭 4. 빈 목록 안내
-    if (notificationsList.length === 0) {
+
+    if (window.notificationsList.length === 0) {
         container.innerHTML = `<div style="text-align:center; color:#6b7280; font-size:12px; padding:20px 0;">새로운 알림이 없습니다.</div>`;
         return;
     }
 
-    // 📋 5. 알림 아이템 렌더링
+    const safeEscape = (typeof escapeHtml === 'function') 
+        ? escapeHtml 
+        : (str) => String(str).replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        }[tag] || tag));
+
     container.innerHTML = '';
-    notificationsList.forEach(n => {
+    window.notificationsList.forEach(n => {
+        const messageText = n.message || n.text || '';
+        const timeText = n.time || (n.timestamp ? new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+
         const html = `
-            <div class="noti-item">
-                <div>${escapeHtml(n.message)}</div>
-                <div class="noti-time">${escapeHtml(n.time)}</div>
+            <div class="noti-item" style="padding:10px 12px; border-bottom:1px solid #333; font-size:13px;">
+                <div style="color:#eee; margin-bottom:4px; word-break:break-all;">${safeEscape(messageText)}</div>
+                <div class="noti-time" style="color:#888; font-size:11px;">${safeEscape(timeText)}</div>
             </div>
         `;
         container.insertAdjacentHTML('beforeend', html);
     });
+}
+
+// 📡 3. 실시간 소켓 알림 필터링 수신 (단일 선언)
+function initNotificationSocket() {
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (!activeSocket) {
+        setTimeout(initNotificationSocket, 500);
+        return;
+    }
+
+    activeSocket.off('newNotification');
+
+    activeSocket.on('newNotification', (noti) => {
+        if (!noti) return;
+
+        // 🏢 구장 검사
+        const myClub = (typeof currentClubId !== 'undefined' && currentClubId) 
+                    || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                    || new URLSearchParams(window.location.search).get('club') 
+                    || 'default';
+
+        if (noti.clubId && noti.clubId !== 'all' && noti.clubId !== 'default' && noti.clubId !== myClub) {
+            return; // 다른 구장 이벤트 차단
+        }
+
+        // 👤 로그인 사용자 본인 정보 추출
+        const userKey = (typeof getClubStorageKey === 'function') 
+                        ? getClubStorageKey("currentUser") 
+                        : `currentUser_${myClub}`;
+        const savedUserStr = localStorage.getItem(userKey) || localStorage.getItem("currentUser");
+        
+        let myNames = [];
+        if (savedUserStr) {
+            try {
+                const u = JSON.parse(savedUserStr);
+                const rawName = (u.name || u.username || u.nickname || "").trim();
+                if (rawName) {
+                    myNames.push(rawName);
+                    myNames.push(rawName.replace(/님$/, ''));
+                }
+            } catch (e) {}
+        }
+
+        if (myNames.length === 0) return;
+
+        // 🎯 본인 관련 여부 판별 (메시지 본문 또는 targetUser에 내 이름이 포함되어 있는지)
+        const msg = String(noti.message || '');
+        const target = noti.targetUser ? (typeof noti.targetUser === 'object' ? JSON.stringify(noti.targetUser) : String(noti.targetUser)) : '';
+
+        const isForMe = myNames.some(name => name && (msg.includes(name) || target.includes(name)));
+
+        if (!isForMe) return; // 타인 이벤트 차단
+
+        // 📥 내 알림 목록에 추가 및 화면 갱신
+        if (!Array.isArray(window.notificationsList)) window.notificationsList = [];
+        window.notificationsList.unshift(noti);
+        if (window.notificationsList.length > 30) window.notificationsList.pop();
+
+        try {
+            localStorage.setItem(getNotiStorageKey(), JSON.stringify(window.notificationsList));
+        } catch (e) {}
+
+        renderNotifications();
+    });
+}
+
+// 🚀 4. 화면 로딩 시 자동 초기화 (단 1회만 등록)
+function startNotificationSystem() {
+    renderNotifications();
+    initNotificationSocket();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startNotificationSystem);
+} else {
+    startNotificationSystem();
 }
 
 function openNotiModal() { 
@@ -338,12 +455,40 @@ function renderGameQueue() {
         return playerStr;
     }
 
-    // 이름 식별 함수 ('관리자' / '관리자님' 모두 완벽 대응)
-    function isMePlayer(p) {
-        if (!p || !cleanName) return false;
-        const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
-        return str.includes(cleanName) || str.includes(currentUserName);
+    // 이름 식별 함수 ('관리자' / '관리자님' 및 구장별 세션 완벽 대응)
+function isMePlayer(p) {
+    if (!p) return false;
+
+    // 🔑 현재 구장 키 식별
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+
+    let myCleanName = (typeof cleanName !== 'undefined' && cleanName) ? cleanName : "";
+    let myUserName = (typeof currentUserName !== 'undefined' && currentUserName) ? currentUserName : "";
+
+    // cleanName이 비어있다면 구장별 스토리지에서 직접 이름 추출
+    if (!myCleanName && savedUser) {
+        try {
+            const u = JSON.parse(savedUser);
+            const raw = (u.name || u.username || "").trim();
+            myCleanName = raw.replace(/님$/, '').trim();
+            myUserName = raw;
+        } catch (e) {}
     }
+
+    if (!myCleanName && !myUserName) return false;
+
+    const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
+    return (myCleanName && str.includes(myCleanName)) || (myUserName && str.includes(myUserName));
+}
 
     // 1. 코트 현황 확인 (내가 현재 게임 코트 경기 중인지 체크)
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
@@ -486,10 +631,39 @@ function mergeGameSlot(slotId) {
         } catch (e) {}
     }
 
+    // 이름 식별 함수 ('관리자' / '관리자님' 및 구장별 세션 완벽 대응)
     function isMePlayer(p) {
-        if (!p || !cleanName) return false;
+        if (!p) return false;
+
+        // 🔑 현재 구장 키 식별
+        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                       || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                       || new URLSearchParams(window.location.search).get('club') 
+                       || 'default';
+
+        const storageKey = (typeof getClubStorageKey === 'function') 
+                           ? getClubStorageKey("currentUser") 
+                           : `currentUser_${clubId}`;
+
+        const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+
+        let myCleanName = (typeof cleanName !== 'undefined' && cleanName) ? cleanName : "";
+        let myUserName = (typeof currentUserName !== 'undefined' && currentUserName) ? currentUserName : "";
+
+        // cleanName이 비어있다면 구장별 스토리지에서 직접 이름 추출
+        if (!myCleanName && savedUser) {
+            try {
+                const u = JSON.parse(savedUser);
+                const raw = (u.name || u.username || "").trim();
+                myCleanName = raw.replace(/님$/, '').trim();
+                myUserName = raw;
+            } catch (e) {}
+        }
+
+        if (!myCleanName && !myUserName) return false;
+
         const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
-        return str.includes(cleanName) || str.includes(currentUserName);
+        return (myCleanName && str.includes(myCleanName)) || (myUserName && str.includes(myUserName));
     }
 
     const currentSlot = gameQueue.find(s => s.id === slotId);
@@ -556,10 +730,39 @@ function renderNantaQueue() {
         return playerStr;
     }
 
+    // 이름 식별 함수 ('관리자' / '관리자님' 및 구장별 세션 완벽 대응)
     function isMePlayer(p) {
-        if (!p || !cleanName) return false;
+        if (!p) return false;
+
+        // 🔑 현재 구장 키 식별
+        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                       || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                       || new URLSearchParams(window.location.search).get('club') 
+                       || 'default';
+
+        const storageKey = (typeof getClubStorageKey === 'function') 
+                           ? getClubStorageKey("currentUser") 
+                           : `currentUser_${clubId}`;
+
+        const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+
+        let myCleanName = (typeof cleanName !== 'undefined' && cleanName) ? cleanName : "";
+        let myUserName = (typeof currentUserName !== 'undefined' && currentUserName) ? currentUserName : "";
+
+        // cleanName이 비어있다면 구장별 스토리지에서 직접 이름 추출
+        if (!myCleanName && savedUser) {
+            try {
+                const u = JSON.parse(savedUser);
+                const raw = (u.name || u.username || "").trim();
+                myCleanName = raw.replace(/님$/, '').trim();
+                myUserName = raw;
+            } catch (e) {}
+        }
+
+        if (!myCleanName && !myUserName) return false;
+
         const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
-        return str.includes(cleanName) || str.includes(currentUserName);
+        return (myCleanName && str.includes(myCleanName)) || (myUserName && str.includes(myUserName));
     }
 
     // 1. 코트 현황 확인 (게임 코트나 난타 코트 중 하나라도 코트 이용 중인지 검사)
@@ -649,48 +852,21 @@ function updateAvailableCourtCounts() {
     if (nantaAvail) nantaAvail.innerText = getAvailableNantaCourtsCount();
 }
 
-async function createNewGameSlot() {
-    const savedUser = localStorage.getItem("currentUser");
-    if (!savedUser) {
-        alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
-        return;
-    }
-
-    const user = JSON.parse(savedUser);
-    const userInfo = `${user.name || ''} / ${user.gender || ''} / ${user.ageGroup || ''} / ${user.grade || ''}`;
-
-    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-    if (!activeSocket) {
-        alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
-        return;
-    }
-// 💡 서버에 검증 및 처리를 요청함
-    if (!window.isGymWifiConnected) {
-        const modal = document.getElementById('custom-alert-modal');
-        const msgEl = document.getElementById('custom-alert-message');
-        const confirmBtn = document.getElementById('custom-alert-ok-btn');
-
-        if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
-            modal.style.display = 'flex';
-
-            if (confirmBtn) {
-                confirmBtn.onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
-        }
-        return;
-    }
-    // 💡 직접 팝업을 띄우지 않고, 서버에 검증 및 처리를 요청함 (서버가 상황에 맞는 팝업 신호를 줌)
-    activeSocket.emit('createSlot', { type: 'game', userId: user.id, user: userInfo });
-}
-
 // ==========================================
-// 1. 게임방 개설 (문구 통일 및 방어 로직 완비)
+// 1. 게임방 개설 (구장별 세션 반영 및 방어 로직 완비)
 // ==========================================
 async function createNewGameSlot() {
-    const savedUser = localStorage.getItem("currentUser");
+    // 🔑 현재 구장 식별 및 구장 전용 키 조회
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
@@ -728,7 +904,6 @@ async function createNewGameSlot() {
         return courtStr.includes(cleanName) || courtStr.includes(rawName);
     });
 
-    // 🚨 문구 통일: '경기 중이므로 새로운 게임방을 개설할 수 없습니다.'
     if (isPlayingGame) {
         alert(`⚠️ ${cleanName} 님은 현재 게임 코트에서 경기 중이므로 새로운 게임방을 개설할 수 없습니다.`);
         return;
@@ -769,7 +944,6 @@ async function createNewGameSlot() {
     // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
     const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
 
-    // 관리자가 설정을 켰고(ON), 구장 Wi-Fi 인증이 되지 않은 경우만 차단
     if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
         const modal = document.getElementById('custom-alert-modal');
         const msgEl = document.getElementById('custom-alert-message');
@@ -805,7 +979,17 @@ async function createNewGameSlot() {
 // 2. 난타방 개설 (문구 통일 및 완벽 방어)
 // ==========================================
 async function createNewNantaSlot() {
-    const savedUser = localStorage.getItem("currentUser");
+    // 🔑 현재 구장 식별 및 구장 전용 키 조회
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
@@ -855,7 +1039,6 @@ async function createNewNantaSlot() {
         return courtStr.includes(cleanName) || courtStr.includes(rawName);
     });
 
-    // 🚨 문구 통일: '경기 중이므로 새로운 난타방을 개설할 수 없습니다.'
     if (isPlayingGame) {
         alert(`⚠️ ${cleanName} 님은 현재 게임 코트에서 경기 중이므로 새로운 난타방을 개설할 수 없습니다.`);
         return;
@@ -896,7 +1079,6 @@ async function createNewNantaSlot() {
     // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
     const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
 
-    // 관리자가 설정을 켰고(ON), 구장 Wi-Fi 인증이 되지 않은 경우만 차단
     if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
         const modal = document.getElementById('custom-alert-modal');
         const msgEl = document.getElementById('custom-alert-message');
@@ -917,7 +1099,7 @@ async function createNewNantaSlot() {
         return;
     }
 
-    // 정상 게임방 개설 요청
+    // 정상 난타방 개설 요청
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
         alert("소켓 연결이 원활하지 않습니다. 페이지를 새로고침 해보세요.");
@@ -947,7 +1129,17 @@ async function joinGameCell(slotId, idx) {
         return;
     }
 
-    const savedUser = localStorage.getItem("currentUser");
+    // 🔑 현재 구장 식별 및 구장 전용 키 조회
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
@@ -1003,7 +1195,17 @@ async function joinNantaCell(slotId, idx) {
         return;
     }
 
-    const savedUser = localStorage.getItem("currentUser");
+    // 🔑 현재 구장 식별 및 구장 전용 키 조회
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
     if (!savedUser) {
         alert("로그인 정보가 없습니다. 다시 로그인해 주세요.");
         return;
@@ -1261,28 +1463,81 @@ function handleHome() {
 }
 
 function applyUserProfile() {
-    const userStr = localStorage.getItem("currentUser");
-    const headerUserEl = document.getElementById("user-display-name"); 
+    // 🔑 현재 접속 구장 식별자 확인 및 구장별 키 생성
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    let userStr = localStorage.getItem(storageKey);
+    // 레거시 호환용 (이전 저장값이 남아있는 경우 대응)
+    if (!userStr) {
+        userStr = localStorage.getItem("currentUser");
+    }
+
+    // 🎯 1. 고유 ID로 찾거나, 화면에서 '로그인 중' 글자를 가진 요소를 직접 자동 추적
+    let headerUserEl = document.getElementById("user-display-name") 
+                    || document.getElementById("user-name")
+                    || document.getElementById("userName")
+                    || document.getElementById("userDisplay");
+
+    if (!headerUserEl) {
+        // ID가 일치하지 않을 때 화면 상단의 '로그인 중' 텍스트 요소를 직접 검색
+        const candidates = Array.from(document.querySelectorAll('header span, nav span, .header span, span, div, a, b'));
+        headerUserEl = candidates.find(el => el.children.length === 0 && el.textContent.includes('로그인 중'));
+    }
     
     if (!headerUserEl) return;
 
     if (userStr) {
-        const user = JSON.parse(userStr);
-        headerUserEl.textContent = `${user.name}님`;
-        
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (activeSocket && user.username) {
-            activeSocket.emit('registerUserSession', user.username);
+        try {
+            const user = JSON.parse(userStr);
+            const rawName = user.name || user.username || user.nickname || (typeof user === 'string' ? user : '사용자');
+            const cleanName = String(rawName).replace(/님$/, '').trim();
+            
+            // 🏷️ 회원 이름 반영
+            headerUserEl.textContent = `${cleanName}님`;
+            
+            const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+            if (activeSocket && (user.username || user.phone)) {
+                activeSocket.emit('registerUserSession', user.username || user.phone);
+            }
+        } catch (e) {
+            console.error("사용자 정보 파싱 오류:", e);
+            headerUserEl.textContent = "로그인 필요";
         }
     } else {
         headerUserEl.textContent = "로그인 필요";
     }
 }
 
+// 🚀 화면 로딩 시점에 자동으로 즉시 실행되도록 보장
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyUserProfile);
+} else {
+    applyUserProfile();
+}
+window.addEventListener('load', applyUserProfile);
+
 async function handleLogout() {
     const confirmed = await confirm("로그아웃 하시겠습니까?");
     if (confirmed) {
-        const rawUser = localStorage.getItem("currentUser");
+        // 🔑 1. 현재 접속 구장 및 스토리지 키 식별
+        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                       || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                       || new URLSearchParams(window.location.search).get('club') 
+                       || 'default';
+
+        const storageKey = (typeof getClubStorageKey === 'function') 
+                           ? getClubStorageKey("currentUser") 
+                           : `currentUser_${clubId}`;
+
+        // 🔍 구장 전용 키(또는 기존 레거시 키)에서 로그인 정보 조회
+        const rawUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
 
         if (rawUser) {
             try {
@@ -1295,7 +1550,7 @@ async function handleLogout() {
                 await fetch('/api/logout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: userData })
+                    body: JSON.stringify({ user: userData, clubId: clubId })
                 });
             } catch (err) {
                 console.error("❌ 로그아웃 서버 통신 에러:", err);
@@ -1307,6 +1562,8 @@ async function handleLogout() {
             activeSocket.disconnect();
         }
 
+        // 💾 2. 구장 전용 키와 기존 키 모두 깨끗하게 삭제
+        localStorage.removeItem(storageKey);
         localStorage.removeItem("currentUser");
         localStorage.removeItem("username");
         sessionStorage.clear();

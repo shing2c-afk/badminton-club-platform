@@ -393,7 +393,7 @@ input:checked + .slider:before {
 <body>
 
     <div class="admin-header">
-        <h1>⚙️ 클럽 관리자 모드</h1>
+        <h1 id="adminHeaderTitle"> 클럽 관리자 모드</h1>
     </div>
 
     <a href="/" class="btn-top-link">📱 사용자 화면으로 돌아가기 &rarr;</a>
@@ -414,6 +414,14 @@ input:checked + .slider:before {
             <div class="form-group">
                 <label>난타 코트 이용시간 (분):</label>
                 <input type="number" id="nanta-timeout" step="1" min="1" style="width: 110px; text-align: right;">
+            </div>
+            <div class="form-group">
+                <label>대기방 보존 유예시간 (분):</label>
+                <input type="number" id="queue-grace-timeout" step="1" min="1" style="width: 110px; text-align: right;" placeholder="기본 30">
+            </div>
+            <div class="form-group">
+                <label>세션 자동 만료시간 (분):</label>
+                <input type="number" id="session-expire-timeout" step="1" min="1" style="width: 110px; text-align: right;" placeholder="기본 60">
             </div>
             <div class="form-group">
                 <label>관리자 접속 비밀번호:</label>
@@ -668,13 +676,14 @@ input:checked + .slider:before {
             </div>
 
             <!-- 2) 회원 통합 관리 모듈 -->
-            <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
-                <div style="font-size: 13px; font-weight: 700; color: #818cf8; margin-bottom: 6px;">회원 통합 관리 모듈</div>
-                <p class="form-desc" style="margin-bottom: 8px;">회원 명부 업로드, 다운로드, 전체 회원 목록 조회 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
-                <a href="/admin-member.html" style="display: block; text-decoration: none;">
-                    <button class="btn-success" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3); margin-top:0;">회원 관리 페이지로 이동 &rarr;</button>
-                </a>
-            </div>
+<div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
+    <div style="font-size: 13px; font-weight: 700; color: #818cf8; margin-bottom: 6px;">회원 통합 관리 모듈</div>
+    <p class="form-desc" style="margin-bottom: 8px;">회원 명부 업로드, 다운로드, 전체 회원 목록 조회 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
+    <!-- 💡 클릭 시 현재 구장(currentClubId) 파라미터를 붙여 이동하도록 변경 -->
+    <a href="javascript:void(0);" onclick="location.href='/admin-member.html?club=' + encodeURIComponent(currentClubId);" style="display: block; text-decoration: none;">
+        <button type="button" class="btn-success" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3); margin-top:0;">회원 관리 페이지로 이동 &rarr;</button>
+    </a>
+</div>
         </div>
     </div>
 
@@ -768,11 +777,66 @@ input:checked + .slider:before {
     </div>
 
 <script>
-    const socket = io();
+    // 🏢 [멀티 테넌트] URL 파라미터에서 관리 대상 클럽 식별 (기본값: 'unjeong')
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentClubId = urlParams.get('club') || 'unjeong';
+    window.currentClubId = currentClubId;
+
+    // 🏢 클럽별 명칭 매핑
+    const clubNames = {
+        'unjeong': '운정배드민턴클럽',
+        'daewon': '대원배드민턴클럽'
+    };
+
+    // 🏷️ 관리자 페이지 타이틀 및 상단 헤더 클럽명 자동 표시
+function updateAdminHeader() {
+    // 🏢 1. 브라우저 캐시 또는 전역변수에서 한글 이름 즉시 조회
+    const cachedName = localStorage.getItem(`admin_club_name_${currentClubId}`);
+    const clubDisplayName = window.currentClubName || 
+                            cachedName || 
+                            (typeof clubNames !== 'undefined' && clubNames[currentClubId]) || 
+                            '';
+
+    // 🏢 2. 서버에서 전달된 한글 이름이 있다면 브라우저 캐시에 즉시 보관
+    if (window.currentClubName) {
+        localStorage.setItem(`admin_club_name_${currentClubId}`, window.currentClubName);
+    }
+
+    // 🏢 3. 한글 이름이 아직 없으면 영문 임시값을 띄우지 않고 기본 타이틀 유지
+    if (!clubDisplayName) {
+        document.title = '관리자 모드';
+        return;
+    }
+
+    // 브라우저 탭 타이틀 변경
+    document.title = `${clubDisplayName} - 관리자 모드`;
+
+    // 상단 헤더 텍스트 변경
+    const headerTitleEl = document.getElementById('adminHeaderTitle') || 
+                          document.querySelector('.header h1') || 
+                          document.querySelector('header h1');
+    if (headerTitleEl) {
+        headerTitleEl.textContent = `${clubDisplayName} 관리자 모드`;
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateAdminHeader);
+} else {
+    updateAdminHeader();
+}
+
+    // 💡 소켓 접속 시 해당 클럽 식별자를 쿼리로 서버에 전달 (필수)
+    const socket = io({
+        query: {
+            club: currentClubId
+        }
+    });
+
     let localCourts = [];
     let isInitialized = false; 
 
-    // 아코디언 토글 함수 (상태 기억 기능 포함)
+    // 아코디언 토글 함수 (상태 기억 기능 포함 - 클럽별 격리)
     function toggleCard(header) {
         header.classList.toggle('open');
         const body = header.nextElementSibling;
@@ -781,16 +845,16 @@ input:checked + .slider:before {
         const card = header.closest('.card');
         if (card && card.id) {
             const isOpen = body.classList.contains('active');
-            localStorage.setItem(`admin_card_${card.id}`, isOpen ? 'open' : 'closed');
+            localStorage.setItem(`admin_card_${currentClubId}_${card.id}`, isOpen ? 'open' : 'closed');
         }
     }
 
-    // 저장된 아코디언 상태 복원 함수
+    // 저장된 아코디언 상태 복원 함수 (클럽별 분리)
     function restoreCardStates() {
         const cards = document.querySelectorAll('.card');
         cards.forEach(card => {
             if (card.id) {
-                const savedState = localStorage.getItem(`admin_card_${card.id}`);
+                const savedState = localStorage.getItem(`admin_card_${currentClubId}_${card.id}`);
                 const header = card.querySelector('.card-header');
                 const body = card.querySelector('.card-body');
                 
@@ -823,29 +887,34 @@ input:checked + .slider:before {
     }
 
     socket.on('stateUpdated', (data) => {
+        // 🏢 [클럽명 수신] 서버에서 전달된 한글 클럽명 저장 및 헤더 갱신
+    if (data && (data.clubName || data.name)) {
+        window.currentClubName = data.clubName || data.name;
+        if (typeof updateAdminHeader === 'function') {
+            updateAdminHeader();
+        }
+    }
     if (data.config) {
         const wifiToggle = document.getElementById('toggle-wifi-restriction');
         if (wifiToggle && typeof data.config.useWifiRestriction !== 'undefined') {
             wifiToggle.checked = data.config.useWifiRestriction;
-            // 💡 서버에서 받아온 최신 설정을 브라우저 저장소에도 즉시 보관
-            localStorage.setItem("useWifiRestriction", data.config.useWifiRestriction ? "true" : "false");
+            localStorage.setItem(`useWifiRestriction_${currentClubId}`, data.config.useWifiRestriction ? "true" : "false");
         }
-            // 🔊 [추가] TV 음성 안내(TTS) 개별 제어 토글 상태 불러오기 및 동기화
             const soundEntryToggle = document.getElementById('sound-entry-notice');
             const soundNantaToggle = document.getElementById('sound-nanta-warning');
             const soundScheduleToggle = document.getElementById('sound-schedule-notice');
 
             if (soundEntryToggle && typeof data.config.soundEntryNotice !== 'undefined') {
                 soundEntryToggle.checked = data.config.soundEntryNotice;
-                localStorage.setItem("soundEntryNotice", data.config.soundEntryNotice ? "true" : "false");
+                localStorage.setItem(`soundEntryNotice_${currentClubId}`, data.config.soundEntryNotice ? "true" : "false");
             }
             if (soundNantaToggle && typeof data.config.soundNantaWarning !== 'undefined') {
                 soundNantaToggle.checked = data.config.soundNantaWarning;
-                localStorage.setItem("soundNantaWarning", data.config.soundNantaWarning ? "true" : "false");
+                localStorage.setItem(`soundNantaWarning_${currentClubId}`, data.config.soundNantaWarning ? "true" : "false");
             }
             if (soundScheduleToggle && typeof data.config.soundScheduleNotice !== 'undefined') {
                 soundScheduleToggle.checked = data.config.soundScheduleNotice;
-                localStorage.setItem("soundScheduleNotice", data.config.soundScheduleNotice ? "true" : "false");
+                localStorage.setItem(`soundScheduleNotice_${currentClubId}`, data.config.soundScheduleNotice ? "true" : "false");
             }
             const registeredIpEl = document.getElementById('registered-gym-ip');
             if (registeredIpEl && data.config.allowedGymIps) {
@@ -859,6 +928,13 @@ input:checked + .slider:before {
             if (!isInitialized) {
                 document.getElementById('entry-timeout').value = entrySec / 60;
                 document.getElementById('nanta-timeout').value = nantaSec / 60;
+                // ⏱️ 새로 추가된 유예 시간 및 세션 만료 시간 표시 (기본값: 30분, 60분)
+                if (document.getElementById('queue-grace-timeout')) {
+                    document.getElementById('queue-grace-timeout').value = data.config.queueGraceMinutes !== undefined ? data.config.queueGraceMinutes : 30;
+                }
+                if (document.getElementById('session-expire-timeout')) {
+                    document.getElementById('session-expire-timeout').value = data.config.sessionExpireMinutes !== undefined ? data.config.sessionExpireMinutes : 60;
+                }
                 document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
 
                 if (typeof initTimeSelectOptions === 'function') {
@@ -885,14 +961,14 @@ input:checked + .slider:before {
 
                 const defaultStarts = [
                     data.config.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
-                    '오후 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
-                    '야간 구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+                    '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
+                    '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.',
                     '구장 운영 마감 및 휴장 시간입니다. 이용해 주셔서 감사합니다.'
                 ];
                 const defaultEnds = [
                     data.config.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
-                    '오후 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
-                    '야간 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
+                    '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
+                    '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.',
                     '구장 휴장이 해제되었습니다. 즐거운 배드민턴 되세요.'
                 ];
 
@@ -940,7 +1016,9 @@ input:checked + .slider:before {
             endMsgs[`cleaningEndMsg_${i}`] = eMsg;
         }
 
+        // 💡 클럽 ID 동봉
         socket.emit('updateConfig', {
+            clubId: currentClubId,
             cleaningSchedules: schedules,
             cleaningStartMsg: startMsgs['cleaningStartMsg_1'],
             cleaningEndMsg: endMsgs['cleaningEndMsg_1'],
@@ -955,76 +1033,69 @@ input:checked + .slider:before {
     const adminSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 
     if (wifiToggle) {
-        // 💡 1. 화면이 뜨는 0.001초 순간에 로컬 저장소에서 직전 상태 즉시 복원 (깜빡임 원천 차단)
-        const savedWifiSetting = localStorage.getItem("useWifiRestriction");
+        const savedWifiSetting = localStorage.getItem(`useWifiRestriction_${currentClubId}`);
         if (savedWifiSetting !== null) {
             wifiToggle.checked = (savedWifiSetting === "true");
         }
 
-        // 💡 2. 관리자가 직접 토글을 켰거나 껐을 때 즉시 브라우저에 저장하고 서버로 전송
         wifiToggle.addEventListener('change', (e) => {
             const isEnabled = e.target.checked;
-            localStorage.setItem("useWifiRestriction", isEnabled ? "true" : "false");
+            localStorage.setItem(`useWifiRestriction_${currentClubId}`, isEnabled ? "true" : "false");
             if (adminSocket) {
-                adminSocket.emit('updateWifiSettings', { useWifiRestriction: isEnabled });
+                adminSocket.emit('updateWifiSettings', { clubId: currentClubId, useWifiRestriction: isEnabled });
             }
         });
     }
 
-    // 💡 3. 서버에서 최신 설정이 내려올 때도 로컬 저장소와 동기화
     if (adminSocket && wifiToggle) {
         adminSocket.on('syncConfig', (configData) => {
             if (configData && typeof configData.useWifiRestriction !== 'undefined') {
                 wifiToggle.checked = configData.useWifiRestriction;
-                localStorage.setItem("useWifiRestriction", configData.useWifiRestriction ? "true" : "false");
+                localStorage.setItem(`useWifiRestriction_${currentClubId}`, configData.useWifiRestriction ? "true" : "false");
             }
         });
     }
 
-    // 🔊 [추가] TV 음성 안내(TTS) 개별 제어 토글 실시간 이벤트 연동
     const soundEntryToggle = document.getElementById('sound-entry-notice');
     const soundNantaToggle = document.getElementById('sound-nanta-warning');
     const soundScheduleToggle = document.getElementById('sound-schedule-notice');
 
-    // 💡 1. 화면이 로드되는 순간 직전 상태 즉시 복원 (꺼졌다 켜지는 깜빡임 원천 차단)
     if (soundEntryToggle) {
-        const saved = localStorage.getItem("soundEntryNotice");
+        const saved = localStorage.getItem(`soundEntryNotice_${currentClubId}`);
         if (saved !== null) soundEntryToggle.checked = (saved === "true");
     }
     if (soundNantaToggle) {
-        const saved = localStorage.getItem("soundNantaWarning");
+        const saved = localStorage.getItem(`soundNantaWarning_${currentClubId}`);
         if (saved !== null) soundNantaToggle.checked = (saved === "true");
     }
     if (soundScheduleToggle) {
-        const saved = localStorage.getItem("soundScheduleNotice");
+        const saved = localStorage.getItem(`soundScheduleNotice_${currentClubId}`);
         if (saved !== null) soundScheduleToggle.checked = (saved === "true");
     }
 
-    // 💡 2. 관리자가 토글을 변경했을 때 로컬 저장소 즉시 저장 및 서버 전송
     if (adminSocket) {
         if (soundEntryToggle) {
             soundEntryToggle.addEventListener('change', (e) => {
                 const isChecked = e.target.checked;
-                localStorage.setItem("soundEntryNotice", isChecked ? "true" : "false");
-                adminSocket.emit('updateConfig', { soundEntryNotice: isChecked });
+                localStorage.setItem(`soundEntryNotice_${currentClubId}`, isChecked ? "true" : "false");
+                adminSocket.emit('updateConfig', { clubId: currentClubId, soundEntryNotice: isChecked });
             });
         }
         if (soundNantaToggle) {
             soundNantaToggle.addEventListener('change', (e) => {
                 const isChecked = e.target.checked;
-                localStorage.setItem("soundNantaWarning", isChecked ? "true" : "false");
-                adminSocket.emit('updateConfig', { soundNantaWarning: isChecked });
+                localStorage.setItem(`soundNantaWarning_${currentClubId}`, isChecked ? "true" : "false");
+                adminSocket.emit('updateConfig', { clubId: currentClubId, soundNantaWarning: isChecked });
             });
         }
         if (soundScheduleToggle) {
             soundScheduleToggle.addEventListener('change', (e) => {
                 const isChecked = e.target.checked;
-                localStorage.setItem("soundScheduleNotice", isChecked ? "true" : "false");
-                adminSocket.emit('updateConfig', { soundScheduleNotice: isChecked });
+                localStorage.setItem(`soundScheduleNotice_${currentClubId}`, isChecked ? "true" : "false");
+                adminSocket.emit('updateConfig', { clubId: currentClubId, soundScheduleNotice: isChecked });
             });
         }
 
-        // 서버에서 동기화 신호가 올 때 음성 토글 상태도 함께 갱신
         adminSocket.on('syncConfig', (configData) => {
             if (configData) {
                 if (typeof configData.useWifiRestriction !== 'undefined' && wifiToggle) {
@@ -1062,7 +1133,6 @@ input:checked + .slider:before {
                     return;
                 }
 
-                // 🚨 실시간 오등록 방지 안내 문구
                 const warningMsg = 
                     `[ 📶 구장 Wi-Fi IP 변경 주의사항 ]\n\n` +
                     `감지된 현재 IP: ${myCurrentIp}\n\n` +
@@ -1072,7 +1142,7 @@ input:checked + .slider:before {
 
                 const confirmed = await confirm(warningMsg);
                 if (confirmed) {
-                    adminSocket.emit('updateWifiSettings', { allowedGymIps: [myCurrentIp] });
+                    adminSocket.emit('updateWifiSettings', { clubId: currentClubId, allowedGymIps: [myCurrentIp] });
                     await alert(`✅ [ ${myCurrentIp} ] 가 구장 전용 Wi-Fi IP로 안전하게 등록되었습니다.`);
                 }
             });
@@ -1285,10 +1355,11 @@ input:checked + .slider:before {
         if (!confirmed) return;
 
         try {
+            // 💡 clubId 파라미터 추가
             const response = await fetch('/api/admin/kick-user', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetUsername })
+                body: JSON.stringify({ targetUsername, clubId: currentClubId })
             });
             const result = await response.json();
             await alert(result.message);
@@ -1312,10 +1383,11 @@ input:checked + .slider:before {
         if (!confirmed) return;
 
         try {
+            // 💡 clubId 파라미터 추가
             const response = await fetch('/api/admin/delete-room', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomType, roomId })
+                body: JSON.stringify({ roomType, roomId, clubId: currentClubId })
             });
             const result = await response.json();
             await alert(result.message);
@@ -1345,10 +1417,11 @@ input:checked + .slider:before {
         if (!confirmed) return;
 
         try {
+            // 💡 clubId 파라미터 추가
             const response = await fetch('/api/admin/clear-court', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ courtId, side })
+                body: JSON.stringify({ courtId, side, clubId: currentClubId })
             });
             const result = await response.json();
             await alert(result.message);
@@ -1404,11 +1477,17 @@ input:checked + .slider:before {
     async function saveConfig() {
         const entryMin = parseFloat(document.getElementById('entry-timeout').value);
         const nantaMin = parseFloat(document.getElementById('nanta-timeout').value);
+        const queueGrace = parseInt(document.getElementById('queue-grace-timeout').value, 10);
+        const sessionExpire = parseInt(document.getElementById('session-expire-timeout').value, 10);
         const password = document.getElementById('admin-password').value.trim();
 
+        // 💡 clubId 및 유예 시간 설정 동봉
         socket.emit('updateConfig', {
+            clubId: currentClubId,
             ENTRY_TIMEOUT_SEC: Math.round((isNaN(entryMin) ? 3 : entryMin) * 60),
             NANTA_COURT_LIMIT_SEC: Math.round((isNaN(nantaMin) ? 15 : nantaMin) * 60),
+            queueGraceMinutes: isNaN(queueGrace) ? 30 : queueGrace,
+            sessionExpireMinutes: isNaN(sessionExpire) ? 60 : sessionExpire,
             ADMIN_PASSWORD: password || '1234'
         });
         await alert('설정이 성공적으로 저장되었습니다.');
@@ -1423,7 +1502,8 @@ input:checked + .slider:before {
                 newCourts.push({ type: typeSelect.value, note: noteInput ? noteInput.value : '' });
             }
         }
-        socket.emit('updateCourtsConfig', newCourts);
+        // 💡 clubId 동봉
+        socket.emit('updateCourtsConfig', { clubId: currentClubId, courts: newCourts });
         await alert('설정 저장');
     }
 
@@ -1440,10 +1520,11 @@ input:checked + .slider:before {
         }
 
         try {
+            // 💡 clubId 동봉
             const response = await fetch('/api/admin/notice', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content, author: '관리자' })
+                body: JSON.stringify({ title, content, author: '관리자', clubId: currentClubId })
             });
             const result = await response.json();
             if (result.success) {
@@ -1464,7 +1545,8 @@ input:checked + .slider:before {
 
     async function fetchAdminNotices() {
         try {
-            const response = await fetch('/api/notices');
+            // 💡 club 파라미터 추가
+            const response = await fetch(`/api/notices?club=${encodeURIComponent(currentClubId)}`);
             const notices = await response.json();
             const container = document.getElementById('admin-notice-list');
             if (!container) return;
@@ -1506,10 +1588,11 @@ input:checked + .slider:before {
         if (!title.trim() || !content.trim()) { await alert('제목과 내용을 모두 입력해 주세요.'); return; }
 
         try {
+            // 💡 clubId 동봉
             const response = await fetch(`/api/notices/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content })
+                body: JSON.stringify({ title, content, clubId: currentClubId })
             });
             const result = await response.json();
             if (result.success) {
@@ -1524,7 +1607,8 @@ input:checked + .slider:before {
         const confirmed = await confirm('정말 이 공지사항을 삭제하시겠습니까?');
         if (!confirmed) return;
         try {
-            const response = await fetch(`/api/notices/${id}`, { method: 'DELETE' });
+            // 💡 club 파라미터 추가
+            const response = await fetch(`/api/notices/${id}?club=${encodeURIComponent(currentClubId)}`, { method: 'DELETE' });
             const result = await response.json();
             if (result.success) {
                 await alert('공지사항이 삭제되었습니다.');
@@ -1540,7 +1624,8 @@ input:checked + .slider:before {
 
     async function loadPendingMembers() {
         try {
-            const response = await fetch('/api/admin/pending-members');
+            // 💡 club 파라미터 추가
+            const response = await fetch(`/api/admin/pending-members?club=${encodeURIComponent(currentClubId)}`);
             const result = await response.json();
             const container = document.getElementById('pending-member-list');
             if (!container) return;
@@ -1572,10 +1657,11 @@ input:checked + .slider:before {
         if (!confirmed) return;
 
         try {
+            // 💡 clubId 동봉
             const response = await fetch('/api/admin/approve-member', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone, action })
+                body: JSON.stringify({ phone, action, clubId: currentClubId })
             });
             const result = await response.json();
             await alert(result.message);

@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>운정배드민턴클럽</title>
+    <title>오늘민턴</title>
+    <script>
+    // ⚡ 화면 로드 전 기본 탭 제목 설정 (서버 연결 후 실제 클럽명으로 자동 갱신됨)
+    (function() {
+        document.title = '오늘민턴';
+    })();
+</script>
     <link rel="stylesheet" href="/css/style.css">
     <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="css/auth.css">
@@ -189,8 +195,9 @@
 </div>
 
   <div id="auth-login-overlay" class="auth-overlay hidden">
-    <div class="login-card">
-      <h2>오늘민턴 로그인</h2>
+  <div class="login-card">
+    <!-- 🏸 깔끔하게 정돈된 네온 타이틀 -->
+    <h2 class="login-title"><span class="highlight-neon">오늘민턴</span> 로그인</h2>
       
      <!-- 정회원 / 일일회원 탭 버튼 -->
       <div class="login-tabs" style="display: flex; gap: 8px; margin-bottom: 20px;">
@@ -252,7 +259,7 @@
 </div>
 
 <div class="header-center" onclick="handleHome()" style="cursor: pointer; display: flex; align-items: center; justify-content: center; flex: 1; margin-left: 22px;">
-<span style="color: #f59e0b; font-size: 15px; font-weight: 900; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">운정배드민턴클럽</span>
+<span id="header-club-name" style="color: #f59e0b; font-size: 15px; font-weight: 900; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">오늘민턴</span>
 </div>
 
 <div class="header-right" style="display: flex; align-items: center; gap: 8px;">
@@ -260,9 +267,52 @@
       🔔 <span class="noti-badge" id="noti-count" style="background: #ff4d4f; color: #ffffff; border-radius: 50%; padding: 2px 5px; font-size: 10px;">0</span>
     </button>
     
-    <button class="header-btn" onclick="handleLogout()" style="font-size: 11px; padding: 4px 8px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; background: transparent; color: #ffffff; cursor: pointer;">
-      로그아웃
-    </button>
+   <!-- 🔘 상단 우측 버튼 세트 (로그아웃 & 클럽 변경) -->
+<button type="button" onclick="logout()" style="
+    height: 28px;
+    padding: 0 10px;
+    margin-left: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #f3f4f6;
+    background: transparent;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: all 0.15s ease;
+" onmouseover="this.style.borderColor='#9ca3af'; this.style.color='#ffffff';"
+   onmouseout="this.style.borderColor='#4b5563'; this.style.color='#f3f4f6';">
+    로그아웃
+</button>
+
+<button type="button" class="change-club-link" onclick="openClubModal(true)" style="
+    height: 28px;
+    padding: 0 10px;
+    margin-left: 3px;
+    font-size: 12px;
+    font-weight: 400;
+    color: #e5e7eb;
+    background: transparent;
+    border: 1px solid #4b5563;
+    border-radius: 4px;
+    cursor: pointer;
+    vertical-align: middle;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: all 0.15s ease;
+" onmouseover="this.style.borderColor='#9ca3af'; this.style.color='#ffffff';"
+   onmouseout="this.style.borderColor='#4b5563'; this.style.color='#e5e7eb';">
+    클럽 변경
+</button>
 </div>
 
 </div>
@@ -419,7 +469,14 @@
     // 공지사항 로드 함수
     async function loadLatestNotice() {
         try {
-            const response = await fetch('/api/notices');
+            // 🏢 현재 구장 ID 확정 (URL -> 전역변수 -> 로컬스토리지 순)
+            const targetClub = window.currentClubId || 
+                               new URLSearchParams(window.location.search).get('club') || 
+                               localStorage.getItem('preferredClubId') || 
+                               'unjeong';
+
+            // 🏢 TV 화면과 동일하게 해당 클럽 전용 공지사항 요청 파라미터 전달
+            const response = await fetch(`/api/notices?club=${encodeURIComponent(targetClub)}`);
             const notices = await response.json();
 
             const noticeElement = document.getElementById('index-notice-text');
@@ -618,5 +675,76 @@
     });
   }
 </script>
+
+<!-- ========================================== -->
+<!-- 🏢 [멀티 테넌트] 동적 체육관(클럽) 선택 모달 -->
+<!-- ========================================== -->
+<div id="clubSelectModal" class="club-modal-overlay" style="display: none;">
+    <div class="club-modal-card">
+        <div class="club-modal-header">
+            <h3>체육관 선택</h3>
+            <p>이용하실 배드민턴 클럽을 선택해 주세요.</p>
+            <input type="text" id="clubSearchInput" placeholder="체육관 이름 검색..." oninput="filterClubList()">
+        </div>
+        
+        <!-- API(/api/clubs)를 통해 서버의 구장 카드들이 동적으로 렌더링됩니다 -->
+        <div class="club-list-container" id="clubListContainer">
+            <div class="club-loading">체육관 목록을 불러오는 중...</div>
+        </div>
+
+        <!-- 이미 클럽이 선택된 상태에서 '변경'을 눌렀을 때만 나타나는 닫기 버튼 -->
+        <button type="button" class="club-modal-close-btn" id="closeClubModalBtn" onclick="closeClubModal()" style="display: none;">닫기</button>
+    </div>
+</div>
+
+<style>
+/* 🏢 클럽 선택 모달 디자인 (모바일 최적화) */
+.club-modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(5px);
+    z-index: 999999; display: flex; align-items: center; justify-content: center; padding: 20px;
+    box-sizing: border-box;
+}
+.club-modal-card {
+    background: #ffffff; width: 100%; max-width: 400px; border-radius: 18px;
+    padding: 22px 20px; box-shadow: 0 12px 36px rgba(0,0,0,0.3); max-height: 80vh;
+    display: flex; flex-direction: column; box-sizing: border-box; animation: popUpModal 0.25s ease-out;
+}
+@keyframes popUpModal {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+.club-modal-header h3 { margin: 0 0 6px; font-size: 19px; font-weight: 700; color: #1a202c; }
+.club-modal-header p { margin: 0 0 14px; font-size: 13px; color: #718096; }
+#clubSearchInput {
+    width: 100%; padding: 11px 13px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    font-size: 14px; box-sizing: border-box; outline: none; margin-bottom: 12px; transition: border-color 0.2s;
+}
+#clubSearchInput:focus { border-color: #3182ce; }
+.club-list-container {
+    flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px;
+}
+.club-item-card {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 15px; border: 1.5px solid #edf2f7; border-radius: 12px;
+    background: #f8fafc; cursor: pointer; transition: all 0.15s ease;
+}
+.club-item-card:active, .club-item-card:hover {
+    background: #ebf8ff; border-color: #3182ce;
+}
+.club-item-card.active {
+    border-color: #3182ce; background: #ebf8ff;
+}
+.club-item-info .club-item-name { font-size: 15px; font-weight: 700; color: #2d3748; }
+.club-item-info .club-item-courts { font-size: 12px; color: #718096; margin-top: 2px; }
+.club-item-badge {
+    background: #3182ce; color: #fff; font-size: 11px; padding: 4px 7px; border-radius: 6px; font-weight: 600;
+}
+.club-loading { text-align: center; color: #a0aec0; padding: 25px 0; font-size: 14px; }
+.club-modal-close-btn {
+    margin-top: 14px; width: 100%; padding: 11px; border: none; background: #edf2f7; color: #4a5568;
+    border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600;
+}
+</style>
 </body>
 </html>

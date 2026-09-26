@@ -1,5 +1,77 @@
-// 중복 소켓 초기화 방지
-const socket = window.socket || io();
+// =================================================================
+// 1. 🏢 [멀티 테넌트] URL 우선 ➔ 브라우저 기억(localStorage) ➔ 기본값 식별
+// =================================================================
+const urlParams = new URLSearchParams(window.location.search);
+const currentClubId = urlParams.get('club') || localStorage.getItem('preferredClubId') || 'unjeong';
+
+window.currentClubId = currentClubId;
+
+// =================================================================
+// 2. 🏢 [멀티 테넌트] 구장 명칭 동적 반영 (상용 확장형)
+// =================================================================
+window.applyClubTitle = async function applyClubTitle() {
+    // 💡 URL 파라미터를 1순위로 즉시 확인
+    const urlClub = new URLSearchParams(window.location.search).get('club');
+    const clubId = urlClub || window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
+    window.currentClubId = clubId;
+
+    let displayName = `${clubId} 배드민턴클럽`;
+
+    try {
+        let clubs = window.availableClubs;
+        if (!clubs || clubs.length === 0) {
+            const res = await fetch('/api/clubs');
+            const data = await res.json();
+            if (data.success && Array.isArray(data.clubs)) {
+                clubs = data.clubs;
+                window.availableClubs = clubs;
+            }
+        }
+
+        const matched = clubs?.find(c => c.id === clubId);
+        if (matched && matched.name) {
+            displayName = matched.name;
+        } else if (clubId === 'unjeong') {
+            displayName = '운정배드민턴클럽';
+        } else if (clubId === 'daewon') {
+            displayName = '대원배드민턴클럽';
+        }
+    } catch (e) {
+        if (clubId === 'unjeong') displayName = '운정배드민턴클럽';
+        if (clubId === 'daewon') displayName = '대원배드민턴클럽';
+    }
+    
+    // 1. 브라우저 탭 <title> 변경
+    document.title = displayName;
+    
+    // 2. 헤더 중앙 글자 변경 (다양한 ID 태그 지원)
+    const headerTitle = document.getElementById('header-club-name') || document.querySelector('.header-title') || document.getElementById('club-name');
+    if (headerTitle) {
+        headerTitle.textContent = displayName;
+    }
+};
+
+// 문서 준비 즉시 실행
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window.applyClubTitle);
+} else {
+    window.applyClubTitle();
+}
+
+// =================================================================
+// 3. 🏢 [멀티 테넌트] 접속 구장 URL 최우선 확정 및 소켓 연결
+// =================================================================
+const activeClubId = new URLSearchParams(window.location.search).get('club') || localStorage.getItem('preferredClubId') || 'unjeong';
+
+window.currentClubId = activeClubId;
+localStorage.setItem('preferredClubId', activeClubId);
+
+const socket = window.socket || io({
+    query: {
+        club: activeClubId,
+        clubId: activeClubId
+    }
+});
 window.socket = socket;
 
 // ==========================================
@@ -75,14 +147,17 @@ if (!socket.hasListeners('connect')) {
     socket.on('connect', () => {
         console.log("🟢 서버와 웹소켓 연결 성공 (ID:", socket.id, ")");
         
-        // 1. 기존 세션 등록 유지
+        // 1. 기존 세션 등록 유지 (자동 복귀 검증)
         const savedUser = localStorage.getItem("currentUser");
         if (savedUser) {
             try {
                 const parsedUser = JSON.parse(savedUser);
-                if (parsedUser.username) {
-                    socket.emit('registerUserSession', parsedUser.username);
-                    console.log(`👤 [자동 등록] 세션 유지 중인 유저(${parsedUser.username})를 소켓에 등록했습니다.`);
+                // 💡 phone, id, username 중 존재하는 키에서 유저 식별값 추출
+                const userKey = parsedUser.phone || parsedUser.id || parsedUser.username;
+                if (userKey) {
+                    // isAutoRestore: true 를 함께 보내 '자동 복귀 시도'임을 서버에 알림
+                    socket.emit('registerUserSession', { username: userKey, isAutoRestore: true });
+                    console.log(`👤 [자동 등록 요청] 세션 만료 여부 검증: ${userKey}`);
                 }
             } catch (e) {
                 console.error("세션 유저 파싱 에러:", e);
@@ -91,6 +166,22 @@ if (!socket.hasListeners('connect')) {
 
         // 2. 🔔 개인 알림 전용 소켓 룸 자동 등록
         window.registerUserSocket();
+    });
+}
+
+// 🚨 [필수 유지] 세션 만료 시 자동 로그아웃 처리
+if (!socket.hasListeners('forceLogout')) {
+    socket.on('forceLogout', (data) => {
+        console.warn("⚠️ 세션 만료 강제 로그아웃 수신:", data);
+        // 1. 브라우저에 남아있던 로그인 정보 완전 삭제
+        localStorage.removeItem("currentUser");
+        
+        // 2. 만료 안내 알림창 표시
+        const alertMsg = (data && data.message) ? data.message : "장시간 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.";
+        alert(alertMsg);
+        
+        // 3. 페이지 새로고침하여 로그인 화면으로 자동 이동
+        location.reload();
     });
 }
 
@@ -170,6 +261,27 @@ socket.off('stateUpdated').on('stateUpdated', (data) => {
     gameQueue = data.gameQueue || [];
     nantaQueue = data.nantaQueue || [];
     
+    // 🏢 [멀티 테넌트] 접속 클럽명 UI 및 브라우저 타이틀 동적 반영 (TV 화면 연동 방식)
+    const currentClub = window.currentClubId || 'unjeong';
+    
+    // TV 화면처럼 구장 ID를 기반으로 클럽명 자동 완성 (신규 구장 영구 대응)
+    const clubDisplayName = (data.clubId === currentClub && data.clubName) 
+        ? data.clubName 
+        : `${currentClub.toUpperCase()} 배드민턴클럽`;
+
+    window.currentClubName = clubDisplayName;
+    
+    // 1. 상단 헤더 타이틀 갱신
+    const headerTitle = document.getElementById('header-club-name') || 
+                        document.querySelector('.header-title') || 
+                        document.querySelector('.logo-text');
+    if (headerTitle) {
+        headerTitle.textContent = clubDisplayName;
+    }
+    
+    // 2. 브라우저 탭 상단 타이틀 갱신
+    document.title = `${clubDisplayName} - 코트 관리 시스템`;
+
     // 전체 공지 알림이 있을 경우만 유지하거나, 기존 목록이 비어있을 때만 로컬 저장소에서 복원
     if (data.notifications && data.notifications.length > 0) {
         // 기존 개인 알림 체계와 충돌하지 않도록 처리
