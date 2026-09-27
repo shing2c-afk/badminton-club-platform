@@ -3051,50 +3051,58 @@ io.on('connection', (socket) => {
     });
 });
 
-// 🏢 [멀티 테넌트] 실제 로그인한 회원만 클럽별로 집계하여 전송
+// 🏢 [멀티 테넌트] 실제 로그인한 회원 집계 및 슈퍼 관리자 브로드캐스트
 function broadcastOnlineCount(targetClubId) {
     if (!io || !io.sockets || !io.sockets.adapter) return;
 
-    // targetClubId가 없으면 전체 클럽 갱신, 있으면 해당 클럽만 갱신
-    const clubsToUpdate = targetClubId ? [targetClubId] : ['unjeong', 'daewon'];
+    // 등록된 전체 클럽 목록 (환경에 맞게 clubs 키 또는 기본 배열 참조)
+    const allClubIds = (typeof clubs !== 'undefined') ? Object.keys(clubs) : ['unjeong', 'daewon'];
+    const superAdminSummary = {};
 
-    clubsToUpdate.forEach((clubId) => {
+    allClubIds.forEach((clubId) => {
         const roomName = `club_${clubId}`;
         const room = io.sockets.adapter.rooms.get(roomName);
 
-        let totalCount = 0; // 해당 클럽 로그인 완료 회원 수 (정회원 + 일일회원 / LTE 포함)
-        let clubCount = 0;  // 해당 클럽 구장 Wi-Fi 접속 체류 회원 수
+        const loggedInUsers = new Set();
+        const wifiUsers = new Set();
 
         if (room) {
             room.forEach((socketId) => {
                 const userSocket = io.sockets.sockets.get(socketId);
                 if (!userSocket) return;
 
-                // 🔑 [핵심 수정] username, userId, userIdentifier, clubUserKey 중 하나라도 있으면 로그인 회원으로 인정!
-                const isUserLoggedIn = Boolean(
-                    userSocket.username || 
-                    userSocket.userId || 
-                    userSocket.userIdentifier || 
-                    userSocket.clubUserKey
-                );
+                const userKey = userSocket.username || 
+                                userSocket.userIdentifier || 
+                                userSocket.userId || 
+                                (userSocket.clubUserKey ? userSocket.clubUserKey.replace(`${clubId}_`, '') : null);
 
-                if (isUserLoggedIn) {
-                    totalCount++; // 1. 우리 클럽 로그인 회원수 카운트 (LTE/외부 포함)
-
-                    // 2. 해당 클럽의 구장 와이파이(IP) 매칭 여부 판별 (클럽 ID 전달)
+                if (userKey) {
+                    loggedInUsers.add(userKey);
                     if (typeof isGymWifiUser === 'function' && isGymWifiUser(userSocket, clubId)) {
-                        clubCount++;
+                        wifiUsers.add(userKey);
                     }
                 }
             });
         }
 
-        // 해당 클럽 방에만 전송 (다른 클럽 접속자는 절대 섞이지 않음)
+        const totalCount = loggedInUsers.size;
+        const clubCount = wifiUsers.size;
+
+        // 개별 클럽 방 전송
         io.to(roomName).emit('updateOnlineCount', {
             club: clubCount,
             total: totalCount
         });
+
+        // 슈퍼 관리자용 종합 데이터 수집
+        superAdminSummary[clubId] = {
+            club: clubCount,
+            total: totalCount
+        };
     });
+
+    // 👑 슈퍼 관리자 페이지로 전체 클럽 통계 전송
+    io.emit('updateSuperAdminCounts', superAdminSummary);
 }
 
 // 1. 전체 회원 명부 CSV 다운로드 라우트 (프론트엔드 경로 /api/admin/download-excel와 일치시킴)

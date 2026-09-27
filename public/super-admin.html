@@ -238,34 +238,54 @@ if (socket.connected) {
         }
 
         function renderClubList(clubs) {
-            const listEl = document.getElementById('club-list');
-            document.getElementById('club-count').innerText = clubs.length;
+    const listEl = document.getElementById('club-list');
+    document.getElementById('club-count').innerText = clubs.length;
 
-            if (clubs.length === 0) {
-                listEl.innerHTML = '<div style="color: #666; text-align: center; padding: 40px;">등록된 클럽이 없습니다.</div>';
-                return;
-            }
+    if (clubs.length === 0) {
+        listEl.innerHTML = '<div style="color: #666; text-align: center; padding: 40px;">등록된 클럽이 없습니다.</div>';
+        return;
+    }
 
-            listEl.innerHTML = clubs.map(club => `
-                <div class="club-item">
-                    <div class="club-info">
-                        <h3>${club.name} <span style="font-size:12px; color: #ff6600;">(${club.id})</span></h3>
-                       <div class="club-meta">
-                            <span>🏸 코트 ${club.courtCount}개</span>
-                            <span>⏳ 게임대기 ${club.gameQueueCount || 0}팀</span>
-                            <span>🏓 난타대기 ${club.nantaQueueCount || 0}팀</span>
-                            <span>📶 Wi-Fi 제한: ${club.useWifi ? 'ON' : 'OFF'}</span>
-                        </div>
-                    </div>
-                    <div class="club-actions">
-                        <a href="/?club=${club.id}" target="_blank" class="btn-action btn-user">📱 회원앱</a>
-                        <a href="/tv?club=${club.id}" target="_blank" class="btn-action btn-tv">📺 TV판</a>
-                        <a href="/admin?club=${club.id}" target="_blank" class="btn-action btn-admin">⚙️ 관리자</a>
-                        <button onclick="handleDeleteClub('${club.id}', '${club.name}')" class="btn-action btn-delete">🗑️ 삭제</button>
-                    </div>
+    listEl.innerHTML = clubs.map(club => `
+        <div class="club-item">
+            <div class="club-info">
+                <h3>${club.name} <span style="font-size:12px; color: #ff6600;">(${club.id})</span></h3>
+                <div class="club-meta">
+                    <!-- 👥 [추가] 실시간 접속 현황 배지 -->
+                    <span style="background: #10b981; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 11px;">
+                        클럽 <strong id="club-online-${club.id}">0</strong>명 | 접속 <strong id="total-online-${club.id}">0</strong>명
+                    </span>
+                    <span>🏸 코트 ${club.courtCount}개</span>
+                    <span>⏳ 게임대기 ${club.gameQueueCount || 0}팀</span>
+                    <span>🏓 난타대기 ${club.nantaQueueCount || 0}팀</span>
+                    <span>📶 Wi-Fi 제한: ${club.useWifi ? 'ON' : 'OFF'}</span>
                 </div>
-            `).join('');
-        }
+            </div>
+            <div class="club-actions">
+                <a href="/?club=${club.id}" target="_blank" class="btn-action btn-user">📱 회원앱</a>
+                <a href="/tv?club=${club.id}" target="_blank" class="btn-action btn-tv">📺 TV판</a>
+                <a href="/admin?club=${club.id}" target="_blank" class="btn-action btn-admin">⚙️ 관리자</a>
+                <button onclick="handleDeleteClub('${club.id}', '${club.name}')" class="btn-action btn-delete">🗑️ 삭제</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 📡 서버로부터 전체 클럽 접속자 현황 수신
+if (typeof socket !== 'undefined') {
+    socket.on('updateSuperAdminCounts', (countsByClub) => {
+        // countsByClub 형태: { unjeong: { club: 1, total: 2 }, daewon: { club: 0, total: 1 } }
+        if (!countsByClub) return;
+
+        Object.keys(countsByClub).forEach(clubId => {
+            const clubElem = document.getElementById(`club-online-${clubId}`);
+            const totalElem = document.getElementById(`total-online-${clubId}`);
+
+            if (clubElem) clubElem.innerText = countsByClub[clubId].club || 0;
+            if (totalElem) totalElem.innerText = countsByClub[clubId].total || 0;
+        });
+    });
+}
 
         function handleCreateClub(e) {
             e.preventDefault();
