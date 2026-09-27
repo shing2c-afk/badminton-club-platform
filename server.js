@@ -8,21 +8,36 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
 const readline = require('readline');
 
 // ==========================================
 // 💾 영구 디스크 및 데이터베이스/설정 파일 경로 설정 (Render 대응)
 // ==========================================
-const DATA_DIR = process.env.RENDER ? '/var/data' : __dirname;
+// Render 환경이거나 /var/data 마운트 경로가 실제로 존재하면 영구 디스크 사용
+const isRender = process.env.RENDER || fs.existsSync('/var/data');
+const DATA_DIR = isRender && fs.existsSync('/var/data') ? '/var/data' : __dirname;
 
-// 폴더가 없으면 자동으로 생성하는 안전장치
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+// 데이터 폴더 및 영구 업로드 폴더 생성 (안전장치)
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+try {
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(UPLOAD_DIR)) {
+        fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    }
+} catch (err) {
+    console.warn('⚠️ 디렉터리 생성 확인 (이미 존재하거나 권한 확인 필요):', err.message);
 }
 
-// 영구 디스크 경로가 반영된 파일 경로 정의
+// 📦 업로드 파일도 영구 디스크 uploads 폴더에 저장되도록 설정
+const upload = multer({ dest: UPLOAD_DIR });
+
+// 📌 DB 파일 경로 정의 (기존 파일명에 맞게 badminton.db 사용)
 const dbPath = path.join(DATA_DIR, 'badminton.db');
+
+console.log(`📂 [스토리지 경로] DATA_DIR: ${DATA_DIR}`);
+console.log(`📦 [DB 파일 경로] dbPath: ${dbPath}`);
 
 // 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
 const activeUserSockets = new Map();
@@ -566,20 +581,24 @@ app.get('/api/clubs', (req, res) => {
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
-// 💡 상단에서 선언한 영구 디스크 대응 dbPath 변수를 그대로 사용합니다.
+// 💾 DB 연결 및 초기화 실행부
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('❌ 데이터베이스 연결 실패:', err.message);
     } else {
         console.log('✅ SQLite 데이터베이스 연결 성공:', dbPath);
+        
+        // 🔒 테이블 생성 및 컬럼 보강(initDatabase)을 먼저 완벽히 수행합니다.
+        // 더미 데이터 삽입은 initDatabase 내부의 마지막 단계에서 안전하게 호출됩니다.
         initDatabase();
-        insertDefaultDummyData(); 
     }
 });
 
 function initDatabase() {
-    // 1. 기존 테이블의 전체 UNIQUE 제약조건을 풀고 구장별 분리 구조로 안전 변환
     db.serialize(() => {
+        // =========================================================================
+        // 1. 정회원 테이블 (구장별 독립 가입 및 안전한 마이그레이션)
+        // =========================================================================
         db.run(`
             CREATE TABLE IF NOT EXISTS regular_members (
                 id TEXT PRIMARY KEY,
@@ -598,48 +617,57 @@ function initDatabase() {
             )
         `);
 
-        // 혹시 기존 테이블에 phone UNIQUE가 걸려 있다면 안전하게 새 구조로 이전
+        // 기존 테이블 인덱스 점검 및 데이터 유실 없는 안전한 전환
         db.all(`PRAGMA index_list(regular_members)`, (err, indexes) => {
             const hasGlobalUnique = indexes && indexes.some(idx => idx.unique && idx.origin === 'u');
             if (hasGlobalUnique) {
-                console.log('🔄 [DB 마이그레이션] 정회원 테이블을 구장별 독립 가입 구조로 갱신합니다...');
-                db.run(`ALTER TABLE regular_members RENAME TO old_regular_members`, () => {
-                    db.run(`
-                        CREATE TABLE regular_members (
-                            id TEXT PRIMARY KEY,
-                            club_id TEXT DEFAULT 'unjeong',
-                            type TEXT,
-                            username TEXT,
-                            password TEXT,
-                            name TEXT,
-                            gender TEXT,
-                            birthDate TEXT,
-                            ageGroup TEXT,
-                            grade TEXT,
-                            phone TEXT,
-                            address TEXT,
-                            joinedAt TEXT
-                        )
-                    `, () => {
+                console.log('🔄 [DB 마이그레이션] 정회원 테이블을 구장별 분리 구조로 안전 변환합니다...');
+                
+                // 기존 테이블에 club_id 컬럼이 없을 수 있으므로 먼저 안전하게 컬럼을 추가해 둡니다.
+                db.run(`ALTER TABLE regular_members ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {
+                    db.run(`ALTER TABLE regular_members RENAME TO old_regular_members`, () => {
                         db.run(`
-                            INSERT INTO regular_members 
-                            SELECT id, COALESCE(club_id, 'unjeong'), type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt 
-                            FROM old_regular_members
+                            CREATE TABLE regular_members (
+                                id TEXT PRIMARY KEY,
+                                club_id TEXT DEFAULT 'unjeong',
+                                type TEXT,
+                                username TEXT,
+                                password TEXT,
+                                name TEXT,
+                                gender TEXT,
+                                birthDate TEXT,
+                                ageGroup TEXT,
+                                grade TEXT,
+                                phone TEXT,
+                                address TEXT,
+                                joinedAt TEXT
+                            )
                         `, () => {
-                            db.run(`DROP TABLE old_regular_members`);
-                            // 구장 + 전화번호 조합으로만 중복 검사 (구장별 1회 가입 허용)
-                            db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_member_club_phone ON regular_members(club_id, phone)`);
-                            console.log('✅ [DB 마이그레이션 완료] 구장별 독립 정회원 등록이 가능해졌습니다.');
+                            // club_id가 확실히 보장된 상태에서 안전하게 복사
+                            db.run(`
+                                INSERT INTO regular_members 
+                                SELECT id, COALESCE(club_id, 'unjeong'), type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt 
+                                FROM old_regular_members
+                            `, (insertErr) => {
+                                if (insertErr) {
+                                    console.error('❌ 정회원 데이터 복사 실패:', insertErr.message);
+                                } else {
+                                    db.run(`DROP TABLE old_regular_members`);
+                                    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_member_club_phone ON regular_members(club_id, phone)`);
+                                    console.log('✅ [DB 마이그레이션 완료] 기존 정회원 데이터가 유실 없이 이전되었습니다.');
+                                }
+                            });
                         });
                     });
                 });
             } else {
-                // 구장별 유니크 인덱스 생성
                 db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_member_club_phone ON regular_members(club_id, phone)`);
             }
         });
 
-        // 2. 가입 대기 테이블 club_id 보정
+        // =========================================================================
+        // 2. 가입 대기 테이블 (pending_registrations) club_id 보강
+        // =========================================================================
         db.run(`
             CREATE TABLE IF NOT EXISTS pending_registrations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -658,22 +686,30 @@ function initDatabase() {
             db.run(`ALTER TABLE pending_registrations ADD COLUMN address TEXT`, () => {});
         });
 
-        // 3. 일일 게스트 테이블
+        // =========================================================================
+        // 3. 일일 게스트 테이블 (daily_guests) club_id 컬럼 추가
+        // =========================================================================
         db.run(`
             CREATE TABLE IF NOT EXISTS daily_guests (
                 id TEXT PRIMARY KEY,
+                club_id TEXT DEFAULT 'unjeong',
                 type TEXT,
                 name TEXT,
                 phone TEXT,
                 address TEXT,
                 visitedAt TEXT
             )
-        `);
+        `, () => {
+            db.run(`ALTER TABLE daily_guests ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {});
+        });
 
-        // 4. 공지사항 테이블
+        // =========================================================================
+        // 4. 공지사항 테이블 (notices) clubId 컬럼 탑재 및 기본값 처리
+        // =========================================================================
         db.run(`
             CREATE TABLE IF NOT EXISTS notices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                clubId TEXT DEFAULT 'unjeong',
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
                 author TEXT DEFAULT '관리자',
@@ -681,10 +717,15 @@ function initDatabase() {
             )
         `, (err) => {
             if (!err) {
-                db.get(`SELECT COUNT(*) as count FROM notices`, (err, row) => {
+                // 기존 notices 테이블이 이미 만들어져 있던 경우를 위한 안전 컬럼 추가
+                db.run(`ALTER TABLE notices ADD COLUMN clubId TEXT DEFAULT 'unjeong'`, () => {});
+
+                // 기본 안내 공지사항 등록
+                db.get(`SELECT COUNT(*) as count FROM notices`, (countErr, row) => {
                     if (row && row.count === 0) {
-                        db.run(`INSERT INTO notices (title, content, author, createdAt) VALUES (?, ?, ?, ?)`,
-                            ['체육관 이용 수칙 안내', '체육관 내 음료 및 음식물 반입을 금지합니다. 즐거운 배드민턴 되세요!', '관리자', '2026-09-03']
+                        db.run(
+                            `INSERT INTO notices (clubId, title, content, author, createdAt) VALUES (?, ?, ?, ?, ?)`,
+                            ['unjeong', '체육관 이용 수칙 안내', '체육관 내 음료 및 음식물 반입을 금지합니다. 즐거운 배드민턴 되세요!', '관리자', '2026-09-03']
                         );
                     }
                 });
