@@ -3055,29 +3055,41 @@ io.on('connection', (socket) => {
 function broadcastOnlineCount(targetClubId) {
     if (!io || !io.sockets || !io.sockets.adapter) return;
 
+    // targetClubId가 없으면 전체 클럽 갱신, 있으면 해당 클럽만 갱신
     const clubsToUpdate = targetClubId ? [targetClubId] : ['unjeong', 'daewon'];
 
     clubsToUpdate.forEach((clubId) => {
         const roomName = `club_${clubId}`;
         const room = io.sockets.adapter.rooms.get(roomName);
 
-        let totalCount = 0; // 로그인 완료 회원 수
-        let clubCount = 0;  // 체육관 Wi-Fi 접속 회원 수
+        let totalCount = 0; // 해당 클럽 로그인 완료 회원 수 (정회원 + 일일회원 / LTE 포함)
+        let clubCount = 0;  // 해당 클럽 구장 Wi-Fi 접속 체류 회원 수
 
         if (room) {
             room.forEach((socketId) => {
                 const userSocket = io.sockets.sockets.get(socketId);
-                // 🔑 [핵심] 소켓에 로그인 사용자 정보(userId 또는 userIdentifier)가 등록된 경우만 카운트!
-                if (userSocket && (userSocket.userId || userSocket.userIdentifier)) {
-                    totalCount++;
-                    if (typeof isGymWifiUser === 'function' && isGymWifiUser(userSocket)) {
+                if (!userSocket) return;
+
+                // 🔑 [핵심 수정] username, userId, userIdentifier, clubUserKey 중 하나라도 있으면 로그인 회원으로 인정!
+                const isUserLoggedIn = Boolean(
+                    userSocket.username || 
+                    userSocket.userId || 
+                    userSocket.userIdentifier || 
+                    userSocket.clubUserKey
+                );
+
+                if (isUserLoggedIn) {
+                    totalCount++; // 1. 우리 클럽 로그인 회원수 카운트 (LTE/외부 포함)
+
+                    // 2. 해당 클럽의 구장 와이파이(IP) 매칭 여부 판별 (클럽 ID 전달)
+                    if (typeof isGymWifiUser === 'function' && isGymWifiUser(userSocket, clubId)) {
                         clubCount++;
                     }
                 }
             });
         }
 
-        // 해당 클럽 방에만 전송
+        // 해당 클럽 방에만 전송 (다른 클럽 접속자는 절대 섞이지 않음)
         io.to(roomName).emit('updateOnlineCount', {
             club: clubCount,
             total: totalCount

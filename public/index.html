@@ -270,39 +270,80 @@ body, button, input, select, textarea {
     <span id="user-display-name" style="color: #ffffff;">로그인 중...</span>
 </div>
 
-<div class="header-center" onclick="handleHome()" style="cursor: pointer; display: flex; align-items: center; justify-content: center; flex: 1; margin-left: 22px;">
-<span id="header-club-name" style="color: #f59e0b; font-size: 15px; font-weight: 900; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.4);">오늘민턴</span>
+<div class="header-center" onclick="handleHome()" style="
+    cursor: pointer; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    flex: 1; 
+    min-width: 0;
+">
+    <span id="header-club-name" style="
+        color: #f59e0b; 
+        font-size: 15px; 
+        font-weight: 900; 
+        letter-spacing: -0.4px; 
+        white-space: nowrap; 
+        text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    ">오늘민턴</span>
 </div>
 
-<div class="header-right" style="display: flex; align-items: center; gap: 8px;">
-    <button class="header-btn" onclick="openNotiModal()" style="position: relative; background: none; border: none; font-size: 14px; color: #ffffff; cursor: pointer;">
-      🔔 <span class="noti-badge" id="noti-count" style="background: #ff4d4f; color: #ffffff; border-radius: 50%; padding: 2px 5px; font-size: 10px;">0</span>
+<!-- 🔘 상단 우측: 알림 종 + 로그아웃 버튼 (우측 밀착 및 간격 최적화) -->
+<div class="header-right" style="
+    display: flex; 
+    align-items: center; 
+    gap: 5px; 
+    flex-shrink: 0;
+">
+    <!-- 🔔 알림 버튼 -->
+    <button type="button" class="header-btn" onclick="openNotiModal()" style="
+        position: relative; 
+        background: none; 
+        border: none; 
+        font-size: 14px; 
+        color: #ffffff; 
+        cursor: pointer;
+        padding: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+    ">
+        🔔<span class="noti-badge" id="noti-count" style="
+            background: #ff4d4f; 
+            color: #ffffff; 
+            border-radius: 50%; 
+            padding: 1px 4px; 
+            font-size: 9px;
+            font-weight: 700;
+            margin-left: 1px;
+        ">0</span>
     </button>
-    
-  <!-- 🔘 상단 우측 버튼 세트 (로그아웃) -->
-<button type="button" id="logoutBtn" onclick="if(typeof logout === 'function'){ logout(); } else { localStorage.clear(); sessionStorage.clear(); location.reload(); }" style="
-    height: 28px;
-    padding: 0 10px;
-    margin-left: 10px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #f3f4f6;
-    background: transparent;
-    border: 1px solid #4b5563;
-    border-radius: 4px;
-    cursor: pointer;
-    vertical-align: middle;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    white-space: nowrap;
-    transition: all 0.15s ease;
-" onmouseover="this.style.borderColor='#9ca3af'; this.style.color='#ffffff';"
-   onmouseout="this.style.borderColor='#4b5563'; this.style.color='#f3f4f6';">
-    로그아웃
-</button>
+
+    <!-- 🚪 로그아웃 버튼 (불필요한 margin-left 제거 후 밀착) -->
+    <button type="button" id="logoutBtn" onclick="if(typeof logout === 'function'){ logout(); } else { localStorage.clear(); sessionStorage.clear(); location.reload(); }" style="
+        height: 28px;
+        padding: 0 9px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #f3f4f6;
+        background: transparent;
+        border: 1px solid #4b5563;
+        border-radius: 4px;
+        cursor: pointer;
+        vertical-align: middle;
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+    " onmouseover="this.style.borderColor='#9ca3af'; this.style.color='#ffffff';"
+       onmouseout="this.style.borderColor='#4b5563'; this.style.color='#f3f4f6';">
+        로그아웃
+    </button>
+</div>
 </div>
 
 </div>
