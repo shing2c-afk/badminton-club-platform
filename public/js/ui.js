@@ -8,6 +8,35 @@ let currentUser = null;
 
 let activeMergeSlotId = null;
 
+// 💡 완벽하게 동명이인(정회원/일일회원)과 부분 일치를 걸러내는 통합 검증 함수
+window.isMyNameMatch = function(playerData, currentUser) {
+    if (!playerData || !currentUser || !currentUser.name) return false;
+
+    // 1. 내 정보 세팅
+    const myName = currentUser.name.trim();
+    const myGrade = (currentUser.level || currentUser.grade || "").trim();
+    const isMeDaily = (currentUser.isGuest === true || myGrade === '일일');
+
+    // 2. 비교할 대상 데이터 문자열화
+    const pString = Array.isArray(playerData) ? playerData.join(',') : playerData;
+
+    // 3. 엄격한 비교 검사
+    return pString.split(',').some(p => {
+        const parts = p.split('/').map(item => item.trim());
+        const pName = parts[0] || ""; 
+        const pGrade = parts[parts.length - 1] || "";
+        const isTargetDaily = (pGrade === '일일' || parts.includes('일일'));
+
+        // [방어 1] 이름이 완벽하게 똑같은가?
+        if (pName !== myName) return false;
+
+        // [방어 2] 정회원과 일일회원이 구분되는가?
+        if (isMeDaily !== isTargetDaily) return false;
+
+        return true; 
+    });
+};
+
 function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -277,12 +306,20 @@ function renderCourts() {
     if (!courtList) return;
     courtList.innerHTML = '';
 
-    const savedUser = localStorage.getItem("currentUser");
-    let currentUserName = "";
+    // 💡 1. 멀티테넌트 환경에 맞게 유저 '전체 객체'를 가져옵니다.
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    let currentUser = {};
     if (savedUser) {
         try {
-            const u = JSON.parse(savedUser);
-            currentUserName = (u.name || u.username || "").trim();
+            currentUser = JSON.parse(savedUser);
         } catch (e) {}
     }
 
@@ -308,8 +345,14 @@ function renderCourts() {
             .join('');
     }
 
+    // 💡 2. 만능 함수(isMyNameMatch)로 연결시키는 스위치 (로그 제거, 깔끔한 원본)
+    const exactMatchUser = (playersData) => {
+        return window.isMyNameMatch(playersData, currentUser);
+    };
+
     courtsData.forEach(court => {
         let html = '';
+        
         if(court.type === 'game') {
             if(court.isEmpty) {
                 html = `
@@ -321,14 +364,8 @@ function renderCourts() {
                         <div class="empty-court-box">✨ 빈 코트</div>
                     </div>`;
             } else {
-                let isUserOnThisCourt = false;
-                if (court.players) {
-                    if (Array.isArray(court.players)) {
-                        isUserOnThisCourt = court.players.some(p => p && currentUserName && p.includes(currentUserName));
-                    } else if (typeof court.players === 'string') {
-                        isUserOnThisCourt = currentUserName && court.players.includes(currentUserName);
-                    }
-                }
+                // 💡 불필요한 currentUserName 변수 제거 완료
+                let isUserOnThisCourt = exactMatchUser(court.players);
 
                 let gameActionBtns = '';
                 if (isUserOnThisCourt) {
@@ -360,23 +397,9 @@ function renderCourts() {
             }
         } 
         else if(court.type === 'nanta') {
-            let isUserOnSideA = false;
-            if (court.sideA && court.sideA.players) {
-                if (Array.isArray(court.sideA.players)) {
-                    isUserOnSideA = court.sideA.players.some(p => p && currentUserName && p.includes(currentUserName));
-                } else if (typeof court.sideA.players === 'string') {
-                    isUserOnSideA = currentUserName && court.sideA.players.includes(currentUserName);
-                }
-            }
-
-            let isUserOnSideB = false;
-            if (court.sideB && court.sideB.players) {
-                if (Array.isArray(court.sideB.players)) {
-                    isUserOnSideB = court.sideB.players.some(p => p && currentUserName && p.includes(currentUserName));
-                } else if (typeof court.sideB.players === 'string') {
-                    isUserOnSideB = currentUserName && court.sideB.players.includes(currentUserName);
-                }
-            }
+            // 💡 불필요한 currentUserName 변수 제거 완료
+            let isUserOnSideA = court.sideA ? exactMatchUser(court.sideA.players) : false;
+            let isUserOnSideB = court.sideB ? exactMatchUser(court.sideB.players) : false;
 
             const sideABtn = isUserOnSideA ? 
                 `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료</button>` :
@@ -436,14 +459,21 @@ function renderGameQueue() {
     const container = document.getElementById('game-slot-list');
     if (!container) return;
 
-    const savedUser = localStorage.getItem("currentUser");
-    let currentUserName = "";
-    let cleanName = "";
+    // 💡 1. 완벽한 유저 객체 추출 (멀티테넌트 대응)
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    let currentUser = {};
     if (savedUser) {
         try {
-            const u = JSON.parse(savedUser);
-            currentUserName = (u.name || u.username || "").trim();
-            cleanName = currentUserName.replace(/님$/, '').trim();
+            currentUser = JSON.parse(savedUser);
         } catch (e) {}
     }
 
@@ -455,47 +485,16 @@ function renderGameQueue() {
         return playerStr;
     }
 
-    // 이름 식별 함수 ('관리자' / '관리자님' 및 구장별 세션 완벽 대응)
-function isMePlayer(p) {
-    if (!p) return false;
-
-    // 🔑 현재 구장 키 식별
-    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
-                   || new URLSearchParams(window.location.search).get('club') 
-                   || 'default';
-
-    const storageKey = (typeof getClubStorageKey === 'function') 
-                       ? getClubStorageKey("currentUser") 
-                       : `currentUser_${clubId}`;
-
-    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
-
-    let myCleanName = (typeof cleanName !== 'undefined' && cleanName) ? cleanName : "";
-    let myUserName = (typeof currentUserName !== 'undefined' && currentUserName) ? currentUserName : "";
-
-    // cleanName이 비어있다면 구장별 스토리지에서 직접 이름 추출
-    if (!myCleanName && savedUser) {
-        try {
-            const u = JSON.parse(savedUser);
-            const raw = (u.name || u.username || "").trim();
-            myCleanName = raw.replace(/님$/, '').trim();
-            myUserName = raw;
-        } catch (e) {}
+    // 💡 2. 복잡한 이름 비교 로직을 만능 함수 단 한 줄로 교체
+    function isMePlayer(p) {
+        return window.isMyNameMatch(p, currentUser);
     }
 
-    if (!myCleanName && !myUserName) return false;
-
-    const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
-    return (myCleanName && str.includes(myCleanName)) || (myUserName && str.includes(myUserName));
-}
-
-    // 1. 코트 현황 확인 (내가 현재 게임 코트 경기 중인지 체크)
+    // 💡 3. 코트 사용 중인지 검사 (부분 일치 버그 원천 차단)
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
     const isPlayingGame = activeCourts.some(c => {
-        if (!c || c.type !== 'game') return false;
-        const courtStr = JSON.stringify(c);
-        return cleanName && (courtStr.includes(cleanName) || courtStr.includes(currentUserName));
+        if (!c || c.type !== 'game' || !c.players) return false;
+        return window.isMyNameMatch(c.players, currentUser);
     });
 
     // 2. 대기열 확인 (내가 이미 게임 대기열 어느 방이든 들어가 있는지)
@@ -620,57 +619,32 @@ function isMePlayer(p) {
 }
 
 function mergeGameSlot(slotId) {
-    const savedUser = localStorage.getItem("currentUser");
-    let currentUserName = "";
-    let cleanName = "";
+    // 💡 1. 완벽한 유저 객체 추출 (멀티테넌트 대응)
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    let currentUser = {};
     if (savedUser) {
         try {
-            const u = JSON.parse(savedUser);
-            currentUserName = (u.name || u.username || "").trim();
-            cleanName = currentUserName.replace(/님$/, '').trim();
+            currentUser = JSON.parse(savedUser);
         } catch (e) {}
-    }
-
-    // 이름 식별 함수 ('관리자' / '관리자님' 및 구장별 세션 완벽 대응)
-    function isMePlayer(p) {
-        if (!p) return false;
-
-        // 🔑 현재 구장 키 식별
-        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                       || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
-                       || new URLSearchParams(window.location.search).get('club') 
-                       || 'default';
-
-        const storageKey = (typeof getClubStorageKey === 'function') 
-                           ? getClubStorageKey("currentUser") 
-                           : `currentUser_${clubId}`;
-
-        const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
-
-        let myCleanName = (typeof cleanName !== 'undefined' && cleanName) ? cleanName : "";
-        let myUserName = (typeof currentUserName !== 'undefined' && currentUserName) ? currentUserName : "";
-
-        // cleanName이 비어있다면 구장별 스토리지에서 직접 이름 추출
-        if (!myCleanName && savedUser) {
-            try {
-                const u = JSON.parse(savedUser);
-                const raw = (u.name || u.username || "").trim();
-                myCleanName = raw.replace(/님$/, '').trim();
-                myUserName = raw;
-            } catch (e) {}
-        }
-
-        if (!myCleanName && !myUserName) return false;
-
-        const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
-        return (myCleanName && str.includes(myCleanName)) || (myUserName && str.includes(myUserName));
     }
 
     const currentSlot = gameQueue.find(s => s.id === slotId);
     if (!currentSlot) return;
 
     const currentValidPlayers = getValidPlayers(currentSlot.players);
-    const isMySlot = currentSlot.players.some(p => isMePlayer(p));
+    
+    // 💡 2. 길고 복잡했던 isMePlayer 함수를 지우고, 만능 함수(isMyNameMatch) 한 줄로 완벽 교체!
+    const isMySlot = currentSlot.players.some(p => window.isMyNameMatch(p, currentUser));
+    
     if (!isMySlot || currentValidPlayers.length === 0 || currentValidPlayers.length >= 4) return;
 
     const targetSlots = gameQueue.filter(s => {
@@ -711,14 +685,21 @@ function renderNantaQueue() {
     const container = document.getElementById('nanta-slot-list');
     if (!container) return;
 
-    const savedUser = localStorage.getItem("currentUser");
-    let currentUserName = "";
-    let cleanName = "";
+    // 💡 1. 완벽한 유저 객체 추출 (멀티테넌트 대응)
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    let currentUser = {};
     if (savedUser) {
         try {
-            const u = JSON.parse(savedUser);
-            currentUserName = (u.name || u.username || "").trim();
-            cleanName = currentUserName.replace(/님$/, '').trim();
+            currentUser = JSON.parse(savedUser);
         } catch (e) {}
     }
 
@@ -730,47 +711,24 @@ function renderNantaQueue() {
         return playerStr;
     }
 
-    // 이름 식별 함수 ('관리자' / '관리자님' 및 구장별 세션 완벽 대응)
+    // 💡 2. 복잡하고 구멍 많던 includes 기반 검사를 '만능 함수' 단 한 줄로 교체!
     function isMePlayer(p) {
-        if (!p) return false;
-
-        // 🔑 현재 구장 키 식별
-        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                       || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
-                       || new URLSearchParams(window.location.search).get('club') 
-                       || 'default';
-
-        const storageKey = (typeof getClubStorageKey === 'function') 
-                           ? getClubStorageKey("currentUser") 
-                           : `currentUser_${clubId}`;
-
-        const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
-
-        let myCleanName = (typeof cleanName !== 'undefined' && cleanName) ? cleanName : "";
-        let myUserName = (typeof currentUserName !== 'undefined' && currentUserName) ? currentUserName : "";
-
-        // cleanName이 비어있다면 구장별 스토리지에서 직접 이름 추출
-        if (!myCleanName && savedUser) {
-            try {
-                const u = JSON.parse(savedUser);
-                const raw = (u.name || u.username || "").trim();
-                myCleanName = raw.replace(/님$/, '').trim();
-                myUserName = raw;
-            } catch (e) {}
-        }
-
-        if (!myCleanName && !myUserName) return false;
-
-        const str = typeof p === 'object' ? JSON.stringify(p) : String(p);
-        return (myCleanName && str.includes(myCleanName)) || (myUserName && str.includes(myUserName));
+        return window.isMyNameMatch(p, currentUser);
     }
 
-    // 1. 코트 현황 확인 (게임 코트나 난타 코트 중 하나라도 코트 이용 중인지 검사)
+    // 💡 3. 코트 사용 중인지 검사하는 로직도 정확하게 비교하도록 수정 (부분 일치 버그 원천 차단)
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
     const isPlayingAnyCourt = activeCourts.some(c => {
-        if (!c || (c.type !== 'game' && c.type !== 'nanta')) return false;
-        const courtStr = JSON.stringify(c);
-        return cleanName && (courtStr.includes(cleanName) || courtStr.includes(currentUserName));
+        if (!c) return false;
+        if (c.type === 'game' && c.players) {
+            return window.isMyNameMatch(c.players, currentUser);
+        }
+        if (c.type === 'nanta') {
+            const sideA = c.sideA && c.sideA.players ? window.isMyNameMatch(c.sideA.players, currentUser) : false;
+            const sideB = c.sideB && c.sideB.players ? window.isMyNameMatch(c.sideB.players, currentUser) : false;
+            return sideA || sideB;
+        }
+        return false;
     });
 
     // 2. 난타 대기열 확인
@@ -872,36 +830,35 @@ async function createNewGameSlot() {
         return;
     }
 
-    let u;
+    let currentUser;
     try {
-        u = JSON.parse(savedUser);
+        currentUser = JSON.parse(savedUser);
     } catch (e) {
         alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
         return;
     }
 
-    const rawName = (u.name || u.username || "").trim();
+    // 💡 [수정 1] 빈 값이라도 공백을 유지하여 filter(Boolean) 누락 방지 및 4칸(슬래시 3개) 강제
+    const rawName = (currentUser.name || currentUser.username || "").trim();
     const cleanName = rawName.replace(/님$/, '').trim();
-    const gender = (u.gender || "").trim();
-    const age = (u.age || u.ageGroup || "").trim();
-    const level = (u.level || u.grade || "").trim();
+    const gender = (currentUser.gender || " ").trim() || " ";
+    const age = (currentUser.age || currentUser.ageGroup || " ").trim() || " ";
+    const level = (currentUser.level || currentUser.grade || " ").trim() || " ";
 
     if (!cleanName) {
         alert("회원 이름 정보를 찾을 수 없습니다.");
         return;
     }
 
-    const parts = [cleanName, gender, age, level].filter(Boolean);
-    const formattedPlayerInfo = parts.join(" / ");
+    const formattedPlayerInfo = [cleanName, gender, age, level].join(" / ");
 
-    // 1. 코트 현황 검사
+    // 💡 [수정 2] 모든 중복/진행 검사에 '만능 함수(isMyNameMatch)' 적용하여 동명이인 원천 차단
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
     
     // 게임 코트에서 실제 경기 중인지 검사
     const isPlayingGame = activeCourts.some(c => {
-        if (!c || c.type !== 'game') return false;
-        const courtStr = JSON.stringify(c);
-        return courtStr.includes(cleanName) || courtStr.includes(rawName);
+        if (!c || c.type !== 'game' || !c.players) return false;
+        return window.isMyNameMatch(c.players, currentUser);
     });
 
     if (isPlayingGame) {
@@ -912,9 +869,8 @@ async function createNewGameSlot() {
     // 2. 게임 대기열 확인
     const activeGameQueue = (typeof gameQueue !== 'undefined' && gameQueue) ? gameQueue : (window.gameQueue || []);
     const isWaitingGame = activeGameQueue.some(slot => {
-        if (!slot) return false;
-        const slotStr = JSON.stringify(slot);
-        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+        if (!slot || !slot.players) return false;
+        return window.isMyNameMatch(slot.players, currentUser);
     });
 
     if (isWaitingGame) {
@@ -925,9 +881,8 @@ async function createNewGameSlot() {
     // 3. 난타 대기열 확인 (교차 선택창 1회)
     const activeNantaQueue = (typeof nantaQueue !== 'undefined' && nantaQueue) ? nantaQueue : (window.nantaQueue || []);
     const isWaitingNanta = activeNantaQueue.some(slot => {
-        if (!slot) return false;
-        const slotStr = JSON.stringify(slot);
-        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+        if (!slot || !slot.players) return false;
+        return window.isMyNameMatch(slot.players, currentUser);
     });
 
     if (isWaitingNanta) {
@@ -936,12 +891,12 @@ async function createNewGameSlot() {
 
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
-            activeSocket.emit('forceCreateSlot', { type: 'game', userId: u.id || u.userId, user: formattedPlayerInfo });
+            activeSocket.emit('forceCreateSlot', { type: 'game', userId: currentUser.id || currentUser.userId, user: formattedPlayerInfo });
         }
         return;
     }
 
-    // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
+    // 체육관 Wi-Fi 검사
     const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
 
     if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
@@ -971,9 +926,8 @@ async function createNewGameSlot() {
         return;
     }
 
-    activeSocket.emit('createSlot', { type: 'game', userId: u.id || u.userId, user: formattedPlayerInfo });
+    activeSocket.emit('createSlot', { type: 'game', userId: currentUser.id || currentUser.userId, user: formattedPlayerInfo });
 }
-
 
 // ==========================================
 // 2. 난타방 개설 (문구 통일 및 완벽 방어)
@@ -995,36 +949,37 @@ async function createNewNantaSlot() {
         return;
     }
 
-    let u;
+    let currentUser;
     try {
-        u = JSON.parse(savedUser);
+        currentUser = JSON.parse(savedUser);
     } catch (e) {
         alert("사용자 정보를 불러오는 중 오류가 발생했습니다.");
         return;
     }
 
-    const rawName = (u.name || u.username || "").trim();
+    // 💡 [수정 1] 빈 값이라도 공백을 유지하여 filter(Boolean) 누락 방지 및 4칸(슬래시 3개) 강제
+    const rawName = (currentUser.name || currentUser.username || "").trim();
     const cleanName = rawName.replace(/님$/, '').trim();
-    const gender = (u.gender || "").trim();
-    const age = (u.age || u.ageGroup || "").trim();
-    const level = (u.level || u.grade || "").trim();
+    const gender = (currentUser.gender || " ").trim() || " ";
+    const age = (currentUser.age || currentUser.ageGroup || " ").trim() || " ";
+    const level = (currentUser.level || currentUser.grade || " ").trim() || " ";
 
     if (!cleanName) {
         alert("회원 이름 정보를 찾을 수 없습니다.");
         return;
     }
 
-    const parts = [cleanName, gender, age, level].filter(Boolean);
-    const formattedPlayerInfo = parts.join(" / ");
+    const formattedPlayerInfo = [cleanName, gender, age, level].join(" / ");
 
-    // 1. 코트 현황 검사
+    // 💡 [수정 2] 모든 중복/진행 검사에 '만능 함수(isMyNameMatch)' 적용하여 동명이인/부분일치 원천 차단
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
 
     // A. 난타 코트 플레이 중인지 검사
     const isPlayingNanta = activeCourts.some(c => {
         if (!c || c.type !== 'nanta') return false;
-        const courtStr = JSON.stringify(c);
-        return courtStr.includes(cleanName) || courtStr.includes(rawName);
+        const sideA = c.sideA && c.sideA.players ? window.isMyNameMatch(c.sideA.players, currentUser) : false;
+        const sideB = c.sideB && c.sideB.players ? window.isMyNameMatch(c.sideB.players, currentUser) : false;
+        return sideA || sideB;
     });
 
     if (isPlayingNanta) {
@@ -1034,9 +989,8 @@ async function createNewNantaSlot() {
 
     // B. 게임 코트 경기 중인지 검사
     const isPlayingGame = activeCourts.some(c => {
-        if (!c || c.type !== 'game') return false;
-        const courtStr = JSON.stringify(c);
-        return courtStr.includes(cleanName) || courtStr.includes(rawName);
+        if (!c || c.type !== 'game' || !c.players) return false;
+        return window.isMyNameMatch(c.players, currentUser);
     });
 
     if (isPlayingGame) {
@@ -1047,9 +1001,8 @@ async function createNewNantaSlot() {
     // 2. 난타 대기열 확인
     const activeNantaQueue = (typeof nantaQueue !== 'undefined' && nantaQueue) ? nantaQueue : (window.nantaQueue || []);
     const isWaitingNanta = activeNantaQueue.some(slot => {
-        if (!slot) return false;
-        const slotStr = JSON.stringify(slot);
-        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+        if (!slot || !slot.players) return false;
+        return window.isMyNameMatch(slot.players, currentUser);
     });
 
     if (isWaitingNanta) {
@@ -1060,9 +1013,8 @@ async function createNewNantaSlot() {
     // 3. 게임 대기열 확인 (교차 확인창 1회)
     const activeGameQueue = (typeof gameQueue !== 'undefined' && gameQueue) ? gameQueue : (window.gameQueue || []);
     const isWaitingGame = activeGameQueue.some(slot => {
-        if (!slot) return false;
-        const slotStr = JSON.stringify(slot);
-        return slotStr.includes(cleanName) || slotStr.includes(rawName);
+        if (!slot || !slot.players) return false;
+        return window.isMyNameMatch(slot.players, currentUser);
     });
 
     if (isWaitingGame) {
@@ -1071,12 +1023,12 @@ async function createNewNantaSlot() {
 
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
-            activeSocket.emit('forceCreateSlot', { type: 'nanta', userId: u.id || u.userId, user: formattedPlayerInfo });
+            activeSocket.emit('forceCreateSlot', { type: 'nanta', userId: currentUser.id || currentUser.userId, user: formattedPlayerInfo });
         }
         return;
     }
 
-    // 체육관 Wi-Fi 검사 (관리자 설정 ON 여부 + 실제 구장 Wi-Fi 접속 여부 함께 판별)
+    // 체육관 Wi-Fi 검사
     const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
 
     if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
@@ -1106,7 +1058,7 @@ async function createNewNantaSlot() {
         return;
     }
 
-    activeSocket.emit('createSlot', { type: 'nanta', userId: u.id || u.userId, user: formattedPlayerInfo });
+    activeSocket.emit('createSlot', { type: 'nanta', userId: currentUser.id || currentUser.userId, user: formattedPlayerInfo });
 }
 
 async function joinGameCell(slotId, idx) {
@@ -1153,18 +1105,19 @@ async function joinGameCell(slotId, idx) {
         return;
     }
 
+    // 💡 [수정] 빈 값이라도 공백을 유지하여 4칸(슬래시 3개) 강제 유지
     const name = (u.name || u.username || "").trim();
-    const gender = (u.gender || "").trim();
-    const age = (u.age || u.ageGroup || "").trim();
-    const level = (u.level || u.grade || "").trim();
+    const gender = (u.gender || " ").trim() || " ";
+    const age = (u.age || u.ageGroup || " ").trim() || " ";
+    const level = (u.level || u.grade || " ").trim() || " ";
 
     if (!name) {
         alert("회원 이름 정보를 찾을 수 없습니다.");
         return;
     }
 
-    const parts = [name, gender, age, level].filter(Boolean);
-    const formattedPlayerInfo = parts.join("/");
+    // 💡 [핵심 수정] filter(Boolean) 제거
+    const formattedPlayerInfo = [name, gender, age, level].join(" / ");
 
     const confirmed = await confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`);
     if (confirmed) {
@@ -1219,18 +1172,19 @@ async function joinNantaCell(slotId, idx) {
         return;
     }
 
+    // 💡 [수정] 빈 값이라도 안전하게 공백 하나를 남기도록 처리합니다.
     const name = (u.name || u.username || "").trim();
-    const gender = (u.gender || "").trim();
-    const age = (u.age || u.ageGroup || "").trim();
-    const level = (u.level || u.grade || "").trim();
+    const gender = (u.gender || " ").trim() || " ";
+    const age = (u.age || u.ageGroup || " ").trim() || " ";
+    const level = (u.level || u.grade || " ").trim() || " ";
 
     if (!name) {
         alert("회원 이름 정보를 찾을 수 없습니다.");
         return;
     }
 
-    const parts = [name, gender, age, level].filter(Boolean);
-    const formattedPlayerInfo = parts.join("/");
+    // 💡 [핵심 수정] filter(Boolean)을 제거하여 빈칸이 누락되지 않고 무조건 4칸(슬래시 3개)을 유지하게 합니다.
+    const formattedPlayerInfo = [name, gender, age, level].join(" / ");
 
     const confirmed = await confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`);
     if (confirmed) {
@@ -1279,16 +1233,26 @@ async function enterGameCourt(slotId) {
     const slot = gameQueue.find(s => s.id === slotId);
     if (!slot) return;
 
-    const savedUser = localStorage.getItem("currentUser");
-    let currentUserName = "";
+    // 💡 1. 멀티테넌트 환경에 맞게 유저 '전체 객체'를 가져옵니다.
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    let currentUser = {};
     if (savedUser) {
         try {
-            const u = JSON.parse(savedUser);
-            currentUserName = (u.name || u.username || "").trim();
+            currentUser = JSON.parse(savedUser);
         } catch (e) {}
     }
 
-    const isMySlot = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+    // 💡 2. includes(부분 일치) 검사를 만능 함수(isMyNameMatch) 단 한 줄로 완벽하게 교체!
+    const isMySlot = slot.players && slot.players.some(p => window.isMyNameMatch(p, currentUser));
+    
     if (!isMySlot) {
         alert('⚠️ 해당 게임 방에 참여 중인 회원만 코트에 입장할 수 있습니다.');
         return;
@@ -1335,16 +1299,27 @@ async function enterNantaCourt(slotId) {
     const slot = nantaQueue.find(s => s.id === slotId);
     if (!slot) return;
 
-    const savedUser = localStorage.getItem("currentUser");
-    let currentUserName = "";
+    // 💡 [수정된 부분 시작] 멀티테넌트 환경에 맞게 유저 전체 데이터를 가져와서 통합 함수로 검사합니다.
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                   || new URLSearchParams(window.location.search).get('club') 
+                   || 'default';
+    const storageKey = (typeof getClubStorageKey === 'function') 
+                       ? getClubStorageKey("currentUser") 
+                       : `currentUser_${clubId}`;
+
+    const savedUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    let currentUser = {};
     if (savedUser) {
         try {
-            const u = JSON.parse(savedUser);
-            currentUserName = (u.name || u.username || "").trim();
+            currentUser = JSON.parse(savedUser);
         } catch (e) {}
     }
 
-    const isMySlot = slot.players && slot.players.some(p => p && currentUserName && p.includes(currentUserName));
+    // 아까 ui.js 최상단에 만든 만능 함수 하나로 동명이인, 부분일치 방어 끝!
+    const isMySlot = window.isMyNameMatch(slot.players, currentUser);
+    // 💡 [수정된 부분 끝]
+
     if (!isMySlot) {
         alert('⚠️ 해당 난타 방에 참여 중인 회원만 코트에 입장할 수 있습니다.');
         return;

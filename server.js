@@ -52,7 +52,6 @@ const expiredUsers = {}; // 유예 시간 초과로 만료된 유저를 기록�
 const UserDictionary = require('./userDictionary'); // 파일 경로에 맞게 설정
 // 현재 로그인된 유저들의 소켓 ID 또는 유저 정보를 담는 Set
 const onlineUsers = new Set();
-
 // ==========================================
 // 🔊 [구장별 격리] 서버 음성 안내 큐 및 재생 상태 관리
 // ==========================================
@@ -2108,7 +2107,7 @@ io.on('connection', (socket) => {
             }
 
             if (!row) {
-                return callback({ success: false, message: '해당 클럽에 등록된 정회원 정보를 찾을 수 없습니다.' });
+                return callback({ success: false, message: '해당 클럽에 등록된 정회원 정보가 없습니다.' });
             }
 
             const genderStr = row.gender ? row.gender : '미입력';
