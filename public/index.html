@@ -320,8 +320,8 @@ body, button, input, select, textarea {
         ">0</span>
     </button>
 
-    <!-- 🚪 로그아웃 버튼 (불필요한 margin-left 제거 후 밀착) -->
-    <button type="button" id="logoutBtn" onclick="if(typeof logout === 'function'){ logout(); } else { localStorage.clear(); sessionStorage.clear(); location.reload(); }" style="
+    <!-- 🚪 로그아웃 버튼 (진짜 방 폭파 함수 연결 완료!) -->
+    <button type="button" id="logoutBtn" onclick="handleLogout(event)" style="
         height: 28px;
         padding: 0 9px;
         font-size: 12px;

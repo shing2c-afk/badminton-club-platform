@@ -1498,51 +1498,59 @@ if (document.readyState === 'loading') {
 }
 window.addEventListener('load', applyUserProfile);
 
-async function handleLogout() {
-    const confirmed = await confirm("로그아웃 하시겠습니까?");
-    if (confirmed) {
-        // 🔑 1. 현재 접속 구장 및 스토리지 키 식별
-        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                       || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
-                       || new URLSearchParams(window.location.search).get('club') 
-                       || 'default';
+// 💡 로그아웃 버튼 클릭 함수 (깜빡이는 확인 창 제거, 즉시 스무스하게 로그아웃)
+async function handleLogout(event) {
+    if (event) event.preventDefault();
 
-        const storageKey = (typeof getClubStorageKey === 'function') 
-                           ? getClubStorageKey("currentUser") 
-                           : `currentUser_${clubId}`;
+    // 🛡️ 중복 클릭 방지
+    if (window.isLoggingOutInProgress) return;
+    window.isLoggingOutInProgress = true; 
+    window.isLoggingOut = true; // 소켓 끊김 에러창 방지용
 
-        // 🔍 구장 전용 키(또는 기존 레거시 키)에서 로그인 정보 조회
-        const rawUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    const clubId = window.currentClubId || new URLSearchParams(window.location.search).get('club') || 'unjeong';
+    const storageKey = (typeof getClubStorageKey === 'function') ? getClubStorageKey("currentUser") : `currentUser_${clubId}`;
+    const rawUser = localStorage.getItem(storageKey) || localStorage.getItem("currentUser");
+    
+    let userData = null;
+    if (rawUser) {
+        try { userData = JSON.parse(rawUser); } catch(e) { userData = rawUser; }
+    }
 
+    // 🧹 마무리 청소 함수
+    const finishLogout = async () => {
         if (rawUser) {
             try {
-                let userData = rawUser;
-                try {
-                    const parsed = JSON.parse(rawUser);
-                    if (parsed) userData = parsed;
-                } catch (e) {}
-
                 await fetch('/api/logout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ user: userData, clubId: clubId })
                 });
-            } catch (err) {
-                console.error("❌ 로그아웃 서버 통신 에러:", err);
-            }
+            } catch(e) {}
         }
-
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (activeSocket) {
-            activeSocket.disconnect();
-        }
-
-        // 💾 2. 구장 전용 키와 기존 키 모두 깨끗하게 삭제
+        
+        // 데이터 깨끗이 비우기
         localStorage.removeItem(storageKey);
         localStorage.removeItem("currentUser");
         localStorage.removeItem("username");
         sessionStorage.clear();
-        location.reload(); 
+        
+        // 💡 현재 페이지를 새로고침하여 자연스럽게 인트로 화면 띄우기
+        window.location.reload(); 
+    };
+
+    const activeSocket = window.socket;
+    
+    if (activeSocket && activeSocket.connected) {
+        // 서버로 방 폭파 암호 전송
+        activeSocket.emit('explicitLogout', userData, () => {
+            activeSocket.disconnect();
+            finishLogout();
+        });
+
+        // 0.3초 안전장치
+        setTimeout(() => { finishLogout(); }, 300);
+    } else {
+        finishLogout();
     }
 }
 

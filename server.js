@@ -1656,7 +1656,7 @@ setInterval(() => {
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                if (elapsed === 30 && !slot.announced) {
+                if (elapsed === 10 && !slot.announced) {
                     slot.announced = true;
                     const validPlayers = getValidPlayers(slot.players);
                     const memberNames = validPlayers.map(p => p.split('/')[0].trim());
@@ -1741,7 +1741,7 @@ setInterval(() => {
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                if (elapsed === 30 && !slot.announced) {
+                if (elapsed === 10 && !slot.announced) {
                     slot.announced = true;
                     const validPlayers = getValidPlayers(slot.players);
                     const memberNames = validPlayers.map(p => p.split('/')[0].trim());
@@ -2061,9 +2061,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ==========================================
-    // 🚪 [추가] 범용 룸 조인 리스너 (tv.html의 joinRoom 신호 수신)
-    // ==========================================
    // ==========================================
     // 🚪 [보강] 범용 룸 조인 리스너 (방 이름 자동 매칭 및 이중 격리 보장)
     // ==========================================
@@ -2865,36 +2862,38 @@ io.on('connection', (socket) => {
         }
     });
 
-   // =================================================================
-    // 🚪 1. 명시적 로그아웃 (버튼 클릭 / 클럽 변경 즉시 대기열 파기)
     // =================================================================
-    socket.on('explicitLogout', () => {
-        socket.isExplicitLogout = true;
-        const currentSocketId = socket.id;
-        const rawUser = userSockets[currentSocketId] || socket.username;
+    // 💡 [완성] 명시적 로그아웃 처리 (서버가 응답을 줘서 완벽한 타이밍 맞추기)
+    // =================================================================
+    socket.on('explicitLogout', (userData, callback) => {
+        socket.isExplicitLogout = true; // 1. 꼬리표 달기 (유예시간 작동 방지)
 
-        let userKey = '';
-        if (rawUser) {
-            userKey = (typeof rawUser === 'object' && rawUser !== null)
-                ? (rawUser.id || rawUser.username || rawUser.name || '')
-                : String(rawUser);
+        let cleanUsername = socket.username;
+        
+        // 혹시 소켓에 이름이 없으면 폰에서 보내준 데이터에서 찾기
+        if (!cleanUsername && userData) {
+            cleanUsername = (typeof userData === 'object') ? (userData.id || userData.username || userData.name) : String(userData);
         }
 
-        if (userKey) {
-            // 실행 중이던 유예 타이머 모두 제거
-            if (disconnectTimers[userKey]) {
-                clearTimeout(disconnectTimers[userKey]);
-                delete disconnectTimers[userKey];
+        if (cleanUsername) {
+            cleanUsername = cleanUsername.split('/')[0].trim();
+            console.log(`[명시적 로그아웃] 유저(${cleanUsername}) 로그아웃! 즉시 대기방 폭파!`);
+            
+            // 2. 즉시 대기방 폭파
+            if (typeof cleanupUser === 'function') {
+                cleanupUser(cleanUsername);
             }
-            if (typeof sessionTimers !== 'undefined' && sessionTimers[userKey]) {
-                clearTimeout(sessionTimers[userKey]);
-                delete sessionTimers[userKey];
+            
+            // 3. 만약 이미 돌고 있던 1분 유예 타이머가 있다면 싹 지워버리기
+            if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
+                clearTimeout(disconnectTimers[cleanUsername]);
+                delete disconnectTimers[cleanUsername];
             }
+        }
 
-            // 💥 유예 없이 즉시 대기열/대기방 정리 (진행 중인 코트는 건드리지 않음)
-            cleanupUser(rawUser);
-            delete expiredUsers[userKey];
-            console.log(`[즉시 퇴장] 유저(${userKey}) 명시적 로그아웃으로 대기열 즉시 삭제 완료`);
+        // 4. 스마트폰에게 "폭파 완료했으니 이제 폰 새로고침 해라!" 라고 대답(콜백) 보내기
+        if (typeof callback === 'function') {
+            callback();
         }
     });
 
