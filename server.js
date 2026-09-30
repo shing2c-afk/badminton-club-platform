@@ -184,10 +184,19 @@ function loadClubsData() {
                 };
             }
 
-            // 환경설정 복원
-            if (savedData[cId].config) {
-                clubs[cId].config = savedData[cId].config;
-            }
+           // 환경설정 복원 (기본값과 저장된 파일 설정을 안전하게 병합)
+            const savedCfg = savedData[cId].config || {};
+            clubs[cId].config = {
+                ...(clubs[cId].config || {}),
+                ...savedCfg,
+                // 🎯 [핵심] 토글 스위치(boolean) 값과 IP 목록 영구 보존
+                useWifiRestriction: typeof savedCfg.useWifiRestriction === 'boolean' 
+                    ? savedCfg.useWifiRestriction 
+                    : (clubs[cId].config?.useWifiRestriction ?? false),
+                allowedGymIps: Array.isArray(savedCfg.allowedGymIps) 
+                    ? savedCfg.allowedGymIps 
+                    : (clubs[cId].config?.allowedGymIps || [])
+            };
 
             // 코트 구성 복원 (실시간 경기 데이터는 제외하고 코트 틀만 안전하게 생성)
             if (Array.isArray(savedData[cId].courtsData)) {
