@@ -12,10 +12,11 @@ let activeMergeSlotId = null;
 window.isMyNameMatch = function(playerData, currentUser) {
     if (!playerData || !currentUser || !currentUser.name) return false;
 
-    // 1. 내 정보 세팅
-    const myName = currentUser.name.trim();
+    // 1. 내 정보 세팅 (순수 이름 추출)
+    const myName = (currentUser.rawName || currentUser.name || "").replace(/\(일일\)/g, '').trim();
     const myGrade = (currentUser.level || currentUser.grade || "").trim();
-    const isMeDaily = (currentUser.isGuest === true || myGrade === '일일');
+    // 🎯 내가 일일회원인지 판별 (isGuest 플래그 또는 급수에 '일' 포함 여부)
+    const isMeDaily = (currentUser.isGuest === true || myGrade.includes('일'));
 
     // 2. 비교할 대상 데이터 문자열화
     const pString = Array.isArray(playerData) ? playerData.join(',') : playerData;
@@ -23,9 +24,12 @@ window.isMyNameMatch = function(playerData, currentUser) {
     // 3. 엄격한 비교 검사
     return pString.split(',').some(p => {
         const parts = p.split('/').map(item => item.trim());
-        const pName = parts[0] || ""; 
+        // 대상의 순수 이름 추출
+        const pName = (parts[0] || "").replace(/\(일일\)/g, '').trim(); 
         const pGrade = parts[parts.length - 1] || "";
-        const isTargetDaily = (pGrade === '일일' || parts.includes('일일'));
+        
+        // 🎯 대상 슬롯이 일일회원인지 판별 ('일일' 뿐만 아니라 'S조(일)', 'C조(일)' 등도 완벽 인식)
+        const isTargetDaily = (pGrade.includes('일') || p.includes('(일)'));
 
         // [방어 1] 이름이 완벽하게 똑같은가?
         if (pName !== myName) return false;

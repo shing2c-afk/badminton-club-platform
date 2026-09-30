@@ -2129,25 +2129,37 @@ io.on('connection', (socket) => {
         });
     });
 
-    // 🔑 [추가 완료] 일일회원 로그인 처리 소켓 이벤트
-    // 🔑 [수정 완료] 일일회원 로그인 처리 소켓 이벤트 (클럽 식별자 부여)
-    socket.on('loginGuest', ({ name, phone, payCode }, callback) => {
+    // 🔑 일일회원 로그인 처리 소켓 이벤트
+    socket.on('loginGuest', ({ name, phone, payCode, gender, ageGroup, grade }, callback) => {
         if (!payCode || payCode.length !== 6) {
             return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
         }
 
-        const currentClubId = socket.clubId || 'unjeong'; // 🏢 접속한 클럽 식별
+        const currentClubId = socket.clubId || 'unjeong';
         const guestId = `guest_${Date.now()}`;
+
+        // 🎯 [급수 표기 가공] '초심'은 '초심(일)', 'A'~'S'는 'A조(일)' 형태로 생성
+        let formattedGrade = '일일';
+        if (grade) {
+            if (grade === '초심') {
+                formattedGrade = '초심(일)';
+            } else if (grade.endsWith('조')) {
+                formattedGrade = `${grade}(일)`;
+            } else {
+                formattedGrade = `${grade}조(일)`;
+            }
+        }
+
         const user = {
             id: guestId,
-            clubId: currentClubId, // 🏢 [추가] 일일회원 객체에도 현재 클럽 ID 부여
+            clubId: currentClubId,
             username: guestId,
             name: name,
             rawName: name,
             displayName: `${name}(일일)`,
-            gender: '-',
-            ageGroup: '-',
-            grade: '일일',
+            gender: gender || '-',
+            ageGroup: ageGroup || '-',
+            grade: formattedGrade,       // 👈 C조(일), 초심(일) 등으로 반영
             isGuest: true,
             phone: phone
         };

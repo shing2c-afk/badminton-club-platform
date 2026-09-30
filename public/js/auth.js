@@ -199,10 +199,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // =================================================================
   if (savedUser) {
     // A. 현재 구장과 일치하는 유효한 세션이 있을 때만 자동 로그인
-    if (mainApp) mainApp.classList.remove("hidden");
+    if (mainApp) {
+      mainApp.style.display = 'block'; // 👈 추가 (인라인 display:none 해제)
+      mainApp.classList.remove("hidden");
+    }
     if (introOverlay) introOverlay.classList.add("hidden");
     if (loginOverlay) loginOverlay.classList.add("hidden");
-
     try {
       const parsedUser = JSON.parse(savedUser);
       if (typeof socket !== 'undefined' && parsedUser) {
@@ -222,12 +224,25 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  // B. 비로그인 상태: 인트로(1초) 후 해당 구장 로그인 모달 오픈
+// B. 비로그인 상태: 인트로(1초) 후 해당 구장 로그인 모달 오픈
   if (introOverlay) introOverlay.classList.remove("hidden");
+  if (loginOverlay) loginOverlay.classList.add("hidden");
+  
+  // 🛡️ [핵심 안전장치] 비로그인 유저는 메인 화면을 완벽히 숨김
+  if (mainApp) {
+    mainApp.style.display = 'none';
+    mainApp.classList.add("hidden");
+  }
 
   setTimeout(async () => {
     const clubs = await window.loadClubsData();
     if (introOverlay) introOverlay.classList.add("hidden");
+
+    // 🛡️ 로그인 창 열리기 직전 메인 화면 숨김 재확인
+    if (mainApp) {
+      mainApp.style.display = 'none';
+      mainApp.classList.add("hidden");
+    }
 
     const currentClub = clubs.find(c => c.id === window.currentClubId);
 
@@ -367,7 +382,7 @@ document.addEventListener("DOMContentLoaded", () => {
                               ? currentClubId 
                               : (new URLSearchParams(window.location.search).get('club') || 'default');
 
-         // 💾 [수정] 헬퍼 함수를 사용하여 현재 구장 전용 키로 저장
+          // 💾 [수정] 헬퍼 함수를 사용하여 현재 구장 전용 키로 저장
           localStorage.setItem(getClubStorageKey("currentUser"), JSON.stringify(response.user));
 
           // 📡 서버로 세션 등록 시 구장 정보(clubId)도 함께 전달
@@ -384,7 +399,10 @@ document.addEventListener("DOMContentLoaded", () => {
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
           if (loginOverlay) loginOverlay.classList.add("hidden");
-          if (mainApp) mainApp.classList.remove("hidden");
+          if (mainApp) {
+            mainApp.style.display = 'block'; // 👈 인라인 style="display: none;" 해제
+            mainApp.classList.remove("hidden");
+          }
         } else {
           if (authMsg) authMsg.textContent = response.message || '등록된 정회원 정보를 찾을 수 없습니다.';
         }
@@ -393,15 +411,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =================================================================
-  // 💡 2. 일일회원 로그인 Submit 처리 (소켓 통신)
+  // 💡 2. 일일회원 로그인 Submit 처리 (정회원 규격: grade, gender, ageGroup 일치)
   // =================================================================
   if (guestLoginForm) {
     guestLoginForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = document.getElementById('guestName').value.trim();
-      // 📌 하이픈(-)을 제거하여 순수 11자리 숫자로 변환 후 검증 및 전송
       const phone = document.getElementById('guestPhone').value.trim().replace(/-/g, '');
       const payCode = document.getElementById('guestPayCode').value.trim();
+
+      // 🎯 [정회원 규격 통일] level 대신 grade로 변수명 일치
+      const gender = document.getElementById('guestGender') ? document.getElementById('guestGender').value : '';
+      const ageGroup = document.getElementById('guestAge') ? document.getElementById('guestAge').value : '';
+      const grade = document.getElementById('guestLevel') ? document.getElementById('guestLevel').value : ''; // 👈 level -> grade로 변경
 
       if (phone.length !== 11) {
         if (authMsg) authMsg.textContent = '전화번호 11자리를 정확히 입력해 주세요.';
@@ -417,13 +439,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 서버로 일일회원 로그인 요청
-      socket.emit('loginGuest', { name, phone, payCode }, (response) => {
+      // 📡 [전송] 정회원과 100% 동일한 명칭(gender, ageGroup, grade)으로 서버에 전달
+      socket.emit('loginGuest', { name, phone, payCode, gender, ageGroup, grade }, (response) => {
         if (response.success) {
-          // 💾 [수정] 현재 구장 전용 키로 저장
           localStorage.setItem(getClubStorageKey("currentUser"), JSON.stringify(response.user));
 
-          // 📡 [수정] 구장 정보를 포함하여 세션 등록
           const currentClub = (typeof currentClubId !== 'undefined' && currentClubId) 
                               || new URLSearchParams(window.location.search).get('club') 
                               || 'default';
@@ -432,7 +452,6 @@ document.addEventListener("DOMContentLoaded", () => {
             clubId: currentClub 
           });
 
-          // ✅ [추가] 로그인 성공 즉시 소켓 채널 등록 및 접속자 카운트 갱신!
           if (typeof window.registerUserSocket === 'function') {
             window.registerUserSocket();
           }
@@ -440,14 +459,16 @@ document.addEventListener("DOMContentLoaded", () => {
           if (typeof applyUserProfile === 'function') applyUserProfile();
           
           if (loginOverlay) loginOverlay.classList.add("hidden");
-          if (mainApp) mainApp.classList.remove("hidden");
+          if (mainApp) {
+            mainApp.style.display = 'block';
+            mainApp.classList.remove("hidden");
+          }
         } else {
           if (authMsg) authMsg.textContent = response.message || '일일회원 입장에 실패했습니다.';
         }
       });
     });
   }
-});
 
 // ==========================================
 // 팝업 알림(토스트 메시지)을 띄워주는 함수
@@ -579,4 +600,5 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.value = formatted;
         });
     }
+});
 });

@@ -199,7 +199,7 @@ body, button, input, select, textarea {
     <span id="court-alert-text">알림 내용</span>
 </div>
 
-<div id="auth-intro-overlay" class="auth-overlay hidden">
+<div id="auth-intro-overlay" class="auth-overlay">
   <div class="intro-box">
     <img src="img/intro-bg.png" alt="오늘 민턴 로고" />
     <div class="intro-subtitle">똑똑하게 배드민턴을 즐기는 웹</div>
@@ -246,20 +246,56 @@ body, button, input, select, textarea {
         </div>
         <div class="input-group" style="margin-bottom: 12px; text-align: left;">
           <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">전화번호</label>
-          <input type="tel" id="guestPhone" placeholder="01012345678" required maxlength="13" oninput="formatPhone(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+          <input type="tel" id="guestPhone" placeholder="010-1234-5678" required maxlength="13" oninput="formatPhone(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
-        <div class="input-group" style="margin-bottom: 16px; text-align: left;">
+        <div class="input-group" style="margin-bottom: 12px; text-align: left;">
           <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">결제인증번호 (숫자 6자리)</label>
           <input type="text" id="guestPayCode" placeholder="6자리 입력" required maxlength="6" oninput="validatePayCodeInput(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
+
+        <!-- 🎯 [선택 정보] 성별 / 연령대 / 급수 드롭다운 (글자 잘림 방지 스타일 적용) -->
+        <div style="display: flex; gap: 6px; margin-bottom: 16px; text-align: left;">
+          <div style="flex: 1; min-width: 0;">
+            <label style="display: block; font-size: 11px; color: #aaa; margin-bottom: 4px; white-space: nowrap;">성별</label>
+            <select id="guestGender" style="width: 100%; padding: 9px 4px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center;">
+              <option value="">선택</option>
+              <option value="남">남성</option>
+              <option value="여">여성</option>
+            </select>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <label style="display: block; font-size: 11px; color: #aaa; margin-bottom: 4px; white-space: nowrap;">연령대</label>
+            <select id="guestAge" style="width: 100%; padding: 9px 4px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center;">
+              <option value="">선택</option>
+              <option value="20대">20대</option>
+              <option value="30대">30대</option>
+              <option value="40대">40대</option>
+              <option value="50대">50대</option>
+              <option value="60대">60대</option>
+              <option value="70대">70대</option>
+            </select>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <label style="display: block; font-size: 11px; color: #aaa; margin-bottom: 4px; white-space: nowrap;">급수</label>
+            <select id="guestLevel" style="width: 100%; padding: 9px 4px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center;">
+              <option value="">선택</option>
+              <option value="초심">초심</option>
+              <option value="D">D조</option>
+              <option value="C">C조</option>
+              <option value="B">B조</option>
+              <option value="A">A조</option>
+              <option value="S">S조</option>
+            </select>
+          </div>
+        </div>
+
         <button type="submit" class="btn-auth-submit" style="width: 100%; padding: 12px; background: #2563eb; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">일일회원 입장</button>
       </form>
-      <div id="auth-msg" style="margin-top: 15px; color: #ff4d4f; font-size: 13px; text-align: center;"></div>
     </div>
-  </div>
+</div>
 
     <!-- 메인 앱 화면 -->
-    <div id="main-app" class="hidden">
+    <div id="main-app" class="hidden" style="display: none;">
 
         <div id="toast-container"></div>
 
@@ -471,6 +507,7 @@ body, button, input, select, textarea {
                     <option value="C조">C조</option>
                     <option value="B조">B조</option>
                     <option value="A조">A조</option>
+                     <option value="S조">S조</option>
                 </select>
             </div>
 
