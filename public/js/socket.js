@@ -346,7 +346,7 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
         if ('Notification' in window && Notification.permission === 'granted') {
             const title = `🏟️ [${data.courtNumber}번 ${data.matchType} 코트]`;
             const options = {
-                body: '지금 코트로 입장해 주세요! (30초 제한)',
+                body: '지금 코트로 입장해 주세요! (10초 제한)',
                 icon: '/favicon.ico',
                 badge: '/favicon.ico',
                 tag: 'court-entry-alert',
@@ -398,7 +398,7 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
 
         setTimeout(() => {
             popup.remove();
-        }, 8000);
+        }, 10000);
     }
 });
 
@@ -441,16 +441,42 @@ socket.off('confirmCrossSlot').on('confirmCrossSlot', async ({ type, userId, use
     }
 });
 
-// 서버로부터 로그인된 접속자 수 업데이트 수신 (클럽 n명, 접속 m명)
+// 서버로부터 로그인된 접속자 및 현황판 데이터 업데이트 수신
 socket.on('updateOnlineCount', (data) => {
+    // 1. 새 상단 전광판 요소들
+    const connectedEl = document.getElementById('stat-connected-count'); // 🌐 접속자
+    const inGymEl = document.getElementById('stat-ingym-count');         // 🏢 운동중
+    const gameEl = document.getElementById('stat-game-count');           // 🏸 게임
+    const nantaEl = document.getElementById('stat-nanta-count');         // ⏱️ 난타
+
+    // 2. 기존 레거시 요소 (화면 하단에 남아있을 경우 호환 유지)
     const clubElement = document.getElementById('club-count');
     const totalElement = document.getElementById('online-count');
 
     if (typeof data === 'object' && data !== null) {
-        if (clubElement) clubElement.textContent = data.club || 0;
-        if (totalElement) totalElement.textContent = data.total || 0;
+        // 접속자 (total 또는 connected)
+        const connectedVal = data.connected ?? data.total ?? 0;
+        if (connectedEl) connectedEl.textContent = `${connectedVal}명`;
+        if (totalElement) totalElement.textContent = connectedVal;
+
+        // 운동중 (inGym 또는 club)
+        const inGymVal = data.inGym ?? data.club ?? 0;
+        if (inGymEl) inGymEl.textContent = `${inGymVal}명`;
+        if (clubElement) clubElement.textContent = inGymVal;
+
+        // 게임 대기+코트 참여자
+        if (gameEl && data.game !== undefined) {
+            gameEl.textContent = `${data.game}명`;
+        }
+
+        // 난타 대기+코트 참여자
+        if (nantaEl && data.nanta !== undefined) {
+            nantaEl.textContent = `${data.nanta}명`;
+        }
     } else {
-        if (totalElement) totalElement.textContent = data || 0;
+        const val = data || 0;
+        if (connectedEl) connectedEl.textContent = `${val}명`;
+        if (totalElement) totalElement.textContent = val;
     }
 });
 

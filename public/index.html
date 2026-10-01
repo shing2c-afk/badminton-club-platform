@@ -398,17 +398,65 @@ body, button, input, select, textarea {
             </div>
         </div>
 
-        <div class="container">
-    <a href="/notice" class="notice-bar block hover:opacity-80 transition cursor-pointer" style="text-decoration: none; color: inherit;">
-        <div id="index-notice-text" class="notice-text">📢 공지사항을 불러오는 중...</div>
-    </a>
-</div>
+        <!-- 공지사항 바 (하단 마진/패딩 강제 초기화) -->
+        <div class="container" style="padding-top: 8px !important; padding-bottom: 0px !important; margin-bottom: 0px !important;">
+            <a href="/notice" class="notice-bar block hover:opacity-80 transition cursor-pointer" style="text-decoration: none; color: inherit; margin-bottom: 0px !important; display: block;">
+                <div id="index-notice-text" class="notice-text">📢 공지사항을 불러오는 중...</div>
+            </a>
+        </div>
 
-            <div class="tab-menu">
-                <div class="tab-btn active" id="tab-game" onclick="switchTab('game')">게임 대기</div>
-                <div class="tab-btn" id="tab-nanta" onclick="switchTab('nanta')">난타 대기</div>
-                <div class="tab-btn" id="tab-court" onclick="switchTab('court')">코트 현황</div>
+        <!-- 📊 체육관 실시간 현황 전광판 (공지사항과 8px 균등 간격 배치) -->
+        <div class="container" style="padding-top: 8px !important; padding-bottom: 8px !important; margin-top: 0px !important; margin-bottom: 0px !important;">
+            <div class="status-overview-bar" style="
+                display: flex;
+                justify-content: space-around;
+                align-items: center;
+                background: #181d28;
+                border-radius: 8px;
+                padding: 10px 12px;
+                margin: 0 !important;
+                width: 100%;
+                box-sizing: border-box;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            ">
+                <!-- 1. 접속자 -->
+                <div class="status-item" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                    <span style="font-size: 11px; color: #9ca3af; font-weight: 500;">🌐 접속자</span>
+                    <span id="stat-connected-count" style="font-size: 15px; font-weight: 700; color: #f3f4f6;">0명</span>
+                </div>
+
+                <div style="width: 1px; height: 18px; background: rgba(255, 255, 255, 0.1);"></div>
+
+                <!-- 2. 운동중 -->
+                <div class="status-item" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                    <span style="font-size: 11px; color: #34d399; font-weight: 600;">🏢 운동중</span>
+                    <span id="stat-ingym-count" style="font-size: 15px; font-weight: 800; color: #34d399;">0명</span>
+                </div>
+
+                <div style="width: 1px; height: 18px; background: rgba(255, 255, 255, 0.1);"></div>
+
+                <!-- 3. 게임 -->
+                <div class="status-item" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                    <span style="font-size: 11px; color: #60a5fa; font-weight: 500;">🏸 게임</span>
+                    <span id="stat-game-count" style="font-size: 15px; font-weight: 700; color: #60a5fa;">0명</span>
+                </div>
+
+                <div style="width: 1px; height: 18px; background: rgba(255, 255, 255, 0.1);"></div>
+
+                <!-- 4. 난타 -->
+                <div class="status-item" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                    <span style="font-size: 11px; color: #fbbf24; font-weight: 500;">⏱️ 난타</span>
+                    <span id="stat-nanta-count" style="font-size: 15px; font-weight: 700; color: #fbbf24;">0명</span>
+                </div>
             </div>
+        </div>
+
+        <!-- 탭 메뉴 -->
+        <div class="tab-menu" style="margin-top: 0px !important;">
+            <div class="tab-btn active" id="tab-game" onclick="switchTab('game')">게임 대기</div>
+            <div class="tab-btn" id="tab-nanta" onclick="switchTab('nanta')">난타 대기</div>
+            <div class="tab-btn" id="tab-court" onclick="switchTab('court')">코트 현황</div>
+        </div>
 
             <div id="section-game">
                 <div class="top-ctrl">
@@ -633,7 +681,7 @@ body, button, input, select, textarea {
   }
 </script>
 
-<!-- 1. 왼쪽 하단 모서리에 위치할 클럽 및 접속자 배지 -->
+<!-- [이전 하단 배지 - 상단 전광판으로 통합되어 비활성화]
 <div id="online-badge-container">
     <div id="online-badge" class="modern-badge visitor-badge">
         <span class="badge-item">클럽 <strong id="club-count">0</strong>명</span>
@@ -641,6 +689,7 @@ body, button, input, select, textarea {
         <span class="badge-item">접속 <strong id="online-count">0</strong>명</span>
     </div>
 </div>
+-->
 
 <!-- 2. 오른쪽 하단 모서리에 위치할 앱 공유 버튼 -->
 <div id="share-btn-container">
@@ -677,6 +726,7 @@ body, button, input, select, textarea {
 
 /* 1. 왼쪽 하단 접속자 배지 */
 #online-badge-container {
+    display: none !important; /* 👈 이 줄을 추가하여 화면에서 완전히 숨깁니다 */
     position: fixed;
     left: 20px;
     bottom: 24px;

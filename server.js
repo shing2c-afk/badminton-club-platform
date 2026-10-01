@@ -1449,7 +1449,7 @@ function broadcastState(targetClubId) {
         const cNotifications = (club && club.notifications) || (typeof notifications !== 'undefined' ? notifications : []);
         const cConfig = (club && club.config) || (typeof config !== 'undefined' ? config : {});
 
-        // 💡 [진단 로그 추가] 서버가 화면으로 실제로 보내고 있는 설정값 확인
+       // 💡 [진단 로그 추가] 서버가 화면으로 실제로 보내고 있는 설정값 확인
         // console.log(`📡 [${cid}] 화면 전송 설정값 -> 입장제한: ${cConfig.ENTRY_TIMEOUT_SEC}초, 비밀번호: ${cConfig.ADMIN_PASSWORD}`);
 
         io.to(`club_${cid}`).emit('stateUpdated', {
@@ -1462,6 +1462,11 @@ function broadcastState(targetClubId) {
             notifications: cNotifications,
             config: cConfig
         });
+
+        // 💡 [추가] 대기열/코트 상태가 바뀔 때 상단 전광판(게임/난타 인원)도 즉시 동기화
+        if (typeof broadcastOnlineCount === 'function') {
+            broadcastOnlineCount(cid);
+        }
     };
 
     // 1. 특정 클럽만 갱신할 때
@@ -3110,12 +3115,13 @@ io.on('connection', (socket) => {
     });
 });
 
-// 🏢 [멀티 테넌트] 실제 로그인한 회원 집계 및 슈퍼 관리자 브로드캐스트
+// 🏢 [멀티 테넌트] 4대 현황(접속자, 운동중, 게임, 난타) 실시간 집계 및 브로드캐스트
 function broadcastOnlineCount(targetClubId) {
     if (!io || !io.sockets || !io.sockets.adapter) return;
 
-    // 등록된 전체 클럽 목록 (환경에 맞게 clubs 키 또는 기본 배열 참조)
-    const allClubIds = (typeof clubs !== 'undefined') ? Object.keys(clubs) : ['unjeong', 'daewon'];
+    const allClubIds = (typeof clubs !== 'undefined' && Object.keys(clubs).length > 0) 
+        ? Object.keys(clubs) 
+        : ['unjeong', 'daewon'];
     const superAdminSummary = {};
 
     allClubIds.forEach((clubId) => {
@@ -3125,6 +3131,7 @@ function broadcastOnlineCount(targetClubId) {
         const loggedInUsers = new Set();
         const wifiUsers = new Set();
 
+        // 1. 현재 실시간 소켓 연결된 회원 집계
         if (room) {
             room.forEach((socketId) => {
                 const userSocket = io.sockets.sockets.get(socketId);
@@ -3144,20 +3151,90 @@ function broadcastOnlineCount(targetClubId) {
             });
         }
 
-        const totalCount = loggedInUsers.size;
-        const clubCount = wifiUsers.size;
+        // 2. 화면 꺼짐/수면 상태로 유예시간(disconnectTimers) 작동 중인 회원 합산
+        if (typeof disconnectTimers !== 'undefined' && typeof disconnectUserClubs !== 'undefined') {
+            Object.keys(disconnectTimers).forEach((userKey) => {
+                if (disconnectUserClubs[userKey] === clubId) {
+                    loggedInUsers.add(userKey);
+                    // 유예시간 중인 회원은 체육관 내부에서 꺼진 것이므로 운동중(wifiUsers)에도 보존
+                    wifiUsers.add(userKey);
+                }
+            });
+        }
 
-        // 개별 클럽 방 전송
-        io.to(roomName).emit('updateOnlineCount', {
-            club: clubCount,
-            total: totalCount
+        // 3. 게임(대기열 + 코트) 인원 산출
+        let gameCount = 0;
+        const club = (typeof getClub === 'function') ? getClub(clubId) : (typeof clubs === 'object' ? clubs[clubId] : null);
+        const cCourts = (club && Array.isArray(club.courtsData)) ? club.courtsData : [];
+        const cGameQueue = (club && Array.isArray(club.gameQueue)) ? club.gameQueue : [];
+        const cNantaQueue = (club && Array.isArray(club.nantaQueue)) ? club.nantaQueue : [];
+
+        // 3-1. 게임 대기방 인원 계산
+        cGameQueue.forEach(item => {
+            if (Array.isArray(item.players)) {
+                gameCount += item.players.filter(p => p && (typeof p === 'string' ? p.trim() !== '' : p.name)).length;
+            } else if (item.players && typeof item.players === 'string') {
+                gameCount += item.players.split(',').filter(p => p.trim() !== '').length;
+            } else if (item.user || item.username) {
+                gameCount += 1;
+            }
         });
 
-        // 슈퍼 관리자용 종합 데이터 수집
-        superAdminSummary[clubId] = {
-            club: clubCount,
-            total: totalCount
+        // 3-2. 게임 코트 경기자 인원 계산
+        cCourts.forEach(c => {
+            if (c.type === 'game' && !c.isEmpty && c.players) {
+                if (Array.isArray(c.players)) {
+                    gameCount += c.players.filter(p => p && (typeof p === 'string' ? p.trim() !== '' : p.name)).length;
+                } else if (typeof c.players === 'string') {
+                    gameCount += c.players.split(',').filter(p => p.trim() !== '').length;
+                }
+            }
+        });
+
+        // 4. 난타(대기열 + 코트) 인원 산출
+        let nantaCount = 0;
+
+        // 4-1. 난타 대기열 인원 계산
+        cNantaQueue.forEach(item => {
+            if (Array.isArray(item.players)) {
+                nantaCount += item.players.filter(p => p && (typeof p === 'string' ? p.trim() !== '' : p.name)).length;
+            } else if (item.players && typeof item.players === 'string') {
+                nantaCount += item.players.split(',').filter(p => p.trim() !== '').length;
+            } else if (item.user || item.username) {
+                nantaCount += 1;
+            }
+        });
+
+        // 4-2. 난타 코트 경기자 인원 계산
+        cCourts.forEach(c => {
+            if (c.type === 'nanta') {
+                if (c.sideA && !c.sideA.isEmpty && c.sideA.players) {
+                    nantaCount += (typeof c.sideA.players === 'string') ? c.sideA.players.split(',').filter(p => p.trim() !== '').length : 1;
+                }
+                if (c.sideB && !c.sideB.isEmpty && c.sideB.players) {
+                    nantaCount += (typeof c.sideB.players === 'string') ? c.sideB.players.split(',').filter(p => p.trim() !== '').length : 1;
+                }
+            }
+        });
+
+        const totalConnected = loggedInUsers.size;
+        const totalInGym = wifiUsers.size;
+
+        const countPayload = {
+            connected: totalConnected,
+            inGym: totalInGym,
+            game: gameCount,
+            nanta: nantaCount,
+            // 하위 호환성 유지
+            club: totalInGym,
+            total: totalConnected
         };
+
+        // 개별 클럽 방 전송
+        io.to(roomName).emit('updateOnlineCount', countPayload);
+
+        // 슈퍼 관리자용 종합 데이터 수집
+        superAdminSummary[clubId] = countPayload;
     });
 
     // 👑 슈퍼 관리자 페이지로 전체 클럽 통계 전송
