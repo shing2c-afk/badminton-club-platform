@@ -890,25 +890,31 @@ function renderTVCourts(courts) {
 function formatPlayersHorizontal(players) {
     let arr = [];
     if (Array.isArray(players)) {
-        arr = players.filter(Boolean).map(p => {
-            let item = p.trim();
-            if (item.includes('/')) {
-                item = item.split('/').map(part => part.trim()).join(' / ');
-            }
-            return escapeHtml(item);
-        });
+        arr = players.filter(Boolean);
     } else if (typeof players === 'string') {
-        arr = players.split(',').map(p => {
-            let item = p.trim();
-            if (item.includes('/')) {
-                item = item.split('/').map(part => part.trim()).join(' / ');
-            }
-            return escapeHtml(item);
-        }).filter(Boolean);
+        arr = players.split(',').map(p => p.trim()).filter(Boolean);
     }
     
     if (arr.length === 0) return '';
-    return arr.map(player => `<span style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px;">${player}</span>`).join(' ');
+
+    return arr.map(p => {
+        let rawStr = String(p).trim();
+
+        // 🎯 일일회원 판별: |guest 마커가 있거나 '일일' 키워드가 들어있는 경우
+        const isGuestUser = rawStr.includes('guest') || rawStr.includes('일일');
+
+        // 💡 화면 출력 시 숨김 마커(|guest) 깨끗하게 제거
+        let cleanStr = rawStr.replace(/\|?guest/gi, '').trim();
+        if (cleanStr.includes('/')) {
+            cleanStr = cleanStr.split('/').map(part => part.trim()).join(' / ');
+        }
+
+        // 🎨 일일회원은 클래스와 인라인 하늘색(#38bdf8) 동시 강제 적용
+        const guestClass = isGuestUser ? 'guest-text' : '';
+        const guestColor = isGuestUser ? 'color: #38bdf8 !important; font-weight: 600;' : '';
+
+        return `<span class="${guestClass}" style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px; ${guestColor}">${escapeHtml(cleanStr)}</span>`;
+    }).join(' ');
 }
 
 // 🎛️ [추가] TV 화면에서 실시간으로 음성 제어 설정 동기화 받기

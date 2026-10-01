@@ -2147,15 +2147,13 @@ io.on('connection', (socket) => {
         const currentClubId = socket.clubId || 'unjeong';
         const guestId = `guest_${Date.now()}`;
 
-        // 🎯 [급수 표기 가공] '초심'은 '초심(일)', 'A'~'S'는 'A조(일)' 형태로 생성
-        let formattedGrade = '일일';
+        // 🎯 [급수 표기 정리] '(일)' 접미사 없이 순수 급수만 깔끔하게 생성
+        let formattedGrade = '일반';
         if (grade) {
-            if (grade === '초심') {
-                formattedGrade = '초심(일)';
-            } else if (grade.endsWith('조')) {
-                formattedGrade = `${grade}(일)`;
+            if (grade === '초심' || grade.endsWith('조')) {
+                formattedGrade = grade;
             } else {
-                formattedGrade = `${grade}조(일)`;
+                formattedGrade = `${grade}조`;
             }
         }
 
@@ -2165,11 +2163,12 @@ io.on('connection', (socket) => {
             username: guestId,
             name: name,
             rawName: name,
-            displayName: `${name}(일일)`,
+            displayName: name,          // 👈 '(일일)' 제거하고 순수 이름으로 통일
             gender: gender || '-',
             ageGroup: ageGroup || '-',
-            grade: formattedGrade,       // 👈 C조(일), 초심(일) 등으로 반영
-            isGuest: true,
+            grade: formattedGrade,       // 👈 C조, B조, 초심 등 순수 급수
+            level: formattedGrade,       // 호환성을 위해 level도 함께 세팅
+            isGuest: true,              // 👈 일일회원 판별 플래그 유지
             phone: phone
         };
 

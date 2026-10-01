@@ -8,34 +8,33 @@ let currentUser = null;
 
 let activeMergeSlotId = null;
 
-// 💡 완벽하게 동명이인(정회원/일일회원)과 부분 일치를 걸러내는 통합 검증 함수
+// 💡 완벽하게 동명이인 및 텍스트 변경(색상 분리)에 대응하는 통합 검증 함수
 window.isMyNameMatch = function(playerData, currentUser) {
     if (!playerData || !currentUser || !currentUser.name) return false;
 
     // 1. 내 정보 세팅 (순수 이름 추출)
     const myName = (currentUser.rawName || currentUser.name || "").replace(/\(일일\)/g, '').trim();
     const myGrade = (currentUser.level || currentUser.grade || "").trim();
-    // 🎯 내가 일일회원인지 판별 (isGuest 플래그 또는 급수에 '일' 포함 여부)
     const isMeDaily = (currentUser.isGuest === true || myGrade.includes('일'));
 
     // 2. 비교할 대상 데이터 문자열화
     const pString = Array.isArray(playerData) ? playerData.join(',') : playerData;
 
-    // 3. 엄격한 비교 검사
+    // 3. 비교 검사
     return pString.split(',').some(p => {
         const parts = p.split('/').map(item => item.trim());
-        // 대상의 순수 이름 추출
         const pName = (parts[0] || "").replace(/\(일일\)/g, '').trim(); 
         const pGrade = parts[parts.length - 1] || "";
-        
-        // 🎯 대상 슬롯이 일일회원인지 판별 ('일일' 뿐만 아니라 'S조(일)', 'C조(일)' 등도 완벽 인식)
-        const isTargetDaily = (pGrade.includes('일') || p.includes('(일)'));
 
-        // [방어 1] 이름이 완벽하게 똑같은가?
+        // [검증 1] 이름이 정확하게 일치하는가?
         if (pName !== myName) return false;
 
-        // [방어 2] 정회원과 일일회원이 구분되는가?
-        if (isMeDaily !== isTargetDaily) return false;
+        // [검증 2] 슬롯에 (일) 표식이 명시적으로 남아있는 구형 데이터인 경우에만 엄격 대조
+        const hasDailyMark = (pGrade.includes('일') || p.includes('(일)'));
+        if (hasDailyMark && !isMeDaily) {
+            // 슬롯은 일일회원 표식인데 내가 정회원인 경우 제외
+            return false;
+        }
 
         return true; 
     });
@@ -338,27 +337,36 @@ function renderCourts() {
         }
 
         return pArray
-            .filter(p => p && p.length > 0)
+            .filter(p => p && p.trim().length > 0)
             .map(p => {
-                let normalizedStr = p;
-                if (p.includes('/')) {
-                    normalizedStr = p.split('/').map(part => part.trim()).join(' / ');
+                // 🎯 일일회원 판별: |guest 마커가 포함되어 있거나 '일일' 키워드가 들어있는 경우
+                const isGuestUser = p.includes('guest') || p.includes('일일');
+                
+                // 💡 화면 출력 시 숨김 마커(|guest) 제거 및 슬래시 간격 정리
+                let cleanStr = p.replace(/\|?guest/gi, '').trim();
+                if (cleanStr.includes('/')) {
+                    cleanStr = cleanStr.split('/').map(part => part.trim()).join(' / ');
                 }
-                return `<div>${escapeHtml(normalizedStr)}</div>`;
+
+                // 🎨 일일회원은 클래스와 함께 직접 인라인 색상(하늘색)을 강제 적용
+                const guestClass = isGuestUser ? 'guest-text' : '';
+                const guestInlineStyle = isGuestUser ? 'style="color: #38bdf8 !important;"' : '';
+
+                return `<div class="${guestClass}" ${guestInlineStyle}>${escapeHtml(cleanStr)}</div>`;
             })
             .join('');
     }
 
-    // 💡 2. 만능 함수(isMyNameMatch)로 연결시키는 스위치 (로그 제거, 깔끔한 원본)
+    // 💡 2. 만능 함수(isMyNameMatch)로 연결시키는 스위치
     const exactMatchUser = (playersData) => {
-        return window.isMyNameMatch(playersData, currentUser);
+        return typeof window.isMyNameMatch === 'function' ? window.isMyNameMatch(playersData, currentUser) : false;
     };
 
     courtsData.forEach(court => {
         let html = '';
         
-        if(court.type === 'game') {
-            if(court.isEmpty) {
+        if (court.type === 'game') {
+            if (court.isEmpty) {
                 html = `
                     <div class="court-row">
                         <div class="court-head-info">
@@ -368,7 +376,6 @@ function renderCourts() {
                         <div class="empty-court-box">✨ 빈 코트</div>
                     </div>`;
             } else {
-                // 💡 불필요한 currentUserName 변수 제거 완료
                 let isUserOnThisCourt = exactMatchUser(court.players);
 
                 let gameActionBtns = '';
@@ -400,8 +407,7 @@ function renderCourts() {
                     </div>`;
             }
         } 
-        else if(court.type === 'nanta') {
-            // 💡 불필요한 currentUserName 변수 제거 완료
+        else if (court.type === 'nanta') {
             let isUserOnSideA = court.sideA ? exactMatchUser(court.sideA.players) : false;
             let isUserOnSideB = court.sideB ? exactMatchUser(court.sideB.players) : false;
 
@@ -417,7 +423,7 @@ function renderCourts() {
                 `<div class="nanta-empty-text">+ A코트 (반 코트 이용)</div>` :
                 `<div class="nanta-card-head">
                     <span class="nanta-label">A코트</span>
-                    <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
+                    <span class="nanta-timer-badge">⏱ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
                  <div class="court-players">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
                  ${sideABtn}`;
@@ -443,7 +449,7 @@ function renderCourts() {
                     </div>
                 </div>`;
         } 
-        else if(court.type === 'lesson') {
+        else if (court.type === 'lesson') {
             html = `
                 <div class="court-row">
                     <div class="court-head-info">
@@ -451,7 +457,7 @@ function renderCourts() {
                         <span class="type-badge badge-lesson">레슨 코트</span>
                     </div>
                     <div style="background:#1f2937; padding:10px; border-radius:6px; text-align:center; color:#c084fc; font-size:12px;">
-                        ${escapeHtml(court.players || '코치 레슨 전용 코트')}
+                        ${escapeHtml(court.players || '레슨 전용 코트')}
                     </div>
                 </div>`;
         }
@@ -483,10 +489,12 @@ function renderGameQueue() {
 
     function formatPlayerText(playerStr) {
         if (!playerStr) return '';
-        if (playerStr.includes('/')) {
-            return playerStr.split('/').map(part => part.trim()).join(' / ');
+        // 💡 화면 출력 시 숨김 마커(|guest)를 깨끗하게 제거
+        let cleanStr = playerStr.replace('|guest', '').trim();
+        if (cleanStr.includes('/')) {
+            return cleanStr.split('/').map(part => part.trim()).join(' / ');
         }
-        return playerStr;
+        return cleanStr;
     }
 
     // 💡 2. 복잡한 이름 비교 로직을 만능 함수 단 한 줄로 교체
@@ -526,18 +534,39 @@ function renderGameQueue() {
             if (p && p.trim() !== '') {
                 const isMe = isMePlayer(p);
                 const formattedPlayer = formatPlayerText(p);
-                // [퇴장 버튼]: 본인 칸만 활성화
+
+                // 🎯 일일회원 판별: |guest 마커가 있거나 급수가 '일일'인 경우
+                const isGuestUser = p.includes('|guest') 
+                    || p.trim().endsWith('/ 일일') 
+                    || p.trim().endsWith('/일일');
+                const guestClass = isGuestUser ? 'guest-text' : '';
+
+                // [퇴장 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
                 if (isMe) {
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell">
+                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
+                            <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button>
+                        </div>`;
                 } else {
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell">
+                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
+                            <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button>
+                        </div>`;
                 }
             } else {
                 // [게임참여 버튼]: 경기 중이거나 이미 대기 중인 경우 비활성화
                 if (cannotJoinGame) {
-                    playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">게임참여</span></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;">
+                            <span class="empty-cell" style="color:#777;">게임참여</span>
+                        </div>`;
                 } else {
-                    playerCellsHtml += `<div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell">게임참여</span></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;">
+                            <span class="empty-cell">게임참여</span>
+                        </div>`;
                 }
             }
         }
@@ -545,7 +574,7 @@ function renderGameQueue() {
         const validPlayersCount = getValidPlayers(slot.players).length;
         const isMySlotGame = slot.players && slot.players.some(p => isMePlayer(p));
 
-        // 1. [코트 입장 버튼]: 4명이 모두 차고, 내가 해당 방의 멤버일 때만 활성화
+       // 1. [코트 입장 버튼]: 4명이 모두 차고, 내가 해당 방의 멤버일 때만 활성화
         const isFullGame = (validPlayersCount === 4);
         let gameEnterBtnHtml = '';
         if (isFullGame && isMySlotGame) {
@@ -578,12 +607,21 @@ function renderGameQueue() {
             } else {
                 targetSlots.forEach((targetSlot) => {
                     const targetRank = gameQueue.findIndex(s => s.id === targetSlot.id) + 1;
-                    const rawPlayersList = getValidPlayers(targetSlot.players).map(p => formatPlayerText(p));
+                    
+                    // 🎯 통합 대상 멤버 목록: 일일회원은 하늘색 span 태그로 감싸서 구분
+                    const rawPlayersList = getValidPlayers(targetSlot.players).map(p => {
+                        const isGuest = p.includes('|guest') 
+                            || p.trim().endsWith('/ 일일') 
+                            || p.trim().endsWith('/일일');
+                        const cleanText = escapeHtml(formatPlayerText(p));
+                        return isGuest ? `<span style="color: #38bdf8; font-weight: 600;">${cleanText}</span>` : cleanText;
+                    });
                     const playersStr = rawPlayersList.join(", ");
+
                     listHtml += `
                         <div class="merge-option-item" onclick="confirmAndExecuteMerge('${slot.id}', '${targetSlot.id}', ${targetRank})" style="padding: 10px 12px; margin-bottom: 6px; background: #1e1e2f; border: 1px solid #7c3aed; border-radius: 6px; cursor: pointer;">
                             <div style="font-weight: bold; color: #a78bfa; font-size: 13px;">📌 ${targetRank}순위 방과 통합</div>
-                            <div style="color: #cbd5e1; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">멤버: ${escapeHtml(playersStr)}</div>
+                            <div style="color: #cbd5e1; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">멤버: ${playersStr}</div>
                         </div>
                     `;
                 });
@@ -707,12 +745,14 @@ function renderNantaQueue() {
         } catch (e) {}
     }
 
-    function formatNantaPlayerText(playerStr) {
+    function formatPlayerText(playerStr) {
         if (!playerStr) return '';
-        if (playerStr.includes('/')) {
-            return playerStr.split('/').map(part => part.trim()).join(' / ');
+        // 💡 화면 출력 시 숨김 마커(|guest)를 깨끗하게 제거
+        let cleanStr = playerStr.replace('|guest', '').trim();
+        if (cleanStr.includes('/')) {
+            return cleanStr.split('/').map(part => part.trim()).join(' / ');
         }
-        return playerStr;
+        return cleanStr;
     }
 
     // 💡 2. 복잡하고 구멍 많던 includes 기반 검사를 '만능 함수' 단 한 줄로 교체!
@@ -758,19 +798,40 @@ function renderNantaQueue() {
             const p = slot.players[i];
             if (p && p.trim() !== '') {
                 const isMe = isMePlayer(p);
-                const formattedNantaPlayer = formatNantaPlayerText(p);
-                // [퇴장 버튼]: 본인 칸만 활성화
+                const formattedPlayer = formatPlayerText(p);
+
+                // 🎯 일일회원 판별: |guest 마커가 있거나 급수가 '일일'인 경우
+                const isGuestUser = p.includes('|guest') 
+                    || p.trim().endsWith('/ 일일') 
+                    || p.trim().endsWith('/일일');
+                const guestClass = isGuestUser ? 'guest-text' : '';
+
+                // [난타종료 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
                 if (isMe) {
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell">
+                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
+                            <button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button>
+                        </div>`;
                 } else {
-                    playerCellsHtml += `<div class="player-cell"><span class="player-info">${escapeHtml(formattedNantaPlayer)}</span><button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell">
+                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
+                            <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button>
+                        </div>`;
                 }
             } else {
-                // [난타참여 버튼]: 코트 이용 중이거나 이미 대기 중인 경우 비활성화
+                // [난타참여 버튼]: 참여 불가 시 비활성화
                 if (cannotJoinNanta) {
-                    playerCellsHtml += `<div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;"><span class="empty-cell" style="color:#777;">난타참여</span></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;">
+                            <span class="empty-cell" style="color:#777;">난타참여</span>
+                        </div>`;
                 } else {
-                    playerCellsHtml += `<div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;"><span class="empty-cell">난타참여</span></div>`;
+                    playerCellsHtml += `
+                        <div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;">
+                            <span class="empty-cell">난타참여</span>
+                        </div>`;
                 }
             }
         }
@@ -854,7 +915,15 @@ async function createNewGameSlot() {
         return;
     }
 
-    const formattedPlayerInfo = [cleanName, gender, age, level].join(" / ");
+    // 🎯 일일회원 여부 판별 및 |guest 마커 부착
+    const isGuest = currentUser.isGuest === true 
+                 || (currentUser.grade && currentUser.grade.includes('일')) 
+                 || (currentUser.level && currentUser.level.includes('일'));
+
+    let formattedPlayerInfo = [cleanName, gender, age, level].join(" / ");
+    if (isGuest && !formattedPlayerInfo.includes('|guest')) {
+        formattedPlayerInfo += '|guest';
+    }
 
     // 💡 [수정 2] 모든 중복/진행 검사에 '만능 함수(isMyNameMatch)' 적용하여 동명이인 원천 차단
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
@@ -918,7 +987,7 @@ async function createNewGameSlot() {
                 };
             }
         } else {
-            alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
+            alert('⚠️️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
         }
         return;
     }
@@ -973,7 +1042,15 @@ async function createNewNantaSlot() {
         return;
     }
 
-    const formattedPlayerInfo = [cleanName, gender, age, level].join(" / ");
+    // 🎯 일일회원 여부 판별 및 |guest 마커 부착
+    const isGuest = currentUser.isGuest === true 
+                 || (currentUser.grade && currentUser.grade.includes('일')) 
+                 || (currentUser.level && currentUser.level.includes('일'));
+
+    let formattedPlayerInfo = [cleanName, gender, age, level].join(" / ");
+    if (isGuest && !formattedPlayerInfo.includes('|guest')) {
+        formattedPlayerInfo += '|guest';
+    }
 
     // 💡 [수정 2] 모든 중복/진행 검사에 '만능 함수(isMyNameMatch)' 적용하여 동명이인/부분일치 원천 차단
     const activeCourts = (typeof courtsData !== 'undefined' && courtsData) ? courtsData : (window.courtsData || []);
@@ -1120,10 +1197,14 @@ async function joinGameCell(slotId, idx) {
         return;
     }
 
-    // 💡 [핵심 수정] filter(Boolean) 제거
-    const formattedPlayerInfo = [name, gender, age, level].join(" / ");
+    // 💡 [수정] 일일회원 여부(isGuest)를 히든 마커로 안전하게 포함
+    const guestTag = u.isGuest ? '|guest' : '';
+    const formattedPlayerInfo = [name, gender, age, level].join(" / ") + guestTag;
 
-    const confirmed = await confirm(`[${formattedPlayerInfo}]로 게임에 참여하시겠습니까?`);
+    // 🎯 팝업창에는 |guest를 제외한 깨끗한 정보만 표시
+    const displayPlayerInfo = [name, gender, age, level].join(" / ");
+
+    const confirmed = await confirm(`[${displayPlayerInfo}]로 게임에 참여하시겠습니까?`);
     if (confirmed) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
@@ -1187,10 +1268,14 @@ async function joinNantaCell(slotId, idx) {
         return;
     }
 
-    // 💡 [핵심 수정] filter(Boolean)을 제거하여 빈칸이 누락되지 않고 무조건 4칸(슬래시 3개)을 유지하게 합니다.
-    const formattedPlayerInfo = [name, gender, age, level].join(" / ");
+    // 💡 [수정] 일일회원 여부(isGuest)를 히든 마커로 안전하게 포함
+    const guestTag = u.isGuest ? '|guest' : '';
+    const formattedPlayerInfo = [name, gender, age, level].join(" / ") + guestTag;
 
-    const confirmed = await confirm(`[${formattedPlayerInfo}]로 난타에 참여하시겠습니까?`);
+    // 🎯 팝업창에는 |guest를 제외한 깨끗한 정보만 표시
+    const displayPlayerInfo = [name, gender, age, level].join(" / ");
+
+    const confirmed = await confirm(`[${displayPlayerInfo}]로 난타에 참여하시겠습니까?`);
     if (confirmed) {
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
         if (activeSocket) {
@@ -1444,13 +1529,13 @@ function handleHome() {
 function applyUserProfile() {
     // 🔑 현재 접속 구장 식별자 확인 및 구장별 키 생성
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                   || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
-                   || new URLSearchParams(window.location.search).get('club') 
-                   || 'default';
+                    || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                    || new URLSearchParams(window.location.search).get('club') 
+                    || 'default';
 
     const storageKey = (typeof getClubStorageKey === 'function') 
-                       ? getClubStorageKey("currentUser") 
-                       : `currentUser_${clubId}`;
+                        ? getClubStorageKey("currentUser") 
+                        : `currentUser_${clubId}`;
 
     let userStr = localStorage.getItem(storageKey);
     // 레거시 호환용 (이전 저장값이 남아있는 경우 대응)
@@ -1458,39 +1543,64 @@ function applyUserProfile() {
         userStr = localStorage.getItem("currentUser");
     }
 
-    // 🎯 1. 고유 ID로 찾거나, 화면에서 '로그인 중' 글자를 가진 요소를 직접 자동 추적
+    // 🎯 1. 고유 ID 또는 상단 텍스트 요소를 안정적으로 추적
     let headerUserEl = document.getElementById("user-display-name") 
                     || document.getElementById("user-name")
                     || document.getElementById("userName")
                     || document.getElementById("userDisplay");
 
     if (!headerUserEl) {
-        // ID가 일치하지 않을 때 화면 상단의 '로그인 중' 텍스트 요소를 직접 검색
         const candidates = Array.from(document.querySelectorAll('header span, nav span, .header span, span, div, a, b'));
-        headerUserEl = candidates.find(el => el.children.length === 0 && el.textContent.includes('로그인 중'));
+        headerUserEl = candidates.find(el => {
+            const txt = (el.innerText || el.textContent || '').trim();
+            return el.children.length === 0 && (txt.includes('로그인 중') || txt.includes('로그인 필요') || txt.endsWith('님'));
+        });
     }
-    
-    if (!headerUserEl) return;
 
     if (userStr) {
         try {
             const user = JSON.parse(userStr);
-            const rawName = user.name || user.username || user.nickname || (typeof user === 'string' ? user : '사용자');
-            const cleanName = String(rawName).replace(/님$/, '').trim();
+            const rawName = user.rawName || user.name || user.username || user.nickname || (typeof user === 'string' ? user : '사용자');
+            // 💡 접미사('(일일)' 및 '님') 깔끔하게 제거하여 순수 이름 확보
+            const cleanName = String(rawName).replace(/\(일일\)/g, '').replace(/님$/, '').trim();
             
-            // 🏷️ 회원 이름 반영
-            headerUserEl.textContent = `${cleanName}님`;
+            // 🎯 일일회원 판별
+            const isGuest = user.isGuest === true || (user.grade && user.grade.includes('일')) || (user.level && user.level.includes('일'));
+
+            // 🏷️ 화면에 요소가 발견되면 이름 및 색상 반영
+            if (headerUserEl) {
+                headerUserEl.textContent = `${cleanName}님`;
+                if (isGuest) {
+                    headerUserEl.style.color = '#38bdf8';
+                    headerUserEl.classList.add('guest-text');
+                } else {
+                    headerUserEl.style.color = '';
+                    headerUserEl.classList.remove('guest-text');
+                }
+            }
             
+            // 🔒 [무한 루프 방지]: 이미 등록된 소켓 세션이면 반복해서 emit하지 않음
             const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-            if (activeSocket && (user.username || user.phone)) {
-                activeSocket.emit('registerUserSession', user.username || user.phone);
+            const sessionIdentifier = user.username || user.phone || cleanName;
+            if (activeSocket && sessionIdentifier && window.__registeredSessionKey !== sessionIdentifier) {
+                window.__registeredSessionKey = sessionIdentifier;
+                activeSocket.emit('registerUserSession', sessionIdentifier);
             }
         } catch (e) {
             console.error("사용자 정보 파싱 오류:", e);
-            headerUserEl.textContent = "로그인 필요";
+            if (headerUserEl) {
+                headerUserEl.textContent = "로그인 필요";
+                headerUserEl.style.color = '';
+                headerUserEl.classList.remove('guest-text');
+            }
         }
     } else {
-        headerUserEl.textContent = "로그인 필요";
+        if (headerUserEl) {
+            headerUserEl.textContent = "로그인 필요";
+            headerUserEl.style.color = '';
+            headerUserEl.classList.remove('guest-text');
+        }
+        window.__registeredSessionKey = null;
     }
 }
 

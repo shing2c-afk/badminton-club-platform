@@ -220,11 +220,11 @@ body, button, input, select, textarea {
       <!-- 1. 정회원 로그인 폼 -->
       <form id="memberLoginForm">
         <div class="input-group" style="margin-bottom: 12px; text-align: left;">
-          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">이름</label>
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">이름(*필수)</label>
           <input type="text" id="memberName" lang="ko" placeholder="이름 입력" required maxlength="10" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
         <div class="input-group" style="margin-bottom: 16px; text-align: left;">
-          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">전화번호</label>
+          <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 4px;">전화번호(*필수)</label>
           <input type="tel" id="memberPhone" placeholder="01012345678" required maxlength="13" oninput="formatPhone(this)" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
         <button type="submit" class="btn-auth-submit" style="width: 100%; padding: 12px; background: #ff6600; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">정회원 로그인</button>
@@ -241,15 +241,15 @@ body, button, input, select, textarea {
       <!-- 2. 일일회원 입장 폼 (간격 슬림화) -->
       <form id="guestLoginForm" style="display: none; padding-bottom: 20px;">
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">이름</label>
+          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">이름(*필수)</label>
           <input type="text" id="guestName" lang="ko" placeholder="이름 입력" required maxlength="10" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">전화번호</label>
+          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">전화번호(*필수)</label>
           <input type="tel" id="guestPhone" placeholder="010-1234-5678" required maxlength="13" oninput="formatPhone(this)" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">결제인증번호 (숫자 6자리)</label>
+          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">결제인증번호(숫자 6자리 *필수)</label>
           <input type="text" id="guestPayCode" placeholder="6자리 입력" required maxlength="6" oninput="validatePayCodeInput(this)" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
         </div>
 

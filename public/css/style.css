@@ -219,3 +219,9 @@ body.gym-wifi-active .online-status-badge {
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 0 12px rgba(0, 242, 254, 0.45));
 }
+
+/* 일일회원 텍스트 전용 색상 (가독성 높은 스카이블루) */
+.player-info.guest-text {
+    color: #38bdf8 !important;
+    font-weight: 600;
+}
