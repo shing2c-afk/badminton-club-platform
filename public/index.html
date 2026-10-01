@@ -205,6 +205,33 @@ body, button, input, select, textarea {
     <div class="intro-subtitle">똑똑하게 배드민턴을 즐기는 웹</div>
   </div>
 </div>
+<!-- 💡 [깜빡임 완벽 차단] currentUser_{clubId} 키를 동적으로 감지 -->
+<script>
+  (function() {
+    let isLoggedIn = false;
+    
+    // 로컬 스토리지 전체 키 중에서 'currentUser_'로 시작하는 로그인 데이터가 있는지 확인
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('currentUser_') && localStorage.getItem(key)) {
+        isLoggedIn = true;
+        break;
+      }
+    }
+
+    // fallback: 혹시 모를 currentUser 일반 키도 함께 확인
+    if (!isLoggedIn && (localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser'))) {
+      isLoggedIn = true;
+    }
+
+    const introEl = document.getElementById('auth-intro-overlay');
+    
+    // 로그인이 안 되어 있을 때만 인트로 화면을 즉시 표시
+    if (!isLoggedIn && introEl) {
+      introEl.classList.remove('hidden');
+    }
+  })();
+</script>
 
   <div id="auth-login-overlay" class="auth-overlay hidden">
   <div class="login-card">
