@@ -2,6 +2,7 @@
   "unjeong": {
     "clubId": "unjeong",
     "clubName": "운정배드민턴클럽",
+    "courtCount": 8,
     "config": {
       "ENTRY_TIMEOUT_SEC": 180,
       "NANTA_COURT_LIMIT_SEC": 300,
@@ -52,49 +53,66 @@
     "courtsData": [
       {
         "id": 1,
-        "type": "nanta",
-        "note": ""
+        "name": "1코트",
+        "type": "game",
+        "note": "",
+        "isActive": true
       },
       {
         "id": 2,
+        "name": "2코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 3,
+        "name": "3코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 4,
+        "name": "4코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 5,
-        "type": "nanta",
-        "note": ""
+        "name": "5코트",
+        "type": "game",
+        "note": "",
+        "isActive": true
       },
       {
         "id": 6,
-        "type": "nanta",
-        "note": ""
+        "name": "6코트",
+        "type": "game",
+        "note": "",
+        "isActive": true
       },
       {
         "id": 7,
+        "name": "7코트",
         "type": "nanta",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 8,
+        "name": "8코트",
         "type": "lesson",
-        "note": "오후 레슨 전용 코트"
+        "note": "코치 레슨 전용 코트",
+        "isActive": true
       }
     ]
   },
   "daewon": {
     "clubId": "daewon",
     "clubName": "대원배드민턴클럽",
+    "courtCount": 8,
     "config": {
       "ENTRY_TIMEOUT_SEC": 120,
       "NANTA_COURT_LIMIT_SEC": 120,
@@ -145,49 +163,66 @@
     "courtsData": [
       {
         "id": 1,
+        "name": "1코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 2,
+        "name": "2코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 3,
+        "name": "3코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 4,
+        "name": "4코트",
         "type": "nanta",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 5,
+        "name": "5코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 6,
+        "name": "6코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 7,
+        "name": "7코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 8,
+        "name": "8코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       }
     ]
   },
   "gimpo": {
     "clubId": "gimpo",
     "clubName": "김포배드민턴클럽",
+    "courtCount": 4,
     "config": {
       "ENTRY_TIMEOUT_SEC": 180,
       "NANTA_COURT_LIMIT_SEC": 900,
@@ -200,29 +235,38 @@
     "courtsData": [
       {
         "id": 1,
+        "name": "1코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 2,
+        "name": "2코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 3,
+        "name": "3코트",
         "type": "nanta",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 4,
+        "name": "4코트",
         "type": "lesson",
-        "note": ""
+        "note": "",
+        "isActive": true
       }
     ]
   },
   "paju": {
     "clubId": "paju",
     "clubName": "파주배드민턴클럽",
+    "courtCount": 8,
     "config": {
       "ENTRY_TIMEOUT_SEC": 180,
       "NANTA_COURT_LIMIT_SEC": 900,
@@ -235,43 +279,59 @@
     "courtsData": [
       {
         "id": 1,
+        "name": "1코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 2,
+        "name": "2코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 3,
+        "name": "3코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 4,
+        "name": "4코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 5,
+        "name": "5코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 6,
+        "name": "6코트",
         "type": "game",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 7,
+        "name": "7코트",
         "type": "nanta",
-        "note": ""
+        "note": "",
+        "isActive": true
       },
       {
         "id": 8,
+        "name": "8코트",
         "type": "lesson",
-        "note": ""
+        "note": "",
+        "isActive": true
       }
     ]
   }

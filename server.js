@@ -184,12 +184,12 @@ function loadClubsData() {
                 };
             }
 
-           // 환경설정 복원 (기본값과 저장된 파일 설정을 안전하게 병합)
+            // 환경설정 복원 (기본값과 저장된 파일 설정을 안전하게 병합)
             const savedCfg = savedData[cId].config || {};
             clubs[cId].config = {
                 ...(clubs[cId].config || {}),
                 ...savedCfg,
-                // 🎯 [핵심] 토글 스위치(boolean) 값과 IP 목록 영구 보존
+                // 🎯 토글 스위치(boolean) 값과 IP 목록 영구 보존
                 useWifiRestriction: typeof savedCfg.useWifiRestriction === 'boolean' 
                     ? savedCfg.useWifiRestriction 
                     : (clubs[cId].config?.useWifiRestriction ?? false),
@@ -198,35 +198,41 @@ function loadClubsData() {
                     : (clubs[cId].config?.allowedGymIps || [])
             };
 
-            // 코트 구성 복원 (실시간 경기 데이터는 제외하고 코트 틀만 안전하게 생성)
-            if (Array.isArray(savedData[cId].courtsData)) {
-                clubs[cId].courtsData = savedData[cId].courtsData.map((c, idx) => {
+            // 🏟️ 코트 구성 복원 (courtsData 및 courts 동시 동기화)
+            if (Array.isArray(savedData[cId].courtsData) && savedData[cId].courtsData.length > 0) {
+                const restoredCourts = savedData[cId].courtsData.map((c, idx) => {
                     const id = c.id || (idx + 1);
+                    const name = c.name || `${id}코트`;
                     const type = c.type || 'game';
                     const note = c.note || '';
 
                     if (type === 'nanta') {
                         return {
-                            id, type: 'nanta', nextType: 'nanta', note,
+                            id, name, type: 'nanta', nextType: 'nanta', note,
                             sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
                             sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 }
                         };
                     } else if (type === 'lesson') {
                         return {
-                            id, type: 'lesson', nextType: 'lesson', isEmpty: false,
+                            id, name, type: 'lesson', nextType: 'lesson', isEmpty: false,
                             players: note || '레슨 코트', note
                         };
                     } else {
                         return {
-                            id, type: 'game', nextType: 'game', isEmpty: true,
+                            id, name, type: 'game', nextType: 'game', isEmpty: true,
                             players: '', note
                         };
                     }
                 });
+
+                // 💡 [핵심] 두 변수 및 코트 수 동시 동기화
+                clubs[cId].courtsData = restoredCourts;
+                clubs[cId].courts = restoredCourts;
+                clubs[cId].courtCount = savedData[cId].courtCount || restoredCourts.length;
             }
         });
 
-        console.log('✅ [clubs-data.json] 클럽별 영구 설정 로드 완료!');
+        console.log('✅ [clubs-data.json] 클럽별 영구 설정(코트/설정/와이파이) 로드 완료!');
     } catch (err) {
         console.error('❌ 클럽 데이터 로드 중 오류 발생:', err);
     }
@@ -239,14 +245,22 @@ function saveClubsData() {
 
         Object.keys(clubs).forEach(cId => {
             const club = clubs[cId];
-           dataToSave[cId] = {
+            if (!club) return;
+
+            // 💡 courts 또는 courtsData 중 존재하는 코트 배열 참조
+            const rawCourts = club.courtsData || club.courts || [];
+
+            dataToSave[cId] = {
                 clubId: club.clubId || cId,
                 clubName: club.clubName || (cId === 'unjeong' ? '운정배드민턴클럽' : (cId === 'daewon' ? '대원배드민턴클럽' : `${cId.toUpperCase()} 배드민턴클럽`)),
+                courtCount: club.courtCount || rawCourts.length || 8, // 코트 수 보존
                 config: club.config,
-                courtsData: (club.courtsData || []).map(c => ({
+                courtsData: rawCourts.map(c => ({
                     id: c.id,
+                    name: c.name || `${c.id}코트`,
                     type: c.type || 'game',
-                    note: c.note || ''
+                    note: c.note || '',
+                    isActive: c.isActive !== false
                 }))
             };
         });
@@ -258,14 +272,9 @@ function saveClubsData() {
         console.log(`💾 [저장 완료] 파일 절대경로: ${absolutePath}`);
 
         // 운정클럽 핵심 설정 1줄 요약
-        const uCfg = (dataToSave['unjeong'] && dataToSave['unjeong'].config) || {};
-        console.log(`📝 [unjeong 요약] 입장:${uCfg.ENTRY_TIMEOUT_SEC ?? '-'}초 | 난타:${uCfg.NANTA_COURT_LIMIT_SEC ?? '-'}초 | 음성:[입장:${uCfg.soundEntryNotice !== false ? 'ON' : 'OFF'}, 난타:${uCfg.soundNantaWarning !== false ? 'ON' : 'OFF'}, 청소:${uCfg.soundScheduleNotice !== false ? 'ON' : 'OFF'}]`);
-
-        // 대원클럽 핵심 설정 1줄 요약 (데이터가 존재할 때만 자동 출력)
-        if (dataToSave['daewon'] && dataToSave['daewon'].config) {
-            const dCfg = dataToSave['daewon'].config;
-            console.log(`📝 [daewon 요약] 입장:${dCfg.ENTRY_TIMEOUT_SEC ?? '-'}초 | 난타:${dCfg.NANTA_COURT_LIMIT_SEC ?? '-'}초 | 음성:[입장:${dCfg.soundEntryNotice !== false ? 'ON' : 'OFF'}, 난타:${dCfg.soundNantaWarning !== false ? 'ON' : 'OFF'}, 청소:${dCfg.soundScheduleNotice !== false ? 'ON' : 'OFF'}]`);
-        }
+        const uClub = dataToSave['unjeong'] || {};
+        const uCfg = uClub.config || {};
+        console.log(`📝 [unjeong 요약] 코트수:${uClub.courtCount}개 | 입장:${uCfg.ENTRY_TIMEOUT_SEC ?? '-'}초 | 난타:${uCfg.NANTA_COURT_LIMIT_SEC ?? '-'}초 | 음성:[입장:${uCfg.soundEntryNotice !== false ? 'ON' : 'OFF'}, 난타:${uCfg.soundNantaWarning !== false ? 'ON' : 'OFF'}, 청소:${uCfg.soundScheduleNotice !== false ? 'ON' : 'OFF'}]`);
 
     } catch (err) {
         console.error('❌ 클럽 데이터 저장 중 오류 발생:', err);
@@ -2245,19 +2254,27 @@ io.on('connection', (socket) => {
                 }
                 const targetConfig = clubs[clubId].config;
 
-                // 💡 전달된 필드만 안전하게 개별 갱신 (전달되지 않은 값은 기존 값 유지)
+                // 💡 전달된 필드만 안전하게 개별 갱신
                 if (newConfig.ENTRY_TIMEOUT_SEC !== undefined) targetConfig.ENTRY_TIMEOUT_SEC = newConfig.ENTRY_TIMEOUT_SEC;
                 if (newConfig.NANTA_COURT_LIMIT_SEC !== undefined) targetConfig.NANTA_COURT_LIMIT_SEC = newConfig.NANTA_COURT_LIMIT_SEC;
                 if (newConfig.ADMIN_PASSWORD !== undefined && newConfig.ADMIN_PASSWORD.trim() !== '') {
                     targetConfig.ADMIN_PASSWORD = newConfig.ADMIN_PASSWORD;
                 }
 
-                // ⏱️ 유예 시간 관리자 설정 갱신 (대기방 보존 분, 세션 만료 분)
+                // ⏱️ 유예 시간 관리자 설정 갱신
                 if (newConfig.queueGraceMinutes !== undefined) {
                     targetConfig.queueGraceMinutes = Number(newConfig.queueGraceMinutes) || 30;
                 }
                 if (newConfig.sessionExpireMinutes !== undefined) {
                     targetConfig.sessionExpireMinutes = Number(newConfig.sessionExpireMinutes) || 60;
+                }
+
+                // 🏟️ [핵심 추가] 코트 설정(개수, 코트 목록) 갱신
+                if (newConfig.courts !== undefined) {
+                    clubs[clubId].courts = newConfig.courts;
+                }
+                if (newConfig.courtCount !== undefined) {
+                    clubs[clubId].courtCount = Number(newConfig.courtCount);
                 }
 
                 if (newConfig.cleaningSchedules !== undefined) {
@@ -2290,7 +2307,7 @@ io.on('connection', (socket) => {
                     }
                 }
 
-                console.log(`📌 [클럽별 설정 안전 병합 완료] 클럽: ${clubId} (대기유예: ${targetConfig.queueGraceMinutes}분, 세션만료: ${targetConfig.sessionExpireMinutes}분)`);
+                console.log(`📌 [클럽별 설정 안전 병합 완료] 클럽: ${clubId} (코트수: ${clubs[clubId].courtCount || '유지'}, 유예: ${targetConfig.queueGraceMinutes}분)`);
             }
 
             const targetClubId = newConfig.clubId || socket.clubId || 'unjeong';
@@ -2300,7 +2317,7 @@ io.on('connection', (socket) => {
                 broadcastState(targetClubId);
             }
 
-            // 2. 💾 구장 환경설정 파일에 영구 저장 (1회 실행)
+            // 2. 💾 구장 환경설정 파일에 영구 저장
             if (typeof saveClubsData === 'function') {
                 saveClubsData();
             }
