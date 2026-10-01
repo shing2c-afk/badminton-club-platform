@@ -250,15 +250,24 @@ if (socket.connected) {
         <div class="club-item">
             <div class="club-info">
                 <h3>${club.name} <span style="font-size:12px; color: #ff6600;">(${club.id})</span></h3>
-                <div class="club-meta">
-                    <!-- 👥 [추가] 실시간 접속 현황 배지 -->
-                    <span style="background: #10b981; color: #ffffff; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 11px;">
-                        클럽 <strong id="club-online-${club.id}">0</strong>명 | 접속 <strong id="total-online-${club.id}">0</strong>명
+                <div class="club-meta" style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: #9ca3af;">
+                    <!-- 🌐 실시간 4대 현황 태그 -->
+                    <span style="display: inline-flex; align-items: center; background: #1e293b; border: 1px solid rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; gap: 6px;">
+                        <span>🌐 접속 <strong id="total-online-${club.id}" style="color: #f3f4f6;">0</strong>명</span>
+                        <span style="opacity: 0.25;">|</span>
+                        <span style="color: #34d399;">🏢 운동중 <strong id="club-online-${club.id}" style="color: #34d399;">0</strong>명</span>
+                        <span style="opacity: 0.25;">|</span>
+                        <span style="color: #60a5fa;">🏸 게임 <strong id="game-online-${club.id}" style="color: #60a5fa;">0</strong>명</span>
+                        <span style="opacity: 0.25;">|</span>
+                        <span style="color: #fbbf24;">⏱️ 난타 <strong id="nanta-online-${club.id}" style="color: #fbbf24;">0</strong>명</span>
                     </span>
-                    <span>🏸 코트 ${club.courtCount}개</span>
-                    <span>⏳ 게임대기 ${club.gameQueueCount || 0}팀</span>
-                    <span>🏓 난타대기 ${club.nantaQueueCount || 0}팀</span>
-                    <span>📶 Wi-Fi 제한: ${club.useWifi ? 'ON' : 'OFF'}</span>
+
+                    <!-- 클럽 설정 정보 -->
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                        <span>🏸 코트 ${club.courtCount}개</span>
+                        <span style="opacity: 0.3;">•</span>
+                        <span>📶 Wi-Fi 제한: <strong style="color: ${club.useWifi ? '#10b981' : '#ef4444'};">${club.useWifi ? 'ON' : 'OFF'}</strong></span>
+                    </span>
                 </div>
             </div>
             <div class="club-actions">
