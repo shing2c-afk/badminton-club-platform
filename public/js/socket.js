@@ -66,10 +66,17 @@ const activeClubId = new URLSearchParams(window.location.search).get('club') || 
 window.currentClubId = activeClubId;
 localStorage.setItem('preferredClubId', activeClubId);
 
+// 💡 [핵심] 로그인된 회원의 전화번호 및 이름을 추출하여 소켓 접속 시 서버로 함께 전달
+const myStoredPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
+const myStoredName = localStorage.getItem('userName') || localStorage.getItem('currentUser') || '';
+
 const socket = window.socket || io({
     query: {
         club: activeClubId,
-        clubId: activeClubId
+        clubId: activeClubId,
+        phone: myStoredPhone,
+        username: myStoredName,
+        userKey: myStoredPhone || myStoredName
     }
 });
 window.socket = socket;
@@ -112,6 +119,18 @@ socket.on('wifiStatus', (data) => {
             clearTimeout(window.wifiGraceTimer);
             window.wifiGraceTimer = null;
         }
+
+        // ⏱️ [핵심 추가] Wi-Fi 복구 확인 시 서버에 등록된 1분 미접속 대기열 삭제 타이머 즉시 해제 요청!
+        const currentPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
+        const currentName = localStorage.getItem('userName') || localStorage.getItem('currentUser') || '';
+        if (currentPhone || currentName) {
+            socket.emit('cancelDisconnectTimer', {
+                phone: currentPhone,
+                username: currentName,
+                clubId: clubId
+            });
+        }
+
         if (typeof updateWifiRestrictedButtons === 'function') {
             updateWifiRestrictedButtons();
         }
@@ -127,7 +146,7 @@ socket.on('wifiStatus', (data) => {
             if (typeof updateWifiRestrictedButtons === 'function') {
                 updateWifiRestrictedButtons();
             }
-            // 💡 [추가] 와이파이가 끊겼으므로 다음 재접속을 위해 감지 엔진을 즉시 다시 깨움!
+            // 💡 와이파이가 끊겼으므로 다음 재접속을 위해 감지 엔진을 즉시 다시 깨움!
             if (typeof window.startWifiDetector === 'function') {
                 window.startWifiDetector();
             }
@@ -137,7 +156,7 @@ socket.on('wifiStatus', (data) => {
             if (typeof updateWifiRestrictedButtons === 'function') {
                 updateWifiRestrictedButtons();
             }
-            // 💡 [추가] 처음부터 외부 접속일 때도 감지 엔진 가동 보장
+            // 💡 처음부터 외부 접속일 때도 감지 엔진 가동 보장
             if (typeof window.startWifiDetector === 'function') {
                 window.startWifiDetector();
             }
