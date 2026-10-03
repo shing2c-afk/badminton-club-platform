@@ -3248,21 +3248,29 @@ io.on('connection', (socket) => {
             const expireMinutes = (currentClub && currentClub.config && currentClub.config.sessionExpireMinutes) ? currentClub.config.sessionExpireMinutes : 60;
 
             // [1단계: 설정된 유예 시간] 대기열 유지 시간 (방 보존)
-            disconnectTimers[cleanUsername] = setTimeout(async () => {
-                if (typeof cleanupUser === 'function') {
-                    // 💡 해당 구장 대기열 슬롯에서만 정리
-                    await cleanupUser(rawUser, currentClubId);
-                }
-                delete disconnectTimers[cleanUsername];
-                if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
-                if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
-                
-                // 대기열 비워짐 화면 전파
-                if (typeof broadcastOnlineCount === 'function') {
-                    broadcastOnlineCount(currentClubId);
-                }
-                console.log(`🧹 [대기열 정리] 유저(${cleanUsername}) ${graceMinutes}분 미접속으로 대기방/슬롯에서 제외되었습니다.`);
-            }, graceMinutes * 60 * 1000);
+disconnectTimers[cleanUsername] = setTimeout(async () => {
+    // 🛡️ [핵심 안전장치] 삭제 직전, 유저가 이미 소켓으로 재접속되어 있다면 삭제 취소!
+    const isUserReconnected = typeof userSockets !== 'undefined' && Object.values(userSockets).some(u => String(u).includes(cleanUsername) || cleanUsername.includes(String(u)));
+    if (isUserReconnected) {
+        console.log(`🛡️ [대기열 유지] 유저(${cleanUsername})가 이미 재접속 상태이므로 삭제를 건너뜁니다.`);
+        delete disconnectTimers[cleanUsername];
+        return;
+    }
+
+    if (typeof cleanupUser === 'function') {
+        // 💡 해당 구장 대기열 슬롯에서만 정리
+        await cleanupUser(rawUser, currentClubId);
+    }
+    delete disconnectTimers[cleanUsername];
+    if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
+    if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
+    
+    // 대기열 비워짐 화면 전파
+    if (typeof broadcastOnlineCount === 'function') {
+        broadcastOnlineCount(currentClubId);
+    }
+    console.log(`🧹 [대기열 정리] 유저(${cleanUsername}) ${graceMinutes}분 미접속으로 대기방/슬롯에서 제외되었습니다.`);
+}, graceMinutes * 60 * 1000);
 
             // [2단계: 설정된 만료 시간] 세션 만료 및 실시간 강제 로그아웃 전송
             if (typeof sessionTimers !== 'undefined') {
