@@ -139,45 +139,51 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
-// 📶 모바일 Wi-Fi 복귀 시 안전한 자동 새로고침 (입력창 보호)
+// 📶 모바일 Wi-Fi 복귀 시 안전한 비동기 상태 갱신 (새로고침 제거)
 // ==========================================
 (function() {
-    let isReloading = false;
+    let isChecking = false;
 
-    function safeReloadIfWifiRecovered(e) {
-        if (isReloading) return;
+    async function refreshWifiStatusSilently() {
+        if (isChecking) return;
+        // 이미 인증된 상태라면 불필요한 요청 방지
+        if (window.isGymWifiConnected) return;
 
-        // 1. 입력창(이름, 전화번호 등) 터치 시 절대 새로고침 금지
-        if (e && e.target) {
-            const tagName = e.target.tagName ? e.target.tagName.toLowerCase() : '';
-            if (['input', 'textarea', 'select', 'button', 'label'].includes(tagName)) return;
-            if (e.target.closest('input, textarea, select, form, .modal, .login-popup, #loginModal')) return;
-        }
+        isChecking = true;
 
-        // 2. 이미 로그인 입력 중(포커스 상태)인 경우 새로고침 금지
-        const activeElem = document.activeElement;
-        if (activeElem && ['input', 'textarea'].includes(activeElem.tagName.toLowerCase())) return;
-
-        // 3. 현재 Wi-Fi 미인증 잠금 상태인지 확인
-        const isLocked = !window.isGymWifiConnected || !document.body.classList.contains('gym-wifi-active');
-        
-        // 잠금 상태이고 온라인 상태일 때 화면 복귀 시 1회만 안전하게 새로고침
-        if (isLocked) {
-            isReloading = true;
-            console.log('⚡ Wi-Fi 복귀 감지 -> 안전한 자동 새로고침 실행');
-            window.location.reload();
+        try {
+            // 1. 가벼운 HTTP 호출로 현재 연결된 네트워크 IP 확인
+            const response = await fetch('/api/clubs', { cache: 'no-store' });
+            
+            // 2. 소켓이 살아있다면 서버에 Wi-Fi 판별 강제 요청
+            const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+            if (activeSocket) {
+                if (!activeSocket.connected) {
+                    activeSocket.connect();
+                }
+                activeSocket.emit('requestWifiStatus');
+            }
+        } catch (err) {
+            console.warn('Wi-Fi 상태 갱신 네트워크 대기 중:', err);
+        } finally {
+            setTimeout(() => {
+                isChecking = false;
+            }, 1000);
         }
     }
 
-    // 화면 복귀(상단바 올렸을 때) 시점에만 동작 (무분별한 터치 새로고침 제거)
+    // 상단바를 올리고 앱 화면으로 돌아왔을 때 백그라운드 갱신
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            safeReloadIfWifiRecovered();
+        if (document.visibilityState === 'visible' && !window.isGymWifiConnected) {
+            // 망 전환 안정화를 위해 0.3초 대기 후 가볍게 상태만 조회
+            setTimeout(refreshWifiStatusSilently, 300);
         }
     });
 
-    // 화면 포커스 획득 시
-    window.addEventListener('focus', safeReloadIfWifiRecovered);
+    // 화면 복귀 시
+    window.addEventListener('online', () => {
+        setTimeout(refreshWifiStatusSilently, 500);
+    });
 })();
 
 // ==========================================
