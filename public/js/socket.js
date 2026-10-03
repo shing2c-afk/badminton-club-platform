@@ -66,9 +66,29 @@ const activeClubId = new URLSearchParams(window.location.search).get('club') || 
 window.currentClubId = activeClubId;
 localStorage.setItem('preferredClubId', activeClubId);
 
-// 💡 [핵심] 로그인된 회원의 전화번호 및 이름을 추출하여 소켓 접속 시 서버로 함께 전달
-const myStoredPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
-const myStoredName = localStorage.getItem('userName') || localStorage.getItem('currentUser') || '';
+// 💡 [핵심] 브라우저 저장소 전체를 안전하게 탐색하여 로그인 유저 식별자(전화번호/이름) 자동 추출
+let myStoredPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
+let myStoredName = window.currentUserName || localStorage.getItem('userName') || '';
+
+for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    const val = localStorage.getItem(key);
+    if (val && typeof val === 'string') {
+        if (val.includes('010-') || val.includes('010')) {
+            const match = val.match(/010[-\d]+/);
+            if (match) myStoredPhone = match[0];
+        }
+        if (key.toLowerCase().includes('user') || key.toLowerCase().includes('member') || val.includes('신윤채')) {
+            try {
+                const parsed = JSON.parse(val);
+                if (parsed && typeof parsed === 'object') {
+                    if (parsed.phone) myStoredPhone = parsed.phone;
+                    if (parsed.name || parsed.username) myStoredName = parsed.name || parsed.username;
+                }
+            } catch(e) {}
+        }
+    }
+}
 
 const socket = window.socket || io({
     query: {

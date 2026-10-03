@@ -1943,6 +1943,36 @@ io.on('connection', (socket) => {
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
 
+    // =================================================================
+    // ⏱️ [핵심 복구] 재접속 소켓을 userSockets에 매핑하고 1분 퇴장 타이머 즉시 해제
+    // =================================================================
+    const incomingPhone = socket.handshake.query && socket.handshake.query.phone;
+    const incomingUser = socket.handshake.query && socket.handshake.query.username;
+    const incomingRaw = socket.handshake.query && socket.handshake.query.rawUser;
+
+    const candidateUser = incomingPhone || incomingUser || incomingRaw;
+
+    if (candidateUser) {
+        socket.username = candidateUser;
+        if (typeof userSockets !== 'undefined') {
+            userSockets[socket.id] = candidateUser;
+        }
+
+        // disconnectTimers에서 해당 유저의 1분 퇴장 타이머 즉시 해제
+        if (typeof disconnectTimers !== 'undefined') {
+            Object.keys(disconnectTimers).forEach(timerKey => {
+                if (timerKey.includes(candidateUser) || candidateUser.includes(timerKey)) {
+                    clearTimeout(disconnectTimers[timerKey]);
+                    delete disconnectTimers[timerKey];
+                    if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[timerKey];
+                    if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[timerKey];
+                    console.log(`⏱️ [재접속 복귀] 새 소켓(${socket.id})으로 유저(${timerKey}) 재접속 확인 -> 1분 미접속 대기열 삭제 타이머 즉시 해제 완료!`);
+                }
+            });
+        }
+    }
+    // =================================================================
+
     // ⏱️ [핵심] Wi-Fi 복귀 시 미접속 퇴장 타이머 즉시 해제
     socket.on('cancelDisconnectTimer', (userData) => {
         const phone = userData && userData.phone;
