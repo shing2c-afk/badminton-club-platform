@@ -514,9 +514,12 @@ function renderGameQueue() {
         slot.players && slot.players.some(p => isMePlayer(p))
     );
 
-    // 🚨 게임참여 버튼 비활성화 조건: 이미 게임 대기열에 있거나 게임 코트 경기 중일 때
-    // (※ 난타 코트에서 몸을 풀고 있는 회원은 게임에 참여할 수 있도록 열어둠!)
-    const cannotJoinGame = amIInGameQueue || isPlayingGame;
+   // 💡 내가 이미 방에 들어있는지 완벽 검증 (로그인한 내 이름과 슬롯 안의 플레이어 비교)
+    const amIActuallyInQueue = gameQueue.some(slot => 
+        slot.players && slot.players.some(p => typeof isMePlayer === 'function' ? isMePlayer(p) : false)
+    );
+
+    const cannotJoinGame = amIActuallyInQueue || (typeof isPlayingGame !== 'undefined' && isPlayingGame);
 
     if (gameQueue.length === 0) {
         container.innerHTML = `<div class="empty-queue-msg">현재 대기 중인 게임 방이 없습니다.</div>`;
@@ -559,8 +562,8 @@ function renderGameQueue() {
                 // [게임참여 버튼]: 경기 중이거나 이미 대기 중인 경우 비활성화
                 if (cannotJoinGame) {
                     playerCellsHtml += `
-                        <div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;">
-                            <span class="empty-cell" style="color:#777;">게임참여</span>
+                        <div class="player-cell" data-cannot-join="true" style="background:#242730 !important; border:1px solid #333a48 !important; cursor:not-allowed !important;">
+                            <span class="empty-cell" style="color:#6b7280 !important; pointer-events:none !important; opacity:0.8 !important;">게임참여</span>
                         </div>`;
                 } else {
                     playerCellsHtml += `
@@ -666,6 +669,9 @@ function renderGameQueue() {
 }
 
 function mergeGameSlot(slotId) {
+    // 💡 [Wi-Fi 검사 통일] 구장 전용 안내창 호출 및 미연결 시 통합 메뉴 오픈 차단
+    if (!checkGymWifiOrAlert()) return;
+
     // 💡 1. 완벽한 유저 객체 추출 (멀티테넌트 대응)
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
                    || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
@@ -785,8 +791,13 @@ function renderNantaQueue() {
         slot.players && slot.players.some(p => isMePlayer(p))
     );
 
-    // 🚨 난타참여 비활성화 조건: 이미 난타 대기열에 있거나, 어떤 코트든 경기/플레이 중일 때
-    const cannotJoinNanta = amIInNantaQueue || isPlayingAnyCourt;
+    // 💡 난타 대기열에 내가 이미 참여 중인지 100% 확실하게 체크
+    const amIActuallyInNanta = nantaQueue.some(slot => 
+    slot.players && slot.players.some(p => typeof isMePlayer === 'function' ? isMePlayer(p) : false)
+    );
+
+    // 이미 난타 대기 중이거나 난타 경기 중일 때 비활성화
+    const cannotJoinNanta = amIActuallyInNanta || (typeof isPlayingNanta !== 'undefined' && isPlayingNanta);
 
     if (nantaQueue.length === 0) {
         container.innerHTML = `<div class="empty-queue-msg">현재 대기 중인 난타 방이 없습니다.</div>`;
@@ -826,19 +837,19 @@ function renderNantaQueue() {
                         </div>`;
                 }
             } else {
-                // [난타참여 버튼]: 참여 불가 시 비활성화
+                // [난타참여 버튼]: 이미 난타 대기 중이거나 경기 중이면 애초부터 회색으로 즉시 렌더링 (깜빡임 방지)
                 if (cannotJoinNanta) {
                     playerCellsHtml += `
-                        <div class="player-cell" style="background:#2a2a2a; cursor:not-allowed;">
-                            <span class="empty-cell" style="color:#777;">난타참여</span>
-                        </div>`;
-                } else {
+                    <div class="player-cell" data-cannot-join="true" style="background:#242730 !important; border:1px solid #333a48 !important; cursor:not-allowed !important;">
+                    <span class="empty-cell" style="color:#6b7280 !important; pointer-events:none !important; opacity:0.8 !important;">난타참여</span>
+                    </div>`;
+            } else {
                     playerCellsHtml += `
-                        <div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;">
-                            <span class="empty-cell">난타참여</span>
-                        </div>`;
+                    <div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;">
+                    <span class="empty-cell">난타참여</span>
+                    </div>`;
+                     }
                 }
-            }
         }
 
         const validNantaCount = getValidPlayers(slot.players).length;
@@ -884,6 +895,9 @@ function updateAvailableCourtCounts() {
 // 1. 게임방 개설 (구장별 세션 반영 및 방어 로직 완비)
 // ==========================================
 async function createNewGameSlot() {
+    // 💡 [Wi-Fi 검사 최우선 차단] 접속/단절 시 가장 먼저 검사 후 차단
+    if (!checkGymWifiOrAlert()) return;
+
     // 🔑 현재 구장 식별 및 구장 전용 키 조회
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
                    || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
@@ -974,29 +988,6 @@ async function createNewGameSlot() {
         return;
     }
 
-    // 체육관 Wi-Fi 검사
-    const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
-
-    if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
-        const modal = document.getElementById('custom-alert-modal');
-        const msgEl = document.getElementById('custom-alert-message');
-        const confirmBtn = document.getElementById('custom-alert-ok-btn');
-
-        if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
-            modal.style.display = 'flex';
-
-            if (confirmBtn) {
-                confirmBtn.onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
-        } else {
-            alert('⚠️️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
-        }
-        return;
-    }
-
     // 정상 게임방 개설 요청
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
@@ -1011,6 +1002,9 @@ async function createNewGameSlot() {
 // 2. 난타방 개설 (문구 통일 및 완벽 방어)
 // ==========================================
 async function createNewNantaSlot() {
+    // 💡 [Wi-Fi 검사 최우선 차단] 접속/단절 시 가장 먼저 검사 후 차단
+    if (!checkGymWifiOrAlert()) return;
+
     // 🔑 현재 구장 식별 및 구장 전용 키 조회
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
                    || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
@@ -1114,29 +1108,6 @@ async function createNewNantaSlot() {
         return;
     }
 
-    // 체육관 Wi-Fi 검사
-    const isRestrictionActive = (localStorage.getItem("useWifiRestriction") === "true") || (window.useWifiRestriction === true);
-
-    if (isRestrictionActive && (!window.isGymWifiConnected || window.isGymWifiConnected === false)) {
-        const modal = document.getElementById('custom-alert-modal');
-        const msgEl = document.getElementById('custom-alert-message');
-        const confirmBtn = document.getElementById('custom-alert-ok-btn');
-
-        if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.';
-            modal.style.display = 'flex';
-
-            if (confirmBtn) {
-                confirmBtn.onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
-        } else {
-            alert('⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
-        }
-        return;
-    }
-
     // 정상 난타방 개설 요청
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (!activeSocket) {
@@ -1148,24 +1119,8 @@ async function createNewNantaSlot() {
 }
 
 async function joinGameCell(slotId, idx) {
-    // 📶 구장 Wi-Fi 접속 여부 체크 (커스텀 모달 적용)
-    if (!window.isGymWifiConnected) {
-        const modal = document.getElementById('custom-alert-modal');
-        const msgEl = document.getElementById('custom-alert-message');
-        const confirmBtn = document.getElementById('custom-alert-ok-btn');
-
-        if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
-            modal.style.display = 'flex';
-
-            if (confirmBtn) {
-                confirmBtn.onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
-        }
-        return;
-    }
+    // 💡 [Wi-Fi 검사 통일] 구장 전용 안내창 호출 및 미연결 시 차단
+    if (!checkGymWifiOrAlert()) return;
 
     // 🔑 현재 구장 식별 및 구장 전용 키 조회
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
@@ -1219,24 +1174,8 @@ async function joinGameCell(slotId, idx) {
 }
 
 async function joinNantaCell(slotId, idx) {
-    // 📶 구장 Wi-Fi 접속 여부 체크 (커스텀 모달 적용)
-    if (!window.isGymWifiConnected) {
-        const modal = document.getElementById('custom-alert-modal');
-        const msgEl = document.getElementById('custom-alert-message');
-        const confirmBtn = document.getElementById('custom-alert-ok-btn');
-
-        if (modal && msgEl) {
-            msgEl.innerText = '⚠️ 체육관 공용 Wi-Fi에 연결되어야 참여가 가능합니다. Wi-Fi 연결 상태를 확인해 주세요.';
-            modal.style.display = 'flex';
-
-            if (confirmBtn) {
-                confirmBtn.onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
-        }
-        return;
-    }
+    // 💡 [Wi-Fi 검사 통일] 구장 전용 안내창 호출 및 미연결 시 차단
+    if (!checkGymWifiOrAlert()) return;
 
     // 🔑 현재 구장 식별 및 구장 전용 키 조회
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
@@ -1704,16 +1643,43 @@ document.addEventListener('click', (event) => {
     }
 });
 
-// 📶 Wi-Fi 상태에 따른 버튼(개설/참여/통합) 시각적 비활성화 및 클릭 차단
+// ==========================================
+// 📶 구장 Wi-Fi 단절/미접속 시 공통 안내 팝업 함수
+// ==========================================
+function checkGymWifiOrAlert() {
+    const restrictionEnabled = (typeof window.useWifiRestriction === 'boolean') 
+        ? window.useWifiRestriction 
+        : (localStorage.getItem("useWifiRestriction") !== "false");
+
+    // Wi-Fi 제한이 켜져 있고, 현재 구장 Wi-Fi에 연결되어 있지 않은 경우
+    if (restrictionEnabled && !window.isGymWifiConnected) {
+        const modal = document.getElementById('custom-alert-modal');
+        const msgEl = document.getElementById('custom-alert-message');
+        const confirmBtn = document.getElementById('custom-alert-ok-btn');
+        const messageText = '⚠️ 구장 전용 Wi-Fi에 접속 후 이용해 주세요.';
+
+        if (modal && msgEl) {
+            msgEl.innerText = messageText;
+            modal.style.display = 'flex';
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    modal.style.display = 'none';
+                };
+            }
+        } else {
+            alert(messageText);
+        }
+        return false; // 클릭 동작 차단
+    }
+    return true; // 정상 통과
+}
+
+// 📶 Wi-Fi 상태에 따른 버튼 및 참여 슬롯 시각 제어 (클릭 안내 메시지 허용)
 function updateWifiRestrictedButtons() {
     const restrictionEnabled = (typeof window.useWifiRestriction === 'boolean') ? window.useWifiRestriction : true;
     const isWifi = !restrictionEnabled || Boolean(window.isGymWifiConnected);
 
-    const activeColor = '#22c55e'; // 연결 시: 밝은 녹색
-    const inactiveColor = '#777777'; // 이탈 시: 비활성 회색
-    const targetColor = isWifi ? activeColor : inactiveColor;
     const targetCursor = isWifi ? 'pointer' : 'not-allowed';
-    const pointerState = isWifi ? 'auto' : 'none';
 
     // 1. 방 개설 버튼 (게임신청 방 개설 / 난타신청 방 개설)
     const createBtns = Array.from(document.querySelectorAll('button, div, a')).filter(el => {
@@ -1726,36 +1692,38 @@ function updateWifiRestrictedButtons() {
             btn.style.removeProperty('opacity');
             btn.style.removeProperty('filter');
             btn.style.removeProperty('cursor');
-            btn.style.removeProperty('pointer-events');
             btn.removeAttribute('title');
         } else {
-            // 💡 CSS 우선순위 무시하고 강제로 흐리게 덮어쓰기
-            btn.style.setProperty('opacity', '0.35', 'important');
-            btn.style.setProperty('filter', 'grayscale(90%) brightness(0.7)', 'important');
+            btn.style.setProperty('opacity', '0.75', 'important');
+            btn.style.setProperty('filter', 'grayscale(50%)', 'important');
             btn.style.setProperty('cursor', targetCursor, 'important');
-            btn.style.setProperty('pointer-events', pointerState, 'important');
-            btn.title = '체육관 공용 Wi-Fi 연결 시 이용 가능합니다.';
+            btn.title = '구장 전용 Wi-Fi에 접속 후 이용해 주세요.';
         }
     });
 
-    // 2. 대기열 내 '게임참여' / '난타참여' 슬롯 셀
-    const joinElements = Array.from(document.querySelectorAll('*')).filter(el => {
-        if (el.children.length > 0) return false;
-        const txt = (el.textContent || '').trim();
-        return txt === '게임참여' || txt === '난타참여';
-    });
+    // 2. 비어있는 '게임참여' / '난타참여' 칸 제어
+    const playerCells = Array.from(document.querySelectorAll('.player-cell'));
 
-    joinElements.forEach(el => {
-        el.style.setProperty('color', targetColor, 'important');
-        el.style.setProperty('cursor', targetCursor, 'important');
-        el.style.setProperty('pointer-events', pointerState, 'important');
-        if (el.parentElement) {
-            el.parentElement.style.setProperty('cursor', targetCursor, 'important');
-            el.parentElement.style.setProperty('pointer-events', pointerState, 'important');
-            if (!isWifi) {
-                el.parentElement.style.setProperty('opacity', '0.4', 'important');
+    playerCells.forEach(cell => {
+        // 이미 사람이 들어가 있는 칸 또는 이미 대기 중이라 잠긴 칸은 건너뜀
+        if (cell.querySelector('.player-info') || cell.querySelector('.btn-exit') || cell.querySelector('button') || cell.getAttribute('data-cannot-join') === 'true') {
+            return;
+        }
+
+        const txt = (cell.textContent || '').trim();
+        if (txt === '게임참여' || txt === '난타참여') {
+            const spanEl = cell.querySelector('.empty-cell') || cell;
+
+            if (isWifi) {
+                cell.style.removeProperty('cursor');
+                cell.style.removeProperty('background');
+                cell.style.removeProperty('border-color');
+                spanEl.style.removeProperty('color');
             } else {
-                el.parentElement.style.removeProperty('opacity');
+                cell.style.setProperty('cursor', targetCursor, 'important');
+                cell.style.setProperty('background', '#1f242d', 'important');
+                cell.style.setProperty('border-color', '#3a414e', 'important');
+                spanEl.style.setProperty('color', '#6b7280', 'important');
             }
         }
     });
@@ -1771,12 +1739,10 @@ function updateWifiRestrictedButtons() {
             btn.style.removeProperty('opacity');
             btn.style.removeProperty('filter');
             btn.style.removeProperty('cursor');
-            btn.style.removeProperty('pointer-events');
         } else {
-            btn.style.setProperty('opacity', '0.35', 'important');
-            btn.style.setProperty('filter', 'grayscale(90%) brightness(0.7)', 'important');
+            btn.style.setProperty('opacity', '0.7', 'important');
+            btn.style.setProperty('filter', 'grayscale(50%)', 'important');
             btn.style.setProperty('cursor', targetCursor, 'important');
-            btn.style.setProperty('pointer-events', pointerState, 'important');
         }
     });
 }
