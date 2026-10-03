@@ -1701,12 +1701,28 @@ function updateWifiRestrictedButtons() {
         }
     });
 
-    // 2. 비어있는 '게임참여' / '난타참여' 칸 제어
+    // 2. 슬롯 칸(플레이어 정보 vs 빈칸) 제어
     const playerCells = Array.from(document.querySelectorAll('.player-cell'));
 
     playerCells.forEach(cell => {
-        // 이미 사람이 들어가 있는 칸 또는 이미 대기 중이라 잠긴 칸은 건너뜀
-        if (cell.querySelector('.player-info') || cell.querySelector('.btn-exit') || cell.querySelector('button') || cell.getAttribute('data-cannot-join') === 'true') {
+        const isOccupied = cell.querySelector('.player-info') || cell.querySelector('.btn-exit') || cell.querySelector('button');
+        
+        // 💡 [핵심] 이미 사람이 들어가 있는 칸(내 정보, 퇴장 버튼 포함)은 Wi-Fi 상태와 무관하게 100% 선명도 유지
+        if (isOccupied) {
+            cell.style.setProperty('opacity', '1', 'important');
+            cell.style.setProperty('filter', 'none', 'important');
+            const exitBtn = cell.querySelector('.btn-exit, button');
+            if (exitBtn) {
+                exitBtn.style.setProperty('opacity', '1', 'important');
+                exitBtn.style.setProperty('filter', 'none', 'important');
+                exitBtn.style.setProperty('cursor', 'pointer', 'important');
+                exitBtn.style.setProperty('pointer-events', 'auto', 'important');
+            }
+            return;
+        }
+
+        // 이미 대기 중이라 잠긴 빈칸(회색 처리된 칸)
+        if (cell.getAttribute('data-cannot-join') === 'true') {
             return;
         }
 

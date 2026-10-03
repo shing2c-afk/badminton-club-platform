@@ -3045,17 +3045,24 @@ io.on('connection', (socket) => {
         const currentClubId = socket.clubId || 'unjeong';
         const rawUser = userSockets[currentSocketId] || socket.username;
         
-        let userKey = '';
+        let rawUsername = '';
         if (rawUser) {
-            userKey = (typeof rawUser === 'object' && rawUser !== null)
-                ? (rawUser.id || rawUser.username || rawUser.name || '')
+            rawUsername = (typeof rawUser === 'object' && rawUser !== null)
+                ? (rawUser.name || rawUser.username || rawUser.id || '')
                 : String(rawUser);
         }
 
+        // 💡 [핵심] registerUserSession과 완벽히 동일한 cleanUsername 및 clubUserKey 추출
+        const cleanUsername = String(rawUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
+        const clubUserKey = `${currentClubId}_${cleanUsername}`;
+
         // 소켓 매핑 정보 정리
         delete userSockets[currentSocketId];
-        if (userKey && activeUserSockets.get(userKey) === currentSocketId) {
-            activeUserSockets.delete(userKey);
+        if (cleanUsername && activeUserSockets.get(clubUserKey) === currentSocketId) {
+            activeUserSockets.delete(clubUserKey);
+        }
+        if (cleanUsername && activeUserSockets.get(cleanUsername) === currentSocketId) {
+            activeUserSockets.delete(cleanUsername);
         }
 
         // 접속자 수 갱신
@@ -3071,62 +3078,66 @@ io.on('connection', (socket) => {
         // -------------------------------------------------------------
         // 💡 비명시적 단절 (와이파이 단절, 화면 꺼짐): 2단계 유예 타이머 가동
         // -------------------------------------------------------------
-        if (userKey) {
+        if (cleanUsername) {
             // 기존에 돌고 있던 타이머가 있다면 초기화
-            if (disconnectTimers[userKey]) {
-                clearTimeout(disconnectTimers[userKey]);
+            if (disconnectTimers[cleanUsername]) {
+                clearTimeout(disconnectTimers[cleanUsername]);
             }
-            if (typeof sessionTimers !== 'undefined' && sessionTimers[userKey]) {
-                clearTimeout(sessionTimers[userKey]);
+            if (typeof sessionTimers !== 'undefined' && sessionTimers[cleanUsername]) {
+                clearTimeout(sessionTimers[cleanUsername]);
             }
 
-            // 💡 끊긴 시점의 구장과 유저 정보 저장 (클럽 변경 감지용)
-            if (typeof disconnectUserClubs !== 'undefined') disconnectUserClubs[userKey] = currentClubId;
-            if (typeof disconnectRawUsers !== 'undefined') disconnectRawUsers[userKey] = rawUser;
+            // 끊긴 시점의 구장과 유저 정보 저장 (클럽 변경 감지용)
+            if (typeof disconnectUserClubs !== 'undefined') disconnectUserClubs[cleanUsername] = currentClubId;
+            if (typeof disconnectRawUsers !== 'undefined') disconnectRawUsers[cleanUsername] = rawUser;
 
-            // ⏱️ 해당 클럽의 설정값(분 단위) 불러오기 (설정이 없으면 기본 30분 / 60분 적용)
+            // ⏱️ 해당 클럽의 설정값(분 단위) 불러오기
             const currentClub = (typeof getClub === 'function') ? getClub(currentClubId) : null;
             const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 30;
             const expireMinutes = (currentClub && currentClub.config && currentClub.config.sessionExpireMinutes) ? currentClub.config.sessionExpireMinutes : 60;
 
-            // [1단계: 설정된 유예 시간] 대기열 유지 시간 (폰 화면 꺼짐/몸풀기 배려)
-            disconnectTimers[userKey] = setTimeout(async () => {
+            // [1단계: 설정된 유예 시간] 대기열 유지 시간 (방 보존)
+            disconnectTimers[cleanUsername] = setTimeout(async () => {
                 if (typeof cleanupUser === 'function') {
-                    // 💡 구장 ID를 명시하여 해당 구장 대기열에서 정확히 삭제
+                    // 💡 해당 구장 대기열 슬롯에서만 정리
                     await cleanupUser(rawUser, currentClubId);
                 }
-                delete disconnectTimers[userKey];
-                if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[userKey];
-                if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[userKey];
+                delete disconnectTimers[cleanUsername];
+                if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
+                if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
                 
-                // 💡 [카운트 실시간 갱신] 대기열이 비워졌으므로 즉시 구장 화면에 전파
+                // 대기열 비워짐 화면 전파
                 if (typeof broadcastOnlineCount === 'function') {
                     broadcastOnlineCount(currentClubId);
                 }
-                console.log(`🧹 [대기열 정리] 유저(${userKey}) ${graceMinutes}분 미접속으로 대기방/슬롯에서 제외되었습니다.`);
+                console.log(`🧹 [대기열 정리] 유저(${cleanUsername}) ${graceMinutes}분 미접속으로 대기방/슬롯에서 제외되었습니다.`);
             }, graceMinutes * 60 * 1000);
 
-            // [2단계: 설정된 만료 시간] 세션 만료 및 재접속 시 즉시 튕겨내도록 차단 등록
+            // [2단계: 설정된 만료 시간] 세션 만료 및 실시간 강제 로그아웃 전송
             if (typeof sessionTimers !== 'undefined') {
-                sessionTimers[userKey] = setTimeout(() => {
-                    expiredUsers[userKey] = true;
-                    delete sessionTimers[userKey];
+                sessionTimers[cleanUsername] = setTimeout(() => {
+                    expiredUsers[cleanUsername] = true;
+                    delete sessionTimers[cleanUsername];
                     
-                    // 💡 실시간 연결된 소켓이 있다면 즉시 강제 로그아웃 신호 전송
-                    const activeSid = (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) 
-                        ? activeUserSockets.get(userKey) 
-                        : null;
+                    // 💡 [핵심 수정] clubUserKey 및 cleanUsername 양방향으로 살아있는 소켓 탐색
+                    let activeSid = null;
+                    if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+                        activeSid = activeUserSockets.get(clubUserKey) || activeUserSockets.get(cleanUsername);
+                    }
 
+                    // 💡 실시간 연결 소켓이 있으면 새로고침 없이 즉시 팝업 알림 및 퇴출
                     if (activeSid) {
                         io.to(activeSid).emit('forceLogout', {
-                            message: `장시간(총 ${graceMinutes + expireMinutes}분) 체육관 Wi-Fi 미접속으로 인해 안전하게 자동 로그아웃되었습니다.`
+                            message: `장시간(총 ${graceMinutes + expireMinutes}분) Wi-Fi 미접속으로 인해 안전하게 자동 로그아웃되었습니다.`
                         });
+                        activeUserSockets.delete(clubUserKey);
+                        activeUserSockets.delete(cleanUsername);
                     }
 
                     if (typeof broadcastOnlineCount === 'function') {
                         broadcastOnlineCount(currentClubId);
                     }
-                    console.log(`🔒 [세션 완전 만료] 유저(${userKey}) ${expireMinutes}분 경과로 세션이 만료되었습니다.`);
+                    console.log(`🔒 [세션 완전 만료] 유저(${cleanUsername}) ${expireMinutes}분 경과로 세션이 만료되었습니다.`);
                 }, (graceMinutes + expireMinutes) * 60 * 1000);
             }
         }
