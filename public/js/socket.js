@@ -139,41 +139,59 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
-// 📶 스마트폰 Wi-Fi ON 및 화면 복귀 시 즉시 상태 갱신
+// 📶 스마트폰 Wi-Fi 재연결 감지 및 자동 활성화 (새로고침 연동)
 // ==========================================
-function triggerWifiStatusCheck() {
-    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-    if (activeSocket) {
-        if (activeSocket.connected) {
-            console.log('📡 Wi-Fi 상태 즉시 재검사 요청 전송');
+let wifiCheckRetryTimer = null;
+
+function handleWifiReconnection() {
+    // 💡 이미 인증된 상태라면 불필요한 반복 방지
+    if (window.isGymWifiConnected) return;
+
+    console.log('🔄 [네트워크 변경 감지] Wi-Fi 연결 감지: 최신 상태 확인 시작');
+
+    let checkCount = 0;
+    if (wifiCheckRetryTimer) clearInterval(wifiCheckRetryTimer);
+
+    // 0.8초 간격으로 서버에 최신 Wi-Fi 접속 여부(IP) 확인 요청
+    wifiCheckRetryTimer = setInterval(() => {
+        checkCount++;
+        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+
+        if (activeSocket) {
+            if (!activeSocket.connected) {
+                activeSocket.connect();
+            }
             activeSocket.emit('requestWifiStatus');
-        } else {
-            activeSocket.connect();
         }
-    }
+
+        // 통신사 망(LTE)에서 공유기 IP로 전환되는 지연으로 2.4초간 안 풀리면 확실하게 자동 새로고침
+        if (checkCount >= 3) {
+            clearInterval(wifiCheckRetryTimer);
+            if (!window.isGymWifiConnected) {
+                console.log('⚡ 최신 Wi-Fi IP 반영을 위해 페이지를 자동 새로고침합니다.');
+                window.location.reload();
+            }
+        }
+    }, 800);
 }
 
-// 1. 스마트폰 상단바에서 Wi-Fi 켰을 때 감지 (IP 할당 시간 0.5초 대기 후 요청)
-window.addEventListener('online', () => {
-    setTimeout(triggerWifiStatusCheck, 500);
-});
+// 1. 스마트폰 상단바에서 Wi-Fi 켰을 때
+window.addEventListener('online', handleWifiReconnection);
 
-// 2. Wi-Fi 켜고 브라우저 화면으로 돌아왔을 때 감지
+// 2. Wi-Fi 켜고 브라우저 화면으로 돌아왔을 때
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        triggerWifiStatusCheck();
+    if (document.visibilityState === 'visible' && !window.isGymWifiConnected) {
+        handleWifiReconnection();
     }
 });
 
-// 3. 소켓이 재접속 완료된 순간에도 최신 상태 확인
-(function() {
-    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-    if (activeSocket) {
-        activeSocket.on('connect', () => {
-            activeSocket.emit('requestWifiStatus');
-        });
-    }
-})();
+// 3. 소켓이 재연결된 직후 최신 상태 확인
+const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+if (activeSocket) {
+    activeSocket.on('connect', () => {
+        activeSocket.emit('requestWifiStatus');
+    });
+}
 
 // ==========================================
 // 🔔 [1단계] 로그인 사용자 전용 채널 등록 함수
