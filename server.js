@@ -595,6 +595,24 @@ app.get('/api/clubs', (req, res) => {
     }
 });
 
+// 📶 [추가] 모바일 클라이언트 전용 초경량 Wi-Fi 상태 확인 API
+app.get('/api/check-wifi', (req, res) => {
+    // 프록시/Render 환경 고려한 클라이언트 실제 IP 추출
+    const forwarded = req.headers['x-forwarded-for'];
+    const clientIp = forwarded ? forwarded.split(',')[0].trim() : (req.socket.remoteAddress || '');
+    
+    const clubId = req.query.clubId || 'unjeong';
+    const club = (typeof getClub === 'function') ? getClub(clubId) : (clubs && clubs[clubId]);
+    
+    // IP 일치 여부 판별
+    let isGym = false;
+    if (club && club.config && Array.isArray(club.config.allowedGymIps)) {
+        isGym = club.config.allowedGymIps.some(allowedIp => clientIp.includes(allowedIp));
+    }
+
+    res.json({ isGymWifi: isGym, clientIp: clientIp });
+});
+
 // ==========================
 // 3. 데이터베이스(SQLite) 연결 및 초기화
 // ==========================
@@ -1952,7 +1970,7 @@ io.on('connection', (socket) => {
     
     // ✅ [추가] 룸 입장 직후 해당 클럽 접속자 수 즉시 계산 및 화면 전송
     broadcastOnlineCount(clientClubId);
-    
+
     // 🔔 로그인 사용자 소켓 등록 처리
     socket.on('registerUser', (userData) => {
         if (userData && userData.phone) {

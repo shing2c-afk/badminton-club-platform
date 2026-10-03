@@ -139,51 +139,84 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
-// 📶 모바일 Wi-Fi 복귀 시 안전한 비동기 상태 갱신 (새로고침 제거)
+// 📶 모바일 Wi-Fi 자동 전환 능동 감지기 (HTTP 폴링 + 소켓 자동 복구)
 // ==========================================
 (function() {
-    let isChecking = false;
+    let wifiDetectionTimer = null;
 
-    async function refreshWifiStatusSilently() {
-        if (isChecking) return;
-        // 이미 인증된 상태라면 불필요한 요청 방지
-        if (window.isGymWifiConnected) return;
-
-        isChecking = true;
+    async function checkCurrentNetwork() {
+        // 이미 체육관 와이파이 인증이 끝난 상태라면 감지 정지
+        if (window.isGymWifiConnected) {
+            if (wifiDetectionTimer) {
+                clearInterval(wifiDetectionTimer);
+                wifiDetectionTimer = null;
+            }
+            return;
+        }
 
         try {
-            // 1. 가벼운 HTTP 호출로 현재 연결된 네트워크 IP 확인
-            const response = await fetch('/api/clubs', { cache: 'no-store' });
-            
-            // 2. 소켓이 살아있다면 서버에 Wi-Fi 판별 강제 요청
-            const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-            if (activeSocket) {
-                if (!activeSocket.connected) {
+            const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
+            // 캐시를 타지 않는 초경량 HTTP 요청으로 현재 IP 상태 확인
+            const res = await fetch(`/api/check-wifi?clubId=${clubId}&_t=${Date.now()}`);
+            if (!res.ok) return;
+            const data = await res.json();
+
+            // 🎯 스마트폰이 체육관 Wi-Fi IP를 잡았을 때 스스로 감지!
+            if (data.isGymWifi) {
+                console.log('🎉 구장 Wi-Fi 접속 감지 완료! 화면 및 소켓 자동 복구 시작');
+                window.isGymWifiConnected = true;
+                document.body.classList.add('gym-wifi-active');
+
+                // 버튼 즉시 활성화
+                if (typeof updateWifiRestrictedButtons === 'function') {
+                    updateWifiRestrictedButtons();
+                }
+
+                // 멍때리고 있던 소켓을 새 Wi-Fi 망으로 강제 재연결
+                const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+                if (activeSocket) {
+                    activeSocket.disconnect();
                     activeSocket.connect();
                 }
-                activeSocket.emit('requestWifiStatus');
+
+                if (wifiDetectionTimer) {
+                    clearInterval(wifiDetectionTimer);
+                    wifiDetectionTimer = null;
+                }
             }
-        } catch (err) {
-            console.warn('Wi-Fi 상태 갱신 네트워크 대기 중:', err);
-        } finally {
-            setTimeout(() => {
-                isChecking = false;
-            }, 1000);
+        } catch (e) {
+            // 통신망 전환 찰나(순간 끊김) 에러는 조용히 무시
         }
     }
 
-    // 상단바를 올리고 앱 화면으로 돌아왔을 때 백그라운드 갱신
+    function startWifiDetector() {
+        if (window.isGymWifiConnected) return;
+        if (!wifiDetectionTimer) {
+            checkCurrentNetwork(); // 즉시 1회 확인
+            wifiDetectionTimer = setInterval(checkCurrentNetwork, 1500); // 1.5초마다 스스로 검사
+        }
+    }
+
+    function stopWifiDetector() {
+        if (wifiDetectionTimer) {
+            clearInterval(wifiDetectionTimer);
+            wifiDetectionTimer = null;
+        }
+    }
+
+    // 1. 화면이 켜져 있거나 돌아왔을 때 능동 감지 시작
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && !window.isGymWifiConnected) {
-            // 망 전환 안정화를 위해 0.3초 대기 후 가볍게 상태만 조회
-            setTimeout(refreshWifiStatusSilently, 300);
+        if (document.visibilityState === 'visible') {
+            startWifiDetector();
+        } else {
+            stopWifiDetector();
         }
     });
 
-    // 화면 복귀 시
-    window.addEventListener('online', () => {
-        setTimeout(refreshWifiStatusSilently, 500);
-    });
+    // 2. 초기 로드 시 미인증 상태라면 감지기 가동
+    if (!window.isGymWifiConnected) {
+        startWifiDetector();
+    }
 })();
 
 // ==========================================
