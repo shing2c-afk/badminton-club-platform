@@ -139,67 +139,32 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
-// 📶 스마트폰 Wi-Fi 재연결 감지 및 강제 자동 복구/새로고침
+// 📶 모바일 Wi-Fi 복귀 시 100% 확실한 즉시 새로고침
 // ==========================================
-let lastWifiCheckTime = 0;
-
-async function forceWifiRecovery() {
-    const now = Date.now();
-    // 1초 이내 너무 잦은 중복 실행 방지
-    if (now - lastWifiCheckTime < 1000) return;
-    lastWifiCheckTime = now;
-
-    // 이미 구장 와이파이에 연결되어 있다면 통과
-    if (window.isGymWifiConnected) return;
-
-    console.log('🔄 Wi-Fi 재접속 시도: 통신망 깨우기 진행');
-
-    try {
-        // 1. HTTP 요청으로 모바일 브라우저의 정지된 네트워크 스택을 깨움
-        await fetch('/api/clubs', { cache: 'no-store' }).catch(() => {});
-
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-        if (activeSocket) {
-            if (!activeSocket.connected) {
-                activeSocket.connect();
-            }
-            // 관리자 방식처럼 서버에 즉시 판별 요청
-            activeSocket.emit('requestWifiStatus');
+(function() {
+    function reloadIfLocked() {
+        // 구장 Wi-Fi 미인증(버튼 잠김) 상태일 때만 동작
+        const isLocked = !window.isGymWifiConnected || !document.body.classList.contains('gym-wifi-active');
+        
+        if (isLocked) {
+            console.log('⚡ 잠금 상태에서 화면 복귀 감지 -> 즉시 자동 새로고침 실행');
+            window.location.reload();
         }
-
-        // 2. 1.5초 후에도 여전히 Wi-Fi 인증이 안 되었다면 브라우저가 100% 확실하게 새로고침
-        setTimeout(() => {
-            if (!window.isGymWifiConnected) {
-                console.log('⚡ 확실한 Wi-Fi IP 반영을 위해 자동 새로고침을 실행합니다.');
-                window.location.reload();
-            }
-        }, 1500);
-
-    } catch (e) {
-        window.location.reload();
     }
-}
 
-// 1. 스마트폰 상단바에서 Wi-Fi 켰을 때
-window.addEventListener('online', forceWifiRecovery);
-
-// 2. 스마트폰 상단바를 올리고 브라우저 화면으로 돌아왔을 때
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        forceWifiRecovery();
-    }
-});
-
-// 3. 브라우저 창 활성화 시
-window.addEventListener('focus', forceWifiRecovery);
-
-// 4. 소켓이 재연결된 순간 즉시 서버에 재인증 요청
-const currentSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-if (currentSocket) {
-    currentSocket.on('connect', () => {
-        currentSocket.emit('requestWifiStatus');
+    // 1. 상단바 올리고 브라우저로 돌아왔을 때 즉시 새로고침
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            reloadIfLocked();
+        }
     });
-}
+
+    // 2. 화면이 다시 활성화(포커스)될 때 즉시 새로고침
+    window.addEventListener('focus', reloadIfLocked);
+
+    // 3. 사용자가 화면 아무 곳이나 터치했을 때 즉시 새로고침
+    window.addEventListener('touchstart', reloadIfLocked, { once: true });
+})();
 
 // ==========================================
 // 🔔 [1단계] 로그인 사용자 전용 채널 등록 함수
