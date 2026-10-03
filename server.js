@@ -2022,26 +2022,36 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ⏱️ [핵심 추가] handshake 쿼리로 전달된 유저 정보가 있다면 미접속 퇴장 타이머 즉시 해제
-    const incomingPhone = socket.handshake.query && socket.handshake.query.phone;
-    const incomingUser = socket.handshake.query && (socket.handshake.query.username || socket.handshake.query.userKey || socket.handshake.query.userId);
+    // ⏱️ [핵심 복구] 재접속 소켓을 userSockets에 매핑하고 1분 퇴장 타이머 즉시 해제
+    const __rc_Phone = socket.handshake.query && socket.handshake.query.phone;
+    const __rc_User = socket.handshake.query && (socket.handshake.query.username || socket.handshake.query.userKey || socket.handshake.query.userId);
+    const __rc_TargetUser = (__rc_Phone || __rc_User || '').trim();
 
-    const candidateKeys = [incomingPhone, incomingUser].filter(Boolean);
-    candidateKeys.forEach(k => {
-        const keyStr = String(k).trim();
-        if (keyStr && typeof disconnectTimers !== 'undefined' && disconnectTimers[keyStr]) {
-            clearTimeout(disconnectTimers[keyStr]);
-            delete disconnectTimers[keyStr];
-            console.log(`⏱️ [재접속 확인] 소켓 연결 시 유저(${keyStr})의 미접속 대기열 삭제 타이머 해제 완료`);
+    if (__rc_TargetUser) {
+        socket.username = __rc_TargetUser;
+        if (typeof userSockets !== 'undefined') {
+            userSockets[socket.id] = __rc_TargetUser;
         }
-    });
+
+        if (typeof disconnectTimers !== 'undefined') {
+            Object.keys(disconnectTimers).forEach(timerKey => {
+                if (timerKey.includes(__rc_TargetUser) || __rc_TargetUser.includes(timerKey)) {
+                    clearTimeout(disconnectTimers[timerKey]);
+                    delete disconnectTimers[timerKey];
+                    if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[timerKey];
+                    if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[timerKey];
+                    console.log(`⏱️ [재접속 복귀] 새 소켓(${socket.id})으로 유저(${timerKey}) 재접속 확인 -> 1분 미접속 대기열 삭제 타이머 해제 완료!`);
+                }
+            });
+        }
+    }
 
     // 📶 접속자의 구장 Wi-Fi 여부 판별 후 개별 전달
     const initialIsGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, clientClubId) : true;
     const initialClientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
     socket.emit('wifiStatus', { 
         isGymWifi: initialIsGym, 
-        clientIp: initialClientIp,
+        clientIp: initialClientIp, 
         useWifiRestriction: true 
     });
 
