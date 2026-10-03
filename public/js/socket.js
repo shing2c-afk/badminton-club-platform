@@ -117,7 +117,6 @@ socket.on('wifiStatus', (data) => {
         }
     } else {
         // 🟡 체육관 와이파이 이탈 시: 외부 사전 등록/참여 방지를 위해 버튼 즉시 잠금!
-        // (기존 개설된 대기방 보존 및 운동중 카운트는 서버의 유예 타이머가 보호함)
         if (prevWifiStatus === true) {
             if (window.wifiGraceTimer) {
                 clearTimeout(window.wifiGraceTimer);
@@ -128,95 +127,95 @@ socket.on('wifiStatus', (data) => {
             if (typeof updateWifiRestrictedButtons === 'function') {
                 updateWifiRestrictedButtons();
             }
+            // 💡 [추가] 와이파이가 끊겼으므로 다음 재접속을 위해 감지 엔진을 즉시 다시 깨움!
+            if (typeof window.startWifiDetector === 'function') {
+                window.startWifiDetector();
+            }
         } else if (prevWifiStatus === false) {
             // 처음부터 외부 접속인 경우
             document.body.classList.remove('gym-wifi-active');
             if (typeof updateWifiRestrictedButtons === 'function') {
                 updateWifiRestrictedButtons();
             }
+            // 💡 [추가] 처음부터 외부 접속일 때도 감지 엔진 가동 보장
+            if (typeof window.startWifiDetector === 'function') {
+                window.startWifiDetector();
+            }
         }
     }
 });
 
 // ==========================================
-// 📶 모바일 Wi-Fi 자동 전환 능동 감지기 (HTTP 폴링 + 소켓 자동 복구)
+// 📶 모바일 Wi-Fi 자동 전환 연속 감지기 (양방향 무한 자동 감지)
 // ==========================================
 (function() {
     let wifiDetectionTimer = null;
 
     async function checkCurrentNetwork() {
-        // 이미 체육관 와이파이 인증이 끝난 상태라면 감지 정지
-        if (window.isGymWifiConnected) {
-            if (wifiDetectionTimer) {
-                clearInterval(wifiDetectionTimer);
-                wifiDetectionTimer = null;
-            }
-            return;
-        }
-
         try {
             const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
-            // 캐시를 타지 않는 초경량 HTTP 요청으로 현재 IP 상태 확인
             const res = await fetch(`/api/check-wifi?clubId=${clubId}&_t=${Date.now()}`);
             if (!res.ok) return;
             const data = await res.json();
 
-            // 🎯 스마트폰이 체육관 Wi-Fi IP를 잡았을 때 스스로 감지!
-            if (data.isGymWifi) {
-                console.log('🎉 구장 Wi-Fi 접속 감지 완료! 화면 및 소켓 자동 복구 시작');
+            // 🟢 Case 1: 끊겼다가 다시 구장 Wi-Fi로 접속된 순간 감지!
+            if (data.isGymWifi && !window.isGymWifiConnected) {
+                console.log('🎉 [재연결 감지] 체육관 Wi-Fi 복귀 확인 -> 버튼 즉시 활성화');
                 window.isGymWifiConnected = true;
                 document.body.classList.add('gym-wifi-active');
 
-                // 버튼 즉시 활성화
                 if (typeof updateWifiRestrictedButtons === 'function') {
                     updateWifiRestrictedButtons();
                 }
 
-                // 멍때리고 있던 소켓을 새 Wi-Fi 망으로 강제 재연결
+                // 소켓 재연결로 세션/방 상태 완벽 동기화
                 const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
                 if (activeSocket) {
                     activeSocket.disconnect();
                     activeSocket.connect();
                 }
+            }
+            // 🔴 Case 2: 켜져 있다가 Wi-Fi를 끄고 LTE로 이탈한 순간 감지!
+            else if (!data.isGymWifi && window.isGymWifiConnected) {
+                console.log('🔒 [이탈 감지] Wi-Fi 해제 확인 -> 버튼 즉시 비활성화');
+                window.isGymWifiConnected = false;
+                document.body.classList.remove('gym-wifi-active');
 
-                if (wifiDetectionTimer) {
-                    clearInterval(wifiDetectionTimer);
-                    wifiDetectionTimer = null;
+                if (typeof updateWifiRestrictedButtons === 'function') {
+                    updateWifiRestrictedButtons();
                 }
             }
         } catch (e) {
-            // 통신망 전환 찰나(순간 끊김) 에러는 조용히 무시
+            // 망 전환 순간의 찰나 에러는 통과
         }
     }
 
-    function startWifiDetector() {
-        if (window.isGymWifiConnected) return;
+    // 외부에서도 호출할 수 있도록 전역 함수 등록
+    window.startWifiDetector = function() {
         if (!wifiDetectionTimer) {
-            checkCurrentNetwork(); // 즉시 1회 확인
-            wifiDetectionTimer = setInterval(checkCurrentNetwork, 1500); // 1.5초마다 스스로 검사
+            checkCurrentNetwork();
+            wifiDetectionTimer = setInterval(checkCurrentNetwork, 1500);
         }
-    }
+    };
 
-    function stopWifiDetector() {
+    window.stopWifiDetector = function() {
         if (wifiDetectionTimer) {
             clearInterval(wifiDetectionTimer);
             wifiDetectionTimer = null;
         }
-    }
+    };
 
-    // 1. 화면이 켜져 있거나 돌아왔을 때 능동 감지 시작
+    // 앱 화면을 보고 있을 때는 상시 1.5초 주기로 ON/OFF 상태를 능동 추적
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-            startWifiDetector();
+            window.startWifiDetector();
         } else {
-            stopWifiDetector();
+            window.stopWifiDetector();
         }
     });
 
-    // 2. 초기 로드 시 미인증 상태라면 감지기 가동
-    if (!window.isGymWifiConnected) {
-        startWifiDetector();
-    }
+    // 최초 실행 시 즉시 가동
+    window.startWifiDetector();
 })();
 
 // ==========================================
