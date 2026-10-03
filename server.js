@@ -2983,22 +2983,35 @@ io.on('connection', (socket) => {
     // 📶 [핵심] 클라이언트 와이파이 상태 변경 수신 (체육관 이탈/복귀 실시간 감지)
     // =================================================================
     socket.on('updateWifiState', (data) => {
-        const { inGym, clubId } = data || {};
+        const { inGym, clubId, userId, username } = data || {};
         const targetClubId = clubId || socket.clubId || 'unjeong';
         const currentClub = (typeof getClub === 'function') ? getClub(targetClubId) : clubs[targetClubId];
         
-        const rawUser = userSockets[socket.id] || socket.username;
+        // 💡 소켓 객체뿐만 아니라 전송된 데이터에서도 유저 식별자 확보
+        const rawUser = userId || username || userSockets[socket.id] || socket.username;
         let userKey = '';
         if (rawUser) {
             userKey = (typeof rawUser === 'object' && rawUser !== null)
                 ? (rawUser.id || rawUser.username || rawUser.name || '')
                 : String(rawUser);
+            userKey = userKey.trim();
         }
 
         // 소켓 객체에 체류 상태 및 유예 플래그 기록
         if (inGym) {
             socket.inGym = true;
             socket.inGracePeriod = false; // 체육관 복귀 시 유예 해제
+
+            // ⏱️ [핵심 해결] 체육관 복귀 시 실행 중이던 대기방 유예 삭제 타이머 즉시 취소!
+            if (userKey && typeof disconnectTimers !== 'undefined' && disconnectTimers[userKey]) {
+                clearTimeout(disconnectTimers[userKey]);
+                delete disconnectTimers[userKey];
+                console.log(`🎉 [유예 타이머 해제] 유저: ${userKey} 구장(${targetClubId}) Wi-Fi 복귀 확인 -> 대기방 보존 완료`);
+            }
+            if (userKey && typeof sessionTimers !== 'undefined' && sessionTimers[userKey]) {
+                clearTimeout(sessionTimers[userKey]);
+                delete sessionTimers[userKey];
+            }
         } else {
             // 이탈 시: 유예 플래그를 켜서 유예시간 동안 운동중 카운트 유지
             socket.inGracePeriod = true;

@@ -158,9 +158,9 @@ socket.on('wifiStatus', (data) => {
             if (!res.ok) return;
             const data = await res.json();
 
-            // 🟢 Case 1: 끊겼다가 다시 구장 Wi-Fi로 접속된 순간 감지!
+            // 🟢 Wi-Fi 접속 감지
             if (data.isGymWifi && !window.isGymWifiConnected) {
-                console.log('🎉 [재연결 감지] 체육관 Wi-Fi 복귀 확인 -> 버튼 즉시 활성화');
+                console.log('🎉 구장 Wi-Fi 접속 확인 -> 버튼 활성화');
                 window.isGymWifiConnected = true;
                 document.body.classList.add('gym-wifi-active');
 
@@ -168,11 +168,19 @@ socket.on('wifiStatus', (data) => {
                     updateWifiRestrictedButtons();
                 }
 
-                // 소켓 재연결로 세션/방 상태 완벽 동기화
                 const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
                 if (activeSocket) {
-                    activeSocket.disconnect();
-                    activeSocket.connect();
+                    if (!activeSocket.connected) {
+                        activeSocket.connect();
+                    }
+
+                    // 💡 [핵심] 서버에 Wi-Fi 복귀(inGym: true)를 알려 타이머를 끄도록 요청!
+                    const currentId = window.currentUserId || window.currentUserName || localStorage.getItem('userId') || localStorage.getItem('userName') || '';
+                    activeSocket.emit('updateWifiState', { 
+                        inGym: true, 
+                        clubId: clubId, 
+                        userId: currentId 
+                    });
                 }
             }
             // 🔴 Case 2: 켜져 있다가 Wi-Fi를 끄고 LTE로 이탈한 순간 감지!
