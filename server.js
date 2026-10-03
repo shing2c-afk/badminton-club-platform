@@ -1923,6 +1923,14 @@ io.on('connection', (socket) => {
     const isGym = isGymWifiUser(socket);
     socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(socket) });
 
+    // 📶 [추가] 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 처리
+    socket.on('requestWifiStatus', () => {
+        const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, socket.clubId) : true;
+        const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
+        socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: clientIp });
+        console.log(`📶 [Wi-Fi 재검사] 소켓(${socket.id}) 상태 전송: ${isGym ? '구장 Wi-Fi 인증' : '외부 접속'}`);
+    });
+
     console.log('새 소켓 연결:', socket.id);
 
     // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정

@@ -139,6 +139,43 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
+// 📶 스마트폰 Wi-Fi ON 및 화면 복귀 시 즉시 상태 갱신
+// ==========================================
+function triggerWifiStatusCheck() {
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (activeSocket) {
+        if (activeSocket.connected) {
+            console.log('📡 Wi-Fi 상태 즉시 재검사 요청 전송');
+            activeSocket.emit('requestWifiStatus');
+        } else {
+            activeSocket.connect();
+        }
+    }
+}
+
+// 1. 스마트폰 상단바에서 Wi-Fi 켰을 때 감지 (IP 할당 시간 0.5초 대기 후 요청)
+window.addEventListener('online', () => {
+    setTimeout(triggerWifiStatusCheck, 500);
+});
+
+// 2. Wi-Fi 켜고 브라우저 화면으로 돌아왔을 때 감지
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        triggerWifiStatusCheck();
+    }
+});
+
+// 3. 소켓이 재접속 완료된 순간에도 최신 상태 확인
+(function() {
+    const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+    if (activeSocket) {
+        activeSocket.on('connect', () => {
+            activeSocket.emit('requestWifiStatus');
+        });
+    }
+})();
+
+// ==========================================
 // 🔔 [1단계] 로그인 사용자 전용 채널 등록 함수
 // ==========================================
 window.registerUserSocket = function() {
