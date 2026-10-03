@@ -139,57 +139,65 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
-// 📶 스마트폰 Wi-Fi 재연결 감지 및 자동 활성화 (새로고침 연동)
+// 📶 스마트폰 Wi-Fi 재연결 감지 및 강제 자동 복구/새로고침
 // ==========================================
-let wifiCheckRetryTimer = null;
+let lastWifiCheckTime = 0;
 
-function handleWifiReconnection() {
-    // 💡 이미 인증된 상태라면 불필요한 반복 방지
+async function forceWifiRecovery() {
+    const now = Date.now();
+    // 1초 이내 너무 잦은 중복 실행 방지
+    if (now - lastWifiCheckTime < 1000) return;
+    lastWifiCheckTime = now;
+
+    // 이미 구장 와이파이에 연결되어 있다면 통과
     if (window.isGymWifiConnected) return;
 
-    console.log('🔄 [네트워크 변경 감지] Wi-Fi 연결 감지: 최신 상태 확인 시작');
+    console.log('🔄 Wi-Fi 재접속 시도: 통신망 깨우기 진행');
 
-    let checkCount = 0;
-    if (wifiCheckRetryTimer) clearInterval(wifiCheckRetryTimer);
+    try {
+        // 1. HTTP 요청으로 모바일 브라우저의 정지된 네트워크 스택을 깨움
+        await fetch('/api/clubs', { cache: 'no-store' }).catch(() => {});
 
-    // 0.8초 간격으로 서버에 최신 Wi-Fi 접속 여부(IP) 확인 요청
-    wifiCheckRetryTimer = setInterval(() => {
-        checkCount++;
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-
         if (activeSocket) {
             if (!activeSocket.connected) {
                 activeSocket.connect();
             }
+            // 관리자 방식처럼 서버에 즉시 판별 요청
             activeSocket.emit('requestWifiStatus');
         }
 
-        // 통신사 망(LTE)에서 공유기 IP로 전환되는 지연으로 2.4초간 안 풀리면 확실하게 자동 새로고침
-        if (checkCount >= 3) {
-            clearInterval(wifiCheckRetryTimer);
+        // 2. 1.5초 후에도 여전히 Wi-Fi 인증이 안 되었다면 브라우저가 100% 확실하게 새로고침
+        setTimeout(() => {
             if (!window.isGymWifiConnected) {
-                console.log('⚡ 최신 Wi-Fi IP 반영을 위해 페이지를 자동 새로고침합니다.');
+                console.log('⚡ 확실한 Wi-Fi IP 반영을 위해 자동 새로고침을 실행합니다.');
                 window.location.reload();
             }
-        }
-    }, 800);
+        }, 1500);
+
+    } catch (e) {
+        window.location.reload();
+    }
 }
 
 // 1. 스마트폰 상단바에서 Wi-Fi 켰을 때
-window.addEventListener('online', handleWifiReconnection);
+window.addEventListener('online', forceWifiRecovery);
 
-// 2. Wi-Fi 켜고 브라우저 화면으로 돌아왔을 때
+// 2. 스마트폰 상단바를 올리고 브라우저 화면으로 돌아왔을 때
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && !window.isGymWifiConnected) {
-        handleWifiReconnection();
+    if (document.visibilityState === 'visible') {
+        forceWifiRecovery();
     }
 });
 
-// 3. 소켓이 재연결된 직후 최신 상태 확인
-const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-if (activeSocket) {
-    activeSocket.on('connect', () => {
-        activeSocket.emit('requestWifiStatus');
+// 3. 브라우저 창 활성화 시
+window.addEventListener('focus', forceWifiRecovery);
+
+// 4. 소켓이 재연결된 순간 즉시 서버에 재인증 요청
+const currentSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+if (currentSocket) {
+    currentSocket.on('connect', () => {
+        currentSocket.emit('requestWifiStatus');
     });
 }
 

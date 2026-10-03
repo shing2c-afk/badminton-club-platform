@@ -1919,31 +1919,40 @@ function sendPersonalNotification(targetIdentifier, message) {
 // ==========================================
 io.on('connection', (socket) => {
 
-    // 📶 접속자의 구장 Wi-Fi 여부 판별 후 개별 전달
-    const isGym = isGymWifiUser(socket);
-    socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: getClientIp(socket) });
-
-    // 📶 [추가] 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 처리
-    socket.on('requestWifiStatus', () => {
-        const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, socket.clubId) : true;
-        const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
-        socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: clientIp });
-        console.log(`📶 [Wi-Fi 재검사] 소켓(${socket.id}) 상태 전송: ${isGym ? '구장 Wi-Fi 인증' : '외부 접속'}`);
-    });
-
-    console.log('새 소켓 연결:', socket.id);
-
-    // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정
-    // 클라이언트가 쿼리스트링(?club=xxx)이나 핸드셰이크로 보낸 clubId 확인 (기본값: 'unjeong')
-    // 수정 후
+   // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정 (구장 식별자를 먼저 설정)
     const clientClubId = (socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong';
     socket.clubId = clientClubId;
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
+
+    // 📶 접속자의 구장 Wi-Fi 여부 판별 후 개별 전달
+    const initialIsGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, clientClubId) : true;
+    const initialClientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
+    socket.emit('wifiStatus', { 
+        isGymWifi: initialIsGym, 
+        clientIp: initialClientIp,
+        useWifiRestriction: true 
+    });
+
+    // 📶 [추가] 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 처리 (관리자 강제 푸시 방식)
+    socket.on('requestWifiStatus', () => {
+        const targetClubId = socket.clubId || clientClubId || 'unjeong';
+        const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
+        const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
+        
+        socket.emit('wifiStatus', { 
+            isGymWifi: isGym, 
+            clientIp: clientIp,
+            useWifiRestriction: true 
+        });
+        console.log(`📶 [즉시 푸시] 소켓(${socket.id}) Wi-Fi 검증 완료: ${isGym ? '인증(구장내)' : '외부 접속'} (IP: ${clientIp})`);
+    });
+
+    console.log('새 소켓 연결:', socket.id);
     
     // ✅ [추가] 룸 입장 직후 해당 클럽 접속자 수 즉시 계산 및 화면 전송
     broadcastOnlineCount(clientClubId);
-
+    
     // 🔔 로그인 사용자 소켓 등록 처리
     socket.on('registerUser', (userData) => {
         if (userData && userData.phone) {
