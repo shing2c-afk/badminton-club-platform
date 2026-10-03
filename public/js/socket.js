@@ -120,9 +120,26 @@ socket.on('wifiStatus', (data) => {
             window.wifiGraceTimer = null;
         }
 
-        // ⏱️ [핵심 추가] Wi-Fi 복구 확인 시 서버에 등록된 1분 미접속 대기열 삭제 타이머 즉시 해제 요청!
-        const currentPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
-        const currentName = localStorage.getItem('userName') || localStorage.getItem('currentUser') || '';
+        // ⏱️ [보강] 다양한 저장 형태(객체/JSON/문자열)를 안전하게 지원하여 유저 식별자 추출
+        let currentPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
+        let currentName = window.currentUserName || localStorage.getItem('userName') || '';
+
+        // 만약 currentUser 키에 JSON 객체 형태로 보관되어 있을 경우 대응
+        const rawUserStorage = localStorage.getItem('currentUser') || localStorage.getItem('user');
+        if (rawUserStorage) {
+            try {
+                const parsedUser = JSON.parse(rawUserStorage);
+                if (parsedUser && typeof parsedUser === 'object') {
+                    if (!currentPhone && parsedUser.phone) currentPhone = parsedUser.phone;
+                    if (!currentName && (parsedUser.name || parsedUser.username)) currentName = parsedUser.name || parsedUser.username;
+                }
+            } catch (e) {
+                // 단순 문자열일 경우 그대로 활용
+                if (!currentName) currentName = rawUserStorage;
+            }
+        }
+
+        // ⏱️ [핵심 전송] 식별 정보(전화번호 또는 이름)를 서버로 전달하여 1분 미접속 대기열 삭제 타이머 즉시 해제
         if (currentPhone || currentName) {
             socket.emit('cancelDisconnectTimer', {
                 phone: currentPhone,

@@ -1943,20 +1943,53 @@ io.on('connection', (socket) => {
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
 
-    // ⏱️ Wi-Fi 복귀 시 미접속 퇴장 타이머 즉시 해제 리스너
+    // ⏱️ [핵심] Wi-Fi 복귀 시 미접속 퇴장 타이머 즉시 해제
     socket.on('cancelDisconnectTimer', (userData) => {
         const phone = userData && userData.phone;
         const username = userData && userData.username;
-        const targetKeys = [phone, username, socket.phone, socket.username].filter(Boolean);
+        const userKey = userData && userData.userKey;
 
-        targetKeys.forEach(k => {
-            const keyStr = String(k).trim();
-            if (keyStr && typeof disconnectTimers !== 'undefined' && disconnectTimers[keyStr]) {
-                clearTimeout(disconnectTimers[keyStr]);
-                delete disconnectTimers[keyStr];
-                console.log(`⏱️ [수신 해제] 복귀 신호로 유저(${keyStr})의 대기열 삭제 타이머를 즉시 취소했습니다.`);
-            }
-        });
+        // 전달받은 값 중 유효한 문자열 후보 추출
+        const targetKeys = [phone, username, userKey, socket.phone, socket.username].filter(Boolean);
+
+        console.log(`📡 [복귀 신호 수신] 전달받은 식별 데이터:`, userData);
+
+        if (typeof disconnectTimers !== 'undefined') {
+            // 1. 전달받은 키로 직접 매칭 해제
+            targetKeys.forEach(k => {
+                const keyStr = String(k).trim();
+                if (keyStr && disconnectTimers[keyStr]) {
+                    clearTimeout(disconnectTimers[keyStr]);
+                    delete disconnectTimers[keyStr];
+                    if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[keyStr];
+                    if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[keyStr];
+                    console.log(`⏱️ [타이머 해제 성공] 유저(${keyStr})의 대기열 삭제 타이머를 취소했습니다.`);
+                }
+            });
+
+            // 2. 만약 전달받은 값이 달라도 disconnectTimers에 걸려있는 키와 부분 일치하면 전부 해제
+            Object.keys(disconnectTimers).forEach(timerKey => {
+                const matched = targetKeys.some(k => String(k).includes(timerKey) || timerKey.includes(String(k)));
+                if (matched) {
+                    clearTimeout(disconnectTimers[timerKey]);
+                    delete disconnectTimers[timerKey];
+                    if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[timerKey];
+                    if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[timerKey];
+                    console.log(`⏱️ [타이머 일치 해제] 등록 키(${timerKey}) 타이머 취소 완료`);
+                }
+            });
+        }
+
+        // 세션 타이머도 함께 해제
+        if (typeof sessionTimers !== 'undefined') {
+            targetKeys.forEach(k => {
+                const keyStr = String(k).trim();
+                if (keyStr && sessionTimers[keyStr]) {
+                    clearTimeout(sessionTimers[keyStr]);
+                    delete sessionTimers[keyStr];
+                }
+            });
+        }
     });
 
     // ⏱️ [핵심 추가] handshake 쿼리로 전달된 유저 정보가 있다면 미접속 퇴장 타이머 즉시 해제
