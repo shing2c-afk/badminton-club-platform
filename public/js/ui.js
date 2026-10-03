@@ -1674,17 +1674,18 @@ function checkGymWifiOrAlert() {
     return true; // 정상 통과
 }
 
-// 📶 Wi-Fi 상태에 따른 버튼 및 참여 슬롯 시각 제어 (클릭 안내 메시지 허용)
+// 📶 Wi-Fi 상태에 따른 버튼 및 참여 슬롯 시각 제어 (회원 정보 및 퇴장 버튼 선명도 100% 보장)
 function updateWifiRestrictedButtons() {
     const restrictionEnabled = (typeof window.useWifiRestriction === 'boolean') ? window.useWifiRestriction : true;
     const isWifi = !restrictionEnabled || Boolean(window.isGymWifiConnected);
 
     const targetCursor = isWifi ? 'pointer' : 'not-allowed';
 
-    // 1. 방 개설 버튼 (게임신청 방 개설 / 난타신청 방 개설)
+    // 1. 신규 방 개설 버튼 (게임신청 방 개설 / 난타신청 방 개설) - 미인증 시 잠금
     const createBtns = Array.from(document.querySelectorAll('button, div, a')).filter(el => {
         const txt = (el.textContent || '').trim();
-        return (txt.includes('방 개설') || txt.includes('게임신청') || txt.includes('난타신청')) && !txt.includes('취소');
+        return (txt.includes('방 개설') || txt.includes('게임신청') || txt.includes('난타신청')) && 
+               !txt.includes('취소') && !txt.includes('퇴장') && !txt.includes('나가기');
     });
 
     createBtns.forEach(btn => {
@@ -1694,24 +1695,31 @@ function updateWifiRestrictedButtons() {
             btn.style.removeProperty('cursor');
             btn.removeAttribute('title');
         } else {
-            btn.style.setProperty('opacity', '0.75', 'important');
-            btn.style.setProperty('filter', 'grayscale(50%)', 'important');
+            btn.style.setProperty('opacity', '0.6', 'important');
+            btn.style.setProperty('filter', 'grayscale(60%)', 'important');
             btn.style.setProperty('cursor', targetCursor, 'important');
             btn.title = '구장 전용 Wi-Fi에 접속 후 이용해 주세요.';
         }
     });
 
-    // 2. 슬롯 칸(플레이어 정보 vs 빈칸) 제어
+    // 2. 대기열 슬롯 칸(플레이어 정보 vs 빈칸) 제어
     const playerCells = Array.from(document.querySelectorAll('.player-cell'));
 
     playerCells.forEach(cell => {
-        const isOccupied = cell.querySelector('.player-info') || cell.querySelector('.btn-exit') || cell.querySelector('button');
+        // 회원 이름, 프로필, 퇴장/취소/X 버튼 존재 여부 확인
+        const hasMember = cell.querySelector('.player-info, .user-name, .member-name, [data-user-id]') || 
+                          (cell.textContent && !cell.textContent.includes('참여') && cell.textContent.trim().length > 0);
         
-        // 💡 [핵심] 이미 사람이 들어가 있는 칸(내 정보, 퇴장 버튼 포함)은 Wi-Fi 상태와 무관하게 100% 선명도 유지
-        if (isOccupied) {
+        // 퇴장/취소 버튼 탐색 (다양한 클래스 및 태그 대응)
+        const exitBtn = cell.querySelector('.btn-exit, .btn-leave, .btn-cancel, .leave-btn, button, .close-btn, [data-action="leave"]');
+
+        // 💡 [핵심] 이미 사람이 들어가 있는 칸은 Wi-Fi 상태와 무관하게 100% 선명도 및 클릭 권한 유지
+        if (hasMember || exitBtn) {
             cell.style.setProperty('opacity', '1', 'important');
             cell.style.setProperty('filter', 'none', 'important');
-            const exitBtn = cell.querySelector('.btn-exit, button');
+            cell.style.removeProperty('background');
+            cell.style.removeProperty('border-color');
+
             if (exitBtn) {
                 exitBtn.style.setProperty('opacity', '1', 'important');
                 exitBtn.style.setProperty('filter', 'none', 'important');
@@ -1726,8 +1734,9 @@ function updateWifiRestrictedButtons() {
             return;
         }
 
+        // 빈 슬롯('게임참여', '난타참여') 처리
         const txt = (cell.textContent || '').trim();
-        if (txt === '게임참여' || txt === '난타참여') {
+        if (txt.includes('참여')) {
             const spanEl = cell.querySelector('.empty-cell') || cell;
 
             if (isWifi) {
@@ -1744,7 +1753,7 @@ function updateWifiRestrictedButtons() {
         }
     });
 
-    // 3. 하단 '게임 통합' 버튼
+    // 3. 하단 '게임 통합' 버튼 - 미인증 시 잠금
     const mergeBtns = Array.from(document.querySelectorAll('button, div, span')).filter(el => {
         const txt = (el.textContent || '').trim();
         return txt === '게임 통합' || txt === '게임통합';
@@ -1756,8 +1765,8 @@ function updateWifiRestrictedButtons() {
             btn.style.removeProperty('filter');
             btn.style.removeProperty('cursor');
         } else {
-            btn.style.setProperty('opacity', '0.7', 'important');
-            btn.style.setProperty('filter', 'grayscale(50%)', 'important');
+            btn.style.setProperty('opacity', '0.6', 'important');
+            btn.style.setProperty('filter', 'grayscale(60%)', 'important');
             btn.style.setProperty('cursor', targetCursor, 'important');
         }
     });

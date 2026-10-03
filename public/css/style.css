@@ -225,3 +225,28 @@ body.gym-wifi-active .online-status-badge {
     color: #38bdf8 !important;
     font-weight: 600;
 }
+
+/* ==========================================
+   📶 Wi-Fi 미인증(비활성화) 상태에서도 퇴장 버튼 및 대기열 정보 선명도 보장
+   ========================================== */
+
+/* 1. 대기열 카드 및 회원 정보는 항상 100% 선명하게 표시 */
+.queue-card,
+.queue-item,
+.court-card,
+.player-tag,
+.user-info {
+    opacity: 1 !important;
+}
+
+/* 2. 퇴장/취소/나가기 버튼은 비활성화 상태에서도 선명하고 클릭 가능하도록 예외 처리 */
+body:not(.gym-wifi-active) .btn-leave,
+body:not(.gym-wifi-active) .btn-cancel,
+body:not(.gym-wifi-active) .leave-queue-btn,
+body:not(.gym-wifi-active) [data-action="leave"],
+body:not(.gym-wifi-active) .queue-leave-btn {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    filter: none !important;
+}
