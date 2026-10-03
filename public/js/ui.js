@@ -658,6 +658,11 @@ function renderGameQueue() {
     });
 
     container.innerHTML = allSlotsHtml.join('');
+
+    // 💡 슬롯 HTML 생성 완료 직후 Wi-Fi 제한 비활성화 스타일 강제 적용
+    if (typeof updateWifiRestrictedButtons === 'function') {
+        updateWifiRestrictedButtons();
+    }
 }
 
 function mergeGameSlot(slotId) {
@@ -1284,24 +1289,6 @@ async function joinNantaCell(slotId, idx) {
     }
 }
 
-// 📶 구장 Wi-Fi 접속 여부에 따라 개설 버튼 스타일 조정
-function updateWifiRestrictedButtons() {
-    // 실제 버튼 요소 찾기 (ID가 다를 경우 class나 셀렉터로 대체)
-    const btnCreateGame = document.getElementById('btn-create-game') || document.querySelector('.btn-create-game');
-    const btnCreateNanta = document.getElementById('btn-create-nanta') || document.querySelector('.btn-create-nanta');
-
-    [btnCreateGame, btnCreateNanta].forEach(btn => {
-        if (!btn) return;
-        if (!window.isGymWifiConnected) {
-            btn.style.opacity = '0.5';
-            btn.title = '⚠️ 체육관 공용 Wi-Fi 연결 시 이용 가능';
-        } else {
-            btn.style.opacity = '1.0';
-            btn.title = '';
-        }
-    });
-}
-
 async function exitGamePlayer(slotId, idx) {
     const confirmed = await confirm('대기 신청을 취소하고 나가시겠습니까?');
     if (confirmed) {
@@ -1697,6 +1684,10 @@ function changeMainTab(tabName) {
         if (tabCourt) tabCourt.classList.add('active');
         if (secCourt) secCourt.style.display = 'block';
     }
+    // 💡 탭 전환 후 열린 탭의 개설/참여/통합 버튼에 Wi-Fi 제한 스타일 즉시 재적용
+    if (typeof updateWifiRestrictedButtons === 'function') {
+        updateWifiRestrictedButtons();
+    }
 }
 window.changeMainTab = changeMainTab;
 
@@ -1712,45 +1703,80 @@ document.addEventListener('click', (event) => {
         changeMainTab('court');
     }
 });
-// 📶 Wi-Fi 미인증 시 방 개설 버튼 시각적 비활성화 (흐릿하게 처리)
-// 📶 Wi-Fi 상태에 따른 버튼 및 참여 텍스트 색상 실시간 일괄 제어
+
+// 📶 Wi-Fi 상태에 따른 버튼(개설/참여/통합) 시각적 비활성화 및 클릭 차단
 function updateWifiRestrictedButtons() {
-    const isWifi = Boolean(window.isGymWifiConnected);
-    const activeColor = '#22c55e'; // 밝은 녹색
-    const inactiveColor = '#888888'; // 비활성 회색
+    const restrictionEnabled = (typeof window.useWifiRestriction === 'boolean') ? window.useWifiRestriction : true;
+    const isWifi = !restrictionEnabled || Boolean(window.isGymWifiConnected);
+
+    const activeColor = '#22c55e'; // 연결 시: 밝은 녹색
+    const inactiveColor = '#777777'; // 이탈 시: 비활성 회색
     const targetColor = isWifi ? activeColor : inactiveColor;
     const targetCursor = isWifi ? 'pointer' : 'not-allowed';
+    const pointerState = isWifi ? 'auto' : 'none';
 
-    // 1. 상단 개설 버튼 (투명도/필터 제어)
-    const gameBtn = document.querySelector('button[onclick*="createNewGameSlot"]');
-    const nantaBtn = document.querySelector('button[onclick*="createNewNantaSlot"]');
-    [gameBtn, nantaBtn].filter(Boolean).forEach(btn => {
-        btn.style.opacity = isWifi ? '1.0' : '0.35';
-        btn.style.filter = isWifi ? 'none' : 'grayscale(60%)';
-        btn.style.cursor = targetCursor;
-        if (!isWifi) {
-            btn.title = '체육관 공용 Wi-Fi 연결 시 이용 가능합니다.';
-        } else {
+    // 1. 방 개설 버튼 (게임신청 방 개설 / 난타신청 방 개설)
+    const createBtns = Array.from(document.querySelectorAll('button, div, a')).filter(el => {
+        const txt = (el.textContent || '').trim();
+        return (txt.includes('방 개설') || txt.includes('게임신청') || txt.includes('난타신청')) && !txt.includes('취소');
+    });
+
+    createBtns.forEach(btn => {
+        if (isWifi) {
+            btn.style.removeProperty('opacity');
+            btn.style.removeProperty('filter');
+            btn.style.removeProperty('cursor');
+            btn.style.removeProperty('pointer-events');
             btn.removeAttribute('title');
+        } else {
+            // 💡 CSS 우선순위 무시하고 강제로 흐리게 덮어쓰기
+            btn.style.setProperty('opacity', '0.35', 'important');
+            btn.style.setProperty('filter', 'grayscale(90%) brightness(0.7)', 'important');
+            btn.style.setProperty('cursor', targetCursor, 'important');
+            btn.style.setProperty('pointer-events', pointerState, 'important');
+            btn.title = '체육관 공용 Wi-Fi 연결 시 이용 가능합니다.';
         }
     });
 
-    // 2. 화면 내 모든 '게임참여' / '난타참여' 요소 및 셀 검색 후 색상 강제 적용
-    const allElements = document.querySelectorAll('*');
-    allElements.forEach(el => {
-        // 자식 요소가 없고 순수 텍스트가 '게임참여' 또는 '난타참여'인 경우
-        if (el.children.length === 0) {
-            const txt = (el.textContent || '').trim();
-            if (txt === '게임참여' || txt === '난타참여') {
-                el.style.setProperty('color', targetColor, 'important');
-                el.style.cursor = targetCursor;
+    // 2. 대기열 내 '게임참여' / '난타참여' 슬롯 셀
+    const joinElements = Array.from(document.querySelectorAll('*')).filter(el => {
+        if (el.children.length > 0) return false;
+        const txt = (el.textContent || '').trim();
+        return txt === '게임참여' || txt === '난타참여';
+    });
+
+    joinElements.forEach(el => {
+        el.style.setProperty('color', targetColor, 'important');
+        el.style.setProperty('cursor', targetCursor, 'important');
+        el.style.setProperty('pointer-events', pointerState, 'important');
+        if (el.parentElement) {
+            el.parentElement.style.setProperty('cursor', targetCursor, 'important');
+            el.parentElement.style.setProperty('pointer-events', pointerState, 'important');
+            if (!isWifi) {
+                el.parentElement.style.setProperty('opacity', '0.4', 'important');
+            } else {
+                el.parentElement.style.removeProperty('opacity');
             }
         }
-        // onclick 속성에 joinGameCell 또는 joinNantaCell이 있는 셀 자체
-        const onclickAttr = el.getAttribute('onclick') || '';
-        if (onclickAttr.includes('joinGameCell') || onclickAttr.includes('joinNantaCell')) {
-            el.style.setProperty('color', targetColor, 'important');
-            el.style.cursor = targetCursor;
+    });
+
+    // 3. 하단 '게임 통합' 버튼
+    const mergeBtns = Array.from(document.querySelectorAll('button, div, span')).filter(el => {
+        const txt = (el.textContent || '').trim();
+        return txt === '게임 통합' || txt === '게임통합';
+    });
+
+    mergeBtns.forEach(btn => {
+        if (isWifi) {
+            btn.style.removeProperty('opacity');
+            btn.style.removeProperty('filter');
+            btn.style.removeProperty('cursor');
+            btn.style.removeProperty('pointer-events');
+        } else {
+            btn.style.setProperty('opacity', '0.35', 'important');
+            btn.style.setProperty('filter', 'grayscale(90%) brightness(0.7)', 'important');
+            btn.style.setProperty('cursor', targetCursor, 'important');
+            btn.style.setProperty('pointer-events', pointerState, 'important');
         }
     });
 }

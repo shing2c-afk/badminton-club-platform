@@ -27,7 +27,7 @@
       ],
       "cleaningStartMsg": "운정클럽 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.",
       "cleaningEndMsg": "운정클럽 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
-      "useWifiRestriction": false,
+      "useWifiRestriction": true,
       "allowedGymIps": [
         "::1"
       ],
@@ -47,8 +47,8 @@
       "cleaningEndMsg_3": "야간 구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.",
       "cleaningStartMsg_4": "구장 운영 마감 및 휴장 시간입니다. 이용해 주셔서 감사합니다.",
       "cleaningEndMsg_4": "구장 휴장이 해제되었습니다. 즐거운 배드민턴 되세요.",
-      "queueGraceMinutes": 30,
-      "sessionExpireMinutes": 60
+      "queueGraceMinutes": 1,
+      "sessionExpireMinutes": 2
     },
     "courtsData": [
       {

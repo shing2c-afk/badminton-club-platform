@@ -75,39 +75,66 @@ const socket = window.socket || io({
 window.socket = socket;
 
 // ==========================================
-// 📶 체육관 Wi-Fi 접속 상태 보관 및 수신
+// 📶 체육관 Wi-Fi 접속 상태 보관 및 수신 (유예 기간 연동)
 // ==========================================
 window.isGymWifiConnected = false;
 window.useWifiRestriction = false;
+window.wifiGraceTimer = null; // 유예 타이머 보관용
 
-// 로컬 저장소에 저장된 관리자 설정이 있다면 초기값으로 즉시 복원
 if (localStorage.getItem("useWifiRestriction") === "true") {
     window.useWifiRestriction = true;
 }
 
 socket.on('wifiStatus', (data) => {
-    // 💡 1. 구장 Wi-Fi 일치 여부 저장
+    const prevWifiStatus = window.isGymWifiConnected;
     window.isGymWifiConnected = !!data.isGymWifi;
     
-    // 💡 2. 서버에서 보낸 Wi-Fi 제한 기능 활성화 여부(토글 상태)도 함께 동기화
-    if (typeof data.useWifiRestriction !== 'undefined') {
+    // 💡 클럽 고유 키 확인 (unjeong 등)
+    const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
+    const clubWifiKey = `useWifiRestriction_${clubId}`;
+    const storedClubSetting = localStorage.getItem(clubWifiKey);
+
+    // 1. 관리자 모드 로컬 설정값 우선 반영, 없으면 서버 데이터 활용
+    if (storedClubSetting !== null) {
+        window.useWifiRestriction = (storedClubSetting === 'true');
+    } else if (typeof data.useWifiRestriction !== 'undefined') {
         window.useWifiRestriction = !!data.useWifiRestriction;
-        localStorage.setItem("useWifiRestriction", data.useWifiRestriction ? "true" : "false");
+        localStorage.setItem(clubWifiKey, data.useWifiRestriction ? "true" : "false");
     }
 
     console.log(`📶 구장 Wi-Fi 제한 설정: ${window.useWifiRestriction ? 'ON(제한 중)' : 'OFF(자유 이용)'}`);
     console.log(`📶 현재 접속 상태: ${window.isGymWifiConnected ? '인증됨 (구장 내)' : '미인증 (외부 접속)'} (IP: ${data.clientIp})`);
     
-    // 📶 body 태그에 Wi-Fi 인증 상태 클래스 즉시 반영
     if (window.isGymWifiConnected) {
+        // 🟢 체육관 와이파이 연결 시: 즉시 활성화 상태로 복구 및 유예 타이머 취소
         document.body.classList.add('gym-wifi-active');
+        if (window.wifiGraceTimer) {
+            clearTimeout(window.wifiGraceTimer);
+            window.wifiGraceTimer = null;
+        }
+        if (typeof updateWifiRestrictedButtons === 'function') {
+            updateWifiRestrictedButtons();
+        }
     } else {
-        document.body.classList.remove('gym-wifi-active');
-    }
-
-    // UI 버튼 상태 갱신 함수가 있다면 호출
-    if (typeof updateWifiRestrictedButtons === 'function') {
-        updateWifiRestrictedButtons();
+        // 🟡 체육관 와이파이 이탈 시: 외부 사전 등록/참여 방지를 위해 버튼 즉시 잠금!
+        // (기존 개설된 대기방 보존 및 운동중 카운트는 서버의 유예 타이머가 보호함)
+        if (prevWifiStatus === true) {
+            if (window.wifiGraceTimer) {
+                clearTimeout(window.wifiGraceTimer);
+                window.wifiGraceTimer = null;
+            }
+            console.log('🔒 체육관 와이파이 이탈: 신규 개설/참여/통합 버튼 즉시 비활성화');
+            document.body.classList.remove('gym-wifi-active');
+            if (typeof updateWifiRestrictedButtons === 'function') {
+                updateWifiRestrictedButtons();
+            }
+        } else if (prevWifiStatus === false) {
+            // 처음부터 외부 접속인 경우
+            document.body.classList.remove('gym-wifi-active');
+            if (typeof updateWifiRestrictedButtons === 'function') {
+                updateWifiRestrictedButtons();
+            }
+        }
     }
 });
 
@@ -568,3 +595,47 @@ if (typeof socket !== 'undefined' && socket) {
         }
     });
 }
+
+// =================================================================
+// 📶 [실시간 와이파이 상태 감시기 & 세션 만료 수신기]
+// =================================================================
+(function() {
+    let lastGymWifiStatus = null;
+
+    // 3초마다 와이파이 상태 변경을 감시하여 서버로 통보
+    setInterval(() => {
+        const currentStatus = !!window.isGymWifiConnected;
+        const targetClub = (typeof currentClubId !== 'undefined' && currentClubId) ? currentClubId : 'unjeong';
+
+        if (lastGymWifiStatus !== currentStatus) {
+            lastGymWifiStatus = currentStatus;
+
+            const activeSocket = (typeof socket !== 'undefined') ? socket : window.socket;
+            if (activeSocket && activeSocket.connected) {
+                console.log(`📡 [와이파이 상태 통보] 체육관 내부: ${currentStatus} (${targetClub})`);
+                activeSocket.emit('updateWifiState', {
+                    inGym: currentStatus,
+                    clubId: targetClub
+                });
+            }
+        }
+    }, 3000);
+
+    // 소켓이 준비되었을 때 forceSessionExpire 리스너 장착
+    function setupSessionExpireListener() {
+        const activeSocket = (typeof socket !== 'undefined') ? socket : window.socket;
+        if (activeSocket) {
+            activeSocket.on('forceSessionExpire', (data) => {
+                alert(data.message || '체육관을 벗어나 장시간 경과하여 자동 로그아웃되었습니다.');
+                const targetClub = (typeof currentClubId !== 'undefined' && currentClubId) ? currentClubId : 'unjeong';
+                localStorage.removeItem(`currentUser_${targetClub}`);
+                localStorage.removeItem('currentUser');
+                sessionStorage.clear();
+                location.reload();
+            });
+        } else {
+            setTimeout(setupSessionExpireListener, 500);
+        }
+    }
+    setupSessionExpireListener();
+})();
