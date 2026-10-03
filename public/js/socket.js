@@ -139,31 +139,45 @@ socket.on('wifiStatus', (data) => {
 });
 
 // ==========================================
-// 📶 모바일 Wi-Fi 복귀 시 100% 확실한 즉시 새로고침
+// 📶 모바일 Wi-Fi 복귀 시 안전한 자동 새로고침 (입력창 보호)
 // ==========================================
 (function() {
-    function reloadIfLocked() {
-        // 구장 Wi-Fi 미인증(버튼 잠김) 상태일 때만 동작
+    let isReloading = false;
+
+    function safeReloadIfWifiRecovered(e) {
+        if (isReloading) return;
+
+        // 1. 입력창(이름, 전화번호 등) 터치 시 절대 새로고침 금지
+        if (e && e.target) {
+            const tagName = e.target.tagName ? e.target.tagName.toLowerCase() : '';
+            if (['input', 'textarea', 'select', 'button', 'label'].includes(tagName)) return;
+            if (e.target.closest('input, textarea, select, form, .modal, .login-popup, #loginModal')) return;
+        }
+
+        // 2. 이미 로그인 입력 중(포커스 상태)인 경우 새로고침 금지
+        const activeElem = document.activeElement;
+        if (activeElem && ['input', 'textarea'].includes(activeElem.tagName.toLowerCase())) return;
+
+        // 3. 현재 Wi-Fi 미인증 잠금 상태인지 확인
         const isLocked = !window.isGymWifiConnected || !document.body.classList.contains('gym-wifi-active');
         
+        // 잠금 상태이고 온라인 상태일 때 화면 복귀 시 1회만 안전하게 새로고침
         if (isLocked) {
-            console.log('⚡ 잠금 상태에서 화면 복귀 감지 -> 즉시 자동 새로고침 실행');
+            isReloading = true;
+            console.log('⚡ Wi-Fi 복귀 감지 -> 안전한 자동 새로고침 실행');
             window.location.reload();
         }
     }
 
-    // 1. 상단바 올리고 브라우저로 돌아왔을 때 즉시 새로고침
+    // 화면 복귀(상단바 올렸을 때) 시점에만 동작 (무분별한 터치 새로고침 제거)
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-            reloadIfLocked();
+            safeReloadIfWifiRecovered();
         }
     });
 
-    // 2. 화면이 다시 활성화(포커스)될 때 즉시 새로고침
-    window.addEventListener('focus', reloadIfLocked);
-
-    // 3. 사용자가 화면 아무 곳이나 터치했을 때 즉시 새로고침
-    window.addEventListener('touchstart', reloadIfLocked, { once: true });
+    // 화면 포커스 획득 시
+    window.addEventListener('focus', safeReloadIfWifiRecovered);
 })();
 
 // ==========================================
