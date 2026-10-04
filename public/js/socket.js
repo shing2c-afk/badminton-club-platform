@@ -114,7 +114,8 @@ if (localStorage.getItem("useWifiRestriction") === "true") {
 
 socket.on('wifiStatus', (data) => {
     const prevWifiStatus = window.isGymWifiConnected;
-    window.isGymWifiConnected = !!data.isGymWifi;
+    const isNowGymWifi = !!data.isGymWifi;
+    window.isGymWifiConnected = isNowGymWifi;
     
     // 💡 클럽 고유 키 확인 (unjeong 등)
     const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
@@ -131,35 +132,35 @@ socket.on('wifiStatus', (data) => {
 
     console.log(`📶 구장 Wi-Fi 제한 설정: ${window.useWifiRestriction ? 'ON(제한 중)' : 'OFF(자유 이용)'}`);
     console.log(`📶 현재 접속 상태: ${window.isGymWifiConnected ? '인증됨 (구장 내)' : '미인증 (외부 접속)'} (IP: ${data.clientIp})`);
+
+    // ⏱️ 유저 식별자 추출 (전화번호/이름)
+    let currentPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
+    let currentName = window.currentUserName || localStorage.getItem('userName') || '';
+
+    const rawUserStorage = localStorage.getItem('currentUser') || localStorage.getItem('user');
+    if (rawUserStorage) {
+        try {
+            const parsedUser = JSON.parse(rawUserStorage);
+            if (parsedUser && typeof parsedUser === 'object') {
+                if (!currentPhone && parsedUser.phone) currentPhone = parsedUser.phone;
+                if (!currentName && (parsedUser.name || parsedUser.username)) currentName = parsedUser.name || parsedUser.username;
+            }
+        } catch (e) {
+            if (!currentName) currentName = rawUserStorage;
+        }
+    }
     
     if (window.isGymWifiConnected) {
-        // 🟢 체육관 와이파이 연결 시: 즉시 활성화 상태로 복구 및 유예 타이머 취소
+        // ==========================================
+        // 🟢 체육관 와이파이 연결 (복귀)
+        // ==========================================
         document.body.classList.add('gym-wifi-active');
         if (window.wifiGraceTimer) {
             clearTimeout(window.wifiGraceTimer);
             window.wifiGraceTimer = null;
         }
 
-        // ⏱️ [보강] 다양한 저장 형태(객체/JSON/문자열)를 안전하게 지원하여 유저 식별자 추출
-        let currentPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
-        let currentName = window.currentUserName || localStorage.getItem('userName') || '';
-
-        // 만약 currentUser 키에 JSON 객체 형태로 보관되어 있을 경우 대응
-        const rawUserStorage = localStorage.getItem('currentUser') || localStorage.getItem('user');
-        if (rawUserStorage) {
-            try {
-                const parsedUser = JSON.parse(rawUserStorage);
-                if (parsedUser && typeof parsedUser === 'object') {
-                    if (!currentPhone && parsedUser.phone) currentPhone = parsedUser.phone;
-                    if (!currentName && (parsedUser.name || parsedUser.username)) currentName = parsedUser.name || parsedUser.username;
-                }
-            } catch (e) {
-                // 단순 문자열일 경우 그대로 활용
-                if (!currentName) currentName = rawUserStorage;
-            }
-        }
-
-        // ⏱️ [핵심 전송] 식별 정보(전화번호 또는 이름)를 서버로 전달하여 1분 미접속 대기열 삭제 타이머 즉시 해제
+        // ⏱️ [서버 알림] 1분 미접속 대기열 삭제 타이머 즉시 해제
         if (currentPhone || currentName) {
             socket.emit('cancelDisconnectTimer', {
                 phone: currentPhone,
@@ -172,31 +173,34 @@ socket.on('wifiStatus', (data) => {
             updateWifiRestrictedButtons();
         }
     } else {
-        // 🟡 체육관 와이파이 이탈 시: 외부 사전 등록/참여 방지를 위해 버튼 즉시 잠금!
-        if (prevWifiStatus === true) {
-            if (window.wifiGraceTimer) {
-                clearTimeout(window.wifiGraceTimer);
-                window.wifiGraceTimer = null;
+        // ==========================================
+        // 🟡 체육관 와이파이 이탈 (LTE 전환 또는 단절)
+        // ==========================================
+        document.body.classList.remove('gym-wifi-active');
+
+        // 이전에 와이파이였거나, 또는 새로고침 직후라도 미인증 상태로 이탈 확인 시 타이머 가동 보장
+        if (prevWifiStatus === true || (prevWifiStatus !== false && (currentPhone || currentName))) {
+            console.log('🔒 체육관 와이파이 이탈: 유예 타이머 시작 신호 전달 및 버튼 비활성화');
+            
+            // 🛡️ [핵심 보강] 서버에 Wi-Fi 이탈을 명시적으로 알려 1분 유예 타이머 가동 트리거
+            if (currentPhone || currentName) {
+                socket.emit('startDisconnectTimer', {
+                    phone: currentPhone,
+                    username: currentName,
+                    clubId: clubId
+                });
             }
-            console.log('🔒 체육관 와이파이 이탈: 신규 개설/참여/통합 버튼 즉시 비활성화');
-            document.body.classList.remove('gym-wifi-active');
-            if (typeof updateWifiRestrictedButtons === 'function') {
-                updateWifiRestrictedButtons();
-            }
-            // 💡 와이파이가 끊겼으므로 다음 재접속을 위해 감지 엔진을 즉시 다시 깨움!
-            if (typeof window.startWifiDetector === 'function') {
-                window.startWifiDetector();
-            }
-        } else if (prevWifiStatus === false) {
-            // 처음부터 외부 접속인 경우
-            document.body.classList.remove('gym-wifi-active');
-            if (typeof updateWifiRestrictedButtons === 'function') {
-                updateWifiRestrictedButtons();
-            }
-            // 💡 처음부터 외부 접속일 때도 감지 엔진 가동 보장
-            if (typeof window.startWifiDetector === 'function') {
-                window.startWifiDetector();
-            }
+        } else {
+            console.log('🔒 외부 접속 상태: 기능 버튼 비활성화');
+        }
+
+        if (typeof updateWifiRestrictedButtons === 'function') {
+            updateWifiRestrictedButtons();
+        }
+
+        // 💡 재접속 감지 엔진 가동 보장
+        if (typeof window.startWifiDetector === 'function') {
+            window.startWifiDetector();
         }
     }
 });

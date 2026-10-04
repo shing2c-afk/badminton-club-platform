@@ -1937,6 +1937,16 @@ function sendPersonalNotification(targetIdentifier, message) {
 // ==========================================
 io.on('connection', (socket) => {
 
+    // 🛡️ [공통 가드] 구장 공용 Wi-Fi 필수 검증 헬퍼 함수
+    const checkWifiGuard = (actionTitle = '기능을 이용') => {
+        const clubId = socket.clubId || 'unjeong';
+        if (typeof isGymWifiUser === 'function' && !isGymWifiUser(socket, clubId)) {
+            socket.emit('alertMessage', `⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 ${actionTitle}할 수 있습니다.`);
+            return false;
+        }
+        return true;
+    };
+
     // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정 (구장 식별자를 먼저 설정)
     const clientClubId = (socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong';
     socket.clubId = clientClubId;
@@ -2548,14 +2558,13 @@ io.on('connection', (socket) => {
 });
 
     // 🔒 방 개설 시 현재 코트 플레이 여부 및 중복 체크
-    socket.on('createSlot', ({ type, userId, user }) => {
-        // 🏢 [멀티 테넌트] 현재 소켓이 접속한 클럽 데이터 가져오기
-        const club = getClub(socket.clubId);
+   socket.on('createSlot', ({ type, userId, user }) => {
+        const currentClubId = socket.clubId || 'unjeong';
+        const club = getClub(currentClubId);
 
-        if (!isGymWifiUser(socket)) {
-            socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
-            return;
-        }
+        // 🛡️ 공통 Wi-Fi 검증
+        if (!checkWifiGuard('방을 개설')) return;
+
         const myName = user.split(' / ')[0].trim();
 
         // ✅ 해당 클럽 코트만 검사
@@ -2598,13 +2607,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('forceCreateSlot', ({ type, userId, user }) => {
-        // 🏢 [멀티 테넌트] 현재 소켓이 접속한 클럽 데이터 가져오기
-        const club = getClub(socket.clubId);
+        const currentClubId = socket.clubId || 'unjeong';
+        const club = getClub(currentClubId);
 
-        if (!isGymWifiUser(socket)) {
-            socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 방을 개설할 수 있습니다.');
-            return;
-        }
+        // 🛡️ 공통 Wi-Fi 검증
+        if (!checkWifiGuard('방을 개설')) return;
+
         const myName = user.split(' / ')[0].trim();
         
         // ✅ 해당 클럽 코트만 검사
@@ -2643,10 +2651,8 @@ io.on('connection', (socket) => {
 
     // 🏸 대기 슬롯 참가 처리 (클럽별 멀티 테넌트 반영)
     socket.on('joinPlayer', ({ type, slotId, index, name }) => {
-        if (!isGymWifiUser(socket)) {
-            socket.emit('alertMessage', '⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 대기 방에 입장할 수 있습니다.');
-            return;
-        }
+        // 🛡️ 공통 Wi-Fi 검증
+        if (!checkWifiGuard('대기 방에 입장')) return;
 
         const currentClubId = socket.clubId || 'unjeong';
         const club = clubs[currentClubId] || clubs['unjeong'];
@@ -3013,6 +3019,9 @@ io.on('connection', (socket) => {
 
     // 🤝 [방 통합 처리] (멀티 테넌트 반영)
     socket.on('mergeSlot', ({ mySlotId, targetSlotId }) => {
+        // 🛡️ 공통 Wi-Fi 검증 (미연결 시 방 통합 차단)
+        if (!checkWifiGuard('게임 방을 통합')) return;
+        
         const currentClubId = socket.clubId || 'unjeong';
         const club = clubs[currentClubId] || clubs['unjeong'];
         
