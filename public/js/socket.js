@@ -229,27 +229,9 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
         if (!res.ok) return;
         const data = await res.json();
 
-        // 사용자 식별 정보 조회 (phone, username)
-        let currentPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
-        let currentName = window.currentUserName || localStorage.getItem('userName') || '';
-        const rawUser = localStorage.getItem('currentUser') || localStorage.getItem('user');
-        if (rawUser) {
-            try {
-                const parsed = JSON.parse(rawUser);
-                if (parsed && typeof parsed === 'object') {
-                    if (!currentPhone && parsed.phone) currentPhone = parsed.phone;
-                    if (!currentName && (parsed.name || parsed.username)) currentName = parsed.name || parsed.username;
-                }
-            } catch (e) {
-                if (!currentName) currentName = rawUser;
-            }
-        }
-
-        const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-
-       // 🟢 Case 1: 와이파이 재접속 확인
+        // 🟢 Wi-Fi 접속 감지
         if (data.isGymWifi && !window.isGymWifiConnected) {
-            console.log('🎉 구장 Wi-Fi 복귀 감지 -> 화면 활성화');
+            console.log('🎉 구장 Wi-Fi 접속 확인 -> 버튼 활성화');
             window.isGymWifiConnected = true;
             document.body.classList.add('gym-wifi-active');
 
@@ -257,37 +239,29 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
                 updateWifiRestrictedButtons();
             }
 
-            if (activeSocket && activeSocket.connected) {
-                // 1. 서버 유예 타이머 취소만 전송
-                if (currentPhone || currentName) {
-                    activeSocket.emit('cancelDisconnectTimer', {
-                        phone: currentPhone,
-                        username: currentName,
-                        clubId: clubId
-                    });
+            const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+            if (activeSocket) {
+                if (!activeSocket.connected) {
+                    activeSocket.connect();
                 }
-                // 💡 반복 verifyWifi 호출 제거 -> HTTP API 결과(data.isGymWifi)를 단일 진실 공급원으로 인정
+
+                // 💡 [서버 규격 일치] 기존 updateWifiState 이벤트로 복귀 신호 정상 전송
+                const currentId = window.currentUserId || window.currentUserName || localStorage.getItem('userId') || localStorage.getItem('userName') || '';
+                activeSocket.emit('updateWifiState', { 
+                    inGym: true, 
+                    clubId: clubId, 
+                    userId: currentId 
+                });
             }
         }
-        // 🔴 Case 2: 와이파이 단절(LTE 전환) 순간 감지 -> 화면 비활성화 및 유예 타이머 가동
+        // 🔴 Case 2: 켜져 있다가 Wi-Fi를 끄고 LTE로 이탈한 순간 감지!
         else if (!data.isGymWifi && window.isGymWifiConnected) {
-            console.log('🔒 [이탈 감지] Wi-Fi 해제 확인 -> 화면 잠금 및 1분 유예 타이머 시작');
+            console.log('🔒 [이탈 감지] Wi-Fi 해제 확인 -> 버튼 즉시 비활성화');
             window.isGymWifiConnected = false;
             document.body.classList.remove('gym-wifi-active');
 
             if (typeof updateWifiRestrictedButtons === 'function') {
                 updateWifiRestrictedButtons();
-            }
-
-            if (activeSocket && activeSocket.connected) {
-                // 서버에 1분 유예 타이머 가동 신호 전송
-                if (currentPhone || currentName) {
-                    activeSocket.emit('startDisconnectTimer', {
-                        phone: currentPhone,
-                        username: currentName,
-                        clubId: clubId
-                    });
-                }
             }
         }
     } catch (e) {
