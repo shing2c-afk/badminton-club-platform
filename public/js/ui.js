@@ -40,6 +40,28 @@ window.isMyNameMatch = function(playerData, currentUser) {
     });
 };
 
+// 📶 Wi-Fi 연결 상태 감시자: 상태 변경 시 즉시 body 클래스 갱신
+(function() {
+    let _wifiState = false;
+    Object.defineProperty(window, 'isGymWifiConnected', {
+        get() {
+            return _wifiState;
+        },
+        set(val) {
+            _wifiState = Boolean(val);
+            if (_wifiState) {
+                document.body.classList.add('gym-wifi-active');
+            } else {
+                document.body.classList.remove('gym-wifi-active');
+            }
+            if (typeof updateWifiRestrictedButtons === 'function') {
+                updateWifiRestrictedButtons();
+            }
+        },
+        configurable: true
+    });
+})();
+
 function escapeHtml(str) {
     if (!str) return '';
     return String(str)

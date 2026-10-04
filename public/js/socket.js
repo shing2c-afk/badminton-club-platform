@@ -169,6 +169,11 @@ socket.on('wifiStatus', (data) => {
             });
         }
 
+        // 🔄 [핵심] 체육관 Wi-Fi 복귀 시 서버 소켓 통로의 최신 IP 즉각 갱신 트리거
+        if (socket && socket.connected) {
+            socket.emit('verifyWifi', { clubId: clubId });
+        }
+
         if (typeof updateWifiRestrictedButtons === 'function') {
             updateWifiRestrictedButtons();
         }

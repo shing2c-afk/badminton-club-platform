@@ -2021,6 +2021,17 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 🔄 [Wi-Fi 재검증 처리] 와이파이 복귀 시 소켓 IP 즉시 재판정
+    socket.on('verifyWifi', (data) => {
+        const targetClubId = (data && data.clubId) || socket.clubId || 'unjeong';
+        const isValid = typeof isGymWifiUser === 'function' ? isGymWifiUser(socket, targetClubId) : true;
+
+        console.log(`📡 [Wi-Fi 재검증 응답] 클럽: ${targetClubId}, 소켓: ${socket.id}, 인가여부: ${isValid}`);
+        
+        // 브라우저 화면 상태 즉시 동기화
+        socket.emit('wifiStatus', { isGymWifi: isValid });
+    });
+    
     // ⏱️ [핵심] Wi-Fi 복귀 시 미접속 퇴장 타이머 즉시 해제
     socket.on('cancelDisconnectTimer', (userData) => {
         const phone = userData && userData.phone;
