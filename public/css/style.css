@@ -136,6 +136,7 @@ body:not(.gym-wifi-active) .player-cell:not(:has(.player-info)) .empty-cell {
 }
 
 /* 3. [미인증 기본 상태] 방 개설(게임/난타) 및 게임통합 버튼 잠금 */
+body:not(.gym-wifi-active) .btn-create-room,
 body:not(.gym-wifi-active) .btn-enter,
 body:not(.gym-wifi-active) .btn-merge,
 body:not(.gym-wifi-active) .btn-create,
@@ -143,13 +144,15 @@ body:not(.gym-wifi-active) #btn-create-game,
 body:not(.gym-wifi-active) #btn-create-nanta,
 body:not(.gym-wifi-active) [data-action="create-game"],
 body:not(.gym-wifi-active) [data-action="create-nanta"],
+body:not(.gym-wifi-active) button[onclick*="createNewGameSlot"],
+body:not(.gym-wifi-active) button[onclick*="createNewNantaSlot"],
 body:not(.gym-wifi-active) button[onclick*="openCreateGameModal"],
 body:not(.gym-wifi-active) button[onclick*="openCreateNantaModal"],
 body:not(.gym-wifi-active) button[onclick*="Create"] {
     opacity: 0.5 !important;
     filter: grayscale(60%) !important;
     cursor: not-allowed !important;
-    pointer-events: none !important; /* Wi-Fi 끊겼을 때 터치/클릭 원천 차단 */
+    pointer-events: none !important; /* 미인증 시 터치/클릭 원천 차단 */
 }
 
 /* 4. [인증 완료 상태] 방 개설(게임/난타) 및 슬롯 정상 활성화 */
@@ -163,6 +166,7 @@ body.gym-wifi-active .player-cell:not(:has(.player-info)) {
     pointer-events: auto !important;
 }
 
+body.gym-wifi-active .btn-create-room,
 body.gym-wifi-active .btn-enter,
 body.gym-wifi-active .btn-merge,
 body.gym-wifi-active .btn-create,
@@ -170,6 +174,8 @@ body.gym-wifi-active #btn-create-game,
 body.gym-wifi-active #btn-create-nanta,
 body.gym-wifi-active [data-action="create-game"],
 body.gym-wifi-active [data-action="create-nanta"],
+body.gym-wifi-active button[onclick*="createNewGameSlot"],
+body.gym-wifi-active button[onclick*="createNewNantaSlot"],
 body.gym-wifi-active button[onclick*="openCreateGameModal"],
 body.gym-wifi-active button[onclick*="openCreateNantaModal"],
 body.gym-wifi-active button[onclick*="Create"] {
