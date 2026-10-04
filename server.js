@@ -3221,6 +3221,10 @@ io.on('connection', (socket) => {
             socket.inGym = true;
             socket.inGracePeriod = false; // 체육관 복귀 시 유예 해제
 
+            // 💡 [핵심 추가] 소켓 보안 검증 가드를 즉시 통과할 수 있도록 정식 Wi-Fi 인가 플래그 부여!
+            socket.isGymWifi = true;
+            socket.verifiedWifi = true;
+
             // ⏱️ [핵심 해결] 체육관 복귀 시 실행 중이던 대기방 유예 삭제 타이머 즉시 취소!
             if (userKey && typeof disconnectTimers !== 'undefined' && disconnectTimers[userKey]) {
                 clearTimeout(disconnectTimers[userKey]);
@@ -3234,6 +3238,10 @@ io.on('connection', (socket) => {
         } else {
             // 이탈 시: 유예 플래그를 켜서 유예시간 동안 운동중 카운트 유지
             socket.inGracePeriod = true;
+
+            // 💡 [핵심 추가] Wi-Fi 이탈 시 인가 플래그 해제
+            socket.isGymWifi = false;
+            socket.verifiedWifi = false;
         }
 
         const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 10;
