@@ -1958,14 +1958,15 @@ function sendPersonalNotification(targetIdentifier, message) {
 // ==========================================
 io.on('connection', (socket) => {
 
-    // 🛡️ [공통 가드] 구장 공용 Wi-Fi 필수 검증 헬퍼 함수
+    // server.js의 Wi-Fi 가드 거부 메시지 부분
     const checkWifiGuard = (actionTitle = '기능을 이용') => {
-        const clubId = socket.clubId || 'unjeong';
-        if (typeof isGymWifiUser === 'function' && !isGymWifiUser(socket, clubId)) {
-            socket.emit('alertMessage', `⚠️ 체육관 공용 Wi-Fi에 연결된 상태에서만 ${actionTitle}할 수 있습니다.`);
-            return false;
-        }
-        return true;
+    const clubId = socket.clubId || 'unjeong';
+    if (typeof isGymWifiUser === 'function' && !isGymWifiUser(socket, clubId)) {
+        // ui.js와 동일한 문구로 통일
+        socket.emit('alertMessage', '⚠️ 구장 전용 Wi-Fi에 접속 후 이용해 주세요.');
+        return false;
+    }
+    return true;
     };
 
     // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정 (구장 식별자를 먼저 설정)

@@ -169,9 +169,18 @@ socket.on('wifiStatus', (data) => {
             });
         }
 
-        // 🔄 [핵심] 체육관 Wi-Fi 복귀 시 서버 소켓 통로의 최신 IP 즉각 갱신 트리거
-        if (socket && socket.connected) {
-            socket.emit('verifyWifi', { clubId: clubId });
+       // 🔄 [핵심] 새로고침 없이 최신 체육관 Wi-Fi IP 반영 및 룸 재동기화
+        if (typeof socket !== 'undefined' && socket) {
+            console.log("🔄 [Wi-Fi 복귀] 소켓을 재연결하고 구장 정보를 동기화합니다.");
+            socket.disconnect();
+            socket.connect();
+            
+            // 소켓이 새 IP로 붙는 즉시 구장 방 재입장 신호 전송
+            socket.once('connect', () => {
+                const targetClub = clubId || 'unjeong';
+                socket.emit('joinClub', { clubId: targetClub });
+                socket.emit('verifyWifi', { clubId: targetClub });
+            });
         }
 
         if (typeof updateWifiRestrictedButtons === 'function') {
@@ -472,9 +481,23 @@ socket.off('stateUpdated').on('stateUpdated', (data) => {
     }
 });
 
-// 서버가 보낸 경고/안내 메시지
+// 서버가 보낸 경고/안내 메시지 (ui.js 커스텀 모달 디자인으로 일원화)
 socket.off('alertMessage').on('alertMessage', (msg) => {
-    alert(msg);
+    const modal = document.getElementById('custom-alert-modal');
+    const msgEl = document.getElementById('custom-alert-message');
+    const confirmBtn = document.getElementById('custom-alert-ok-btn');
+
+    if (modal && msgEl) {
+        msgEl.innerText = msg;
+        modal.style.display = 'flex';
+        if (confirmBtn) {
+            confirmBtn.onclick = function() {
+                modal.style.display = 'none';
+            };
+        }
+    } else {
+        alert(msg);
+    }
 });
 
 // 1. 서비스 워커 등록
