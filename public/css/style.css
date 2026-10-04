@@ -116,10 +116,46 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     font-weight: bold;
 }
 
-/* 📶 체육관 Wi-Fi 인증 완료 상태: 밝은 녹색 (#22c55e), 포인터 커서 */
+/* 📶 기본 상태: 체육관 Wi-Fi 미인증 (버튼 및 빈 슬롯 비활성화) */
+.empty-cell {
+    color: #9ca3af;
+    cursor: not-allowed;
+    background: #2a2f3b;
+    border-color: #475163;
+    transition: all 0.2s ease;
+}
+
+/* 방 개설 및 통합 버튼 기본 비활성화 */
+body:not(.gym-wifi-active) .btn-enter,
+body:not(.gym-wifi-active) .btn-merge,
+body:not(.gym-wifi-active) [data-action="create-game"],
+body:not(.gym-wifi-active) [data-action="create-nanta"] {
+    opacity: 0.7;
+    filter: grayscale(40%);
+    cursor: not-allowed;
+}
+
+/* 📶 체육관 Wi-Fi 인증 완료 상태: 즉시 밝게 복구 */
 body.gym-wifi-active .empty-cell {
-    color: #22c55e;
-    cursor: pointer;
+    color: #22c55e !important;
+    cursor: pointer !important;
+    background: transparent !important;
+    border-color: inherit !important;
+}
+
+body.gym-wifi-active .btn-enter,
+body.gym-wifi-active .btn-merge,
+body.gym-wifi-active [data-action="create-game"],
+body.gym-wifi-active [data-action="create-nanta"] {
+    opacity: 1 !important;
+    filter: none !important;
+    cursor: pointer !important;
+}
+
+/* 💡 이미 사람이 들어가 있는 회원 칸과 퇴장 버튼은 Wi-Fi 무관 100% 선명도 유지 */
+.player-cell:not(:empty) {
+    opacity: 1 !important;
+    filter: none !important;
 }
 
 .slot-footer { display: flex; gap: 6px; margin-top: 2px; }

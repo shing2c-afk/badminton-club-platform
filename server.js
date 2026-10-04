@@ -337,8 +337,29 @@ function isGymWifiUser(socket, clubId) {
     if (!targetConfig.allowedGymIps || targetConfig.allowedGymIps.length === 0) {
         return true; 
     }
-    const clientIp = typeof getClientIp === 'function' ? getClientIp(socket) : '';
-    return targetConfig.allowedGymIps.includes(clientIp);
+
+    // IP 추출 및 정규화
+    let rawIp = typeof getClientIp === 'function' ? getClientIp(socket) : (socket.handshake && (socket.handshake.headers['x-forwarded-for'] || socket.handshake.address)) || '';
+    
+    // X-Forwarded-For 헤더에 여러 IP가 쉼표로 나열된 경우 맨 첫 번째(실제 클라이언트) IP 추출
+    if (rawIp.includes(',')) {
+        rawIp = rawIp.split(',')[0].trim();
+    }
+    
+    // IPv6 접두사(::ffff:) 정리
+    const cleanClientIp = rawIp.replace(/^.*:/, '').trim();
+
+    // 등록된 허용 IP 목록 정규화 후 대조
+    const isAllowed = targetConfig.allowedGymIps.some(ip => {
+        const cleanAllowedIp = String(ip).replace(/^.*:/, '').trim();
+        return cleanAllowedIp === cleanClientIp || rawIp.includes(cleanAllowedIp);
+    });
+
+    if (!isAllowed) {
+        console.log(`🚫 [Wi-Fi 거부] 클라이언트 IP: "${cleanClientIp}" (원본: "${rawIp}") | 등록된 허용 IP:`, targetConfig.allowedGymIps);
+    }
+
+    return isAllowed;
 }
 
 // ==========================

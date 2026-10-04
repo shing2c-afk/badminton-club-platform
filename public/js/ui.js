@@ -1680,97 +1680,10 @@ function checkGymWifiOrAlert() {
 function updateWifiRestrictedButtons() {
     const restrictionEnabled = (typeof window.useWifiRestriction === 'boolean') ? window.useWifiRestriction : true;
     const isWifi = !restrictionEnabled || Boolean(window.isGymWifiConnected);
-    const targetCursor = isWifi ? 'pointer' : 'not-allowed';
 
-    // 1. 신규 방 개설 버튼 (게임신청 방 개설 / 난타신청 방 개설)
-    const createBtns = Array.from(document.querySelectorAll('button, div, a')).filter(el => {
-        const txt = (el.textContent || '').trim();
-        return (txt.includes('방 개설') || txt.includes('게임신청') || txt.includes('난타신청')) && 
-               !txt.includes('취소') && !txt.includes('퇴장') && !txt.includes('나가기');
-    });
-
-    createBtns.forEach(btn => {
-        if (isWifi) {
-            btn.style.removeProperty('opacity');
-            btn.style.removeProperty('filter');
-            btn.style.removeProperty('cursor');
-            btn.removeAttribute('title');
-        } else {
-            // 이중 암전 방지: 너무 어두워지지 않도록 투명도 완화 (0.75)
-            btn.style.setProperty('opacity', '0.75', 'important');
-            btn.style.setProperty('filter', 'grayscale(40%)', 'important');
-            btn.style.setProperty('cursor', targetCursor, 'important');
-            btn.title = '구장 전용 Wi-Fi에 접속 후 이용해 주세요.';
-        }
-    });
-
-    // 2. 대기열 슬롯 칸(플레이어 정보 vs 빈칸) 제어
-    const playerCells = Array.from(document.querySelectorAll('.player-cell'));
-
-    playerCells.forEach(cell => {
-        // [강화된 회원 판별] 이름 태그, 데이터 속성, 텍스트 길이, 아바타 등 포괄 점검
-        const rawText = (cell.textContent || '').trim();
-        const hasMemberTag = cell.querySelector('.player-info, .user-name, .member-name, [data-user-id], img, .avatar');
-        const hasTextMember = rawText.length > 0 && !rawText.includes('참여') && !rawText.includes('비어있음') && !rawText.includes('대기중');
-        const exitBtn = cell.querySelector('.btn-exit, .btn-leave, .btn-cancel, .leave-btn, button, .close-btn, [data-action="leave"]');
-
-        const isOccupied = hasMemberTag || hasTextMember || exitBtn;
-
-        // 💡 [핵심 방어] 이미 사람이 들어가 있는 칸은 새로고침 여부/Wi-Fi 여부와 상관없이 100% 선명도 및 원본 스타일 유지!
-        if (isOccupied) {
-            cell.style.removeProperty('opacity');
-            cell.style.removeProperty('filter');
-            cell.style.removeProperty('background');
-            cell.style.removeProperty('border-color');
-            cell.style.setProperty('opacity', '1', 'important');
-
-            if (exitBtn) {
-                exitBtn.style.removeProperty('opacity');
-                exitBtn.style.removeProperty('filter');
-                exitBtn.style.setProperty('cursor', 'pointer', 'important');
-                exitBtn.style.setProperty('pointer-events', 'auto', 'important');
-            }
-            return;
-        }
-
-        // 이미 대기 중이라 잠긴 빈칸(회색 처리된 칸)
-        if (cell.getAttribute('data-cannot-join') === 'true') {
-            return;
-        }
-
-        // 빈 슬롯('게임참여', '난타참여') 처리
-        if (rawText.includes('참여') || cell.classList.contains('empty-cell') || cell.querySelector('.empty-cell')) {
-            const spanEl = cell.querySelector('.empty-cell') || cell;
-
-            if (isWifi) {
-                cell.style.removeProperty('cursor');
-                cell.style.removeProperty('background');
-                cell.style.removeProperty('border-color');
-                spanEl.style.removeProperty('color');
-            } else {
-                cell.style.setProperty('cursor', targetCursor, 'important');
-                cell.style.setProperty('background', '#2a2f3b', 'important'); // 칙칙한 완전 어두움(#1f242d) 방지
-                cell.style.setProperty('border-color', '#475163', 'important');
-                spanEl.style.setProperty('color', '#9ca3af', 'important'); // 가독성 유지
-            }
-        }
-    });
-
-    // 3. 하단 '게임 통합' 버튼
-    const mergeBtns = Array.from(document.querySelectorAll('button, div, span')).filter(el => {
-        const txt = (el.textContent || '').trim();
-        return txt === '게임 통합' || txt === '게임통합';
-    });
-
-    mergeBtns.forEach(btn => {
-        if (isWifi) {
-            btn.style.removeProperty('opacity');
-            btn.style.removeProperty('filter');
-            btn.style.removeProperty('cursor');
-        } else {
-            btn.style.setProperty('opacity', '0.75', 'important');
-            btn.style.setProperty('filter', 'grayscale(40%)', 'important');
-            btn.style.setProperty('cursor', targetCursor, 'important');
-        }
-    });
+    if (isWifi) {
+        document.body.classList.add('gym-wifi-active');
+    } else {
+        document.body.classList.remove('gym-wifi-active');
+    }
 }
