@@ -567,10 +567,10 @@ function renderGameQueue() {
                         </div>`;
                 } else {
                     playerCellsHtml += `
-                        <div class="player-cell" onclick="joinGameCell('${slot.id}', ${i})" style="cursor:pointer;">
+                        <div class="player-cell empty-slot" onclick="joinGameCell('${slot.id}', ${i})">
                             <span class="empty-cell">게임참여</span>
                         </div>`;
-                }
+                        }
             }
         }
 
@@ -847,10 +847,10 @@ function renderNantaQueue() {
                     </div>`;
             } else {
                     playerCellsHtml += `
-                    <div class="player-cell" onclick="joinNantaCell('${slot.id}', ${i})" style="cursor:pointer;">
-                    <span class="empty-cell">난타참여</span>
-                    </div>`;
-                     }
+                        <div class="player-cell empty-slot" onclick="joinNantaCell('${slot.id}', ${i})">
+                        <span class="empty-cell">난타참여</span>
+                        </div>`;
+                    }
                 }
         }
 

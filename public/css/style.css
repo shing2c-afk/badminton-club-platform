@@ -106,56 +106,85 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .player-info { font-size: 11px; font-weight: 600; color: #f9fafb; letter-spacing: -0.5px; }
 
 .btn-exit { background: #ef4444; color: white; border: none; padding: 3px 5px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer; }
-/* 기본 상태 (Wi-Fi 미연결 / 외부 접속): 회색, 클릭 불가 커서 */
+
+/* ==========================================================================
+   📶 Wi-Fi 기반 구장 출입 통제 UI (미인증 시 잠금 / 인증 시 복구)
+   ========================================================================== */
+
+/* 1. 기본 빈 슬롯 텍스트 공통 스타일 */
 .empty-cell {
-    color: #888888;
     font-size: 11px;
     text-align: center;
     width: 100%;
-    cursor: not-allowed;
     font-weight: bold;
-}
-
-/* 📶 기본 상태: 체육관 Wi-Fi 미인증 (버튼 및 빈 슬롯 비활성화) */
-.empty-cell {
-    color: #9ca3af;
-    cursor: not-allowed;
-    background: #2a2f3b;
-    border-color: #475163;
+    color: #6b7280;
     transition: all 0.2s ease;
 }
 
-/* 방 개설 및 통합 버튼 기본 비활성화 */
-body:not(.gym-wifi-active) .btn-enter,
-body:not(.gym-wifi-active) .btn-merge,
-body:not(.gym-wifi-active) [data-action="create-game"],
-body:not(.gym-wifi-active) [data-action="create-nanta"] {
-    opacity: 0.7;
-    filter: grayscale(40%);
-    cursor: not-allowed;
+/* 2. [미인증 기본 상태] Wi-Fi 미연결 시 빈 슬롯 박스 잠금 및 클릭 차단 */
+body:not(.gym-wifi-active) .player-cell:not(:has(.player-info)) {
+    background: #1f242d !important;
+    border: 1px solid #374151 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important; /* 미인증 시 터치/클릭 원천 차단 (경고창 팝업 방지) */
 }
 
-/* 📶 체육관 Wi-Fi 인증 완료 상태: 즉시 밝게 복구 */
+body:not(.gym-wifi-active) .player-cell:not(:has(.player-info)) .empty-cell {
+    color: #6b7280 !important;
+    cursor: not-allowed !important;
+    opacity: 0.7 !important;
+}
+
+/* 3. [미인증 기본 상태] 방 개설(게임/난타) 및 게임통합 버튼 잠금 */
+body:not(.gym-wifi-active) .btn-enter,
+body:not(.gym-wifi-active) .btn-merge,
+body:not(.gym-wifi-active) .btn-create,
+body:not(.gym-wifi-active) #btn-create-game,
+body:not(.gym-wifi-active) #btn-create-nanta,
+body:not(.gym-wifi-active) [data-action="create-game"],
+body:not(.gym-wifi-active) [data-action="create-nanta"],
+body:not(.gym-wifi-active) button[onclick*="openCreateGameModal"],
+body:not(.gym-wifi-active) button[onclick*="openCreateNantaModal"],
+body:not(.gym-wifi-active) button[onclick*="Create"] {
+    opacity: 0.5 !important;
+    filter: grayscale(60%) !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important; /* Wi-Fi 끊겼을 때 터치/클릭 원천 차단 */
+}
+
+/* 4. [인증 완료 상태] 방 개설(게임/난타) 및 슬롯 정상 활성화 */
 body.gym-wifi-active .empty-cell {
     color: #22c55e !important;
     cursor: pointer !important;
-    background: transparent !important;
-    border-color: inherit !important;
+}
+
+body.gym-wifi-active .player-cell:not(:has(.player-info)) {
+    cursor: pointer !important;
+    pointer-events: auto !important;
 }
 
 body.gym-wifi-active .btn-enter,
 body.gym-wifi-active .btn-merge,
+body.gym-wifi-active .btn-create,
+body.gym-wifi-active #btn-create-game,
+body.gym-wifi-active #btn-create-nanta,
 body.gym-wifi-active [data-action="create-game"],
-body.gym-wifi-active [data-action="create-nanta"] {
+body.gym-wifi-active [data-action="create-nanta"],
+body.gym-wifi-active button[onclick*="openCreateGameModal"],
+body.gym-wifi-active button[onclick*="openCreateNantaModal"],
+body.gym-wifi-active button[onclick*="Create"] {
     opacity: 1 !important;
     filter: none !important;
     cursor: pointer !important;
+    pointer-events: auto !important;
 }
 
-/* 💡 이미 사람이 들어가 있는 회원 칸과 퇴장 버튼은 Wi-Fi 무관 100% 선명도 유지 */
-.player-cell:not(:empty) {
+/* 5. [회원 칸 선명도 보장] 본인/회원이 등록된 슬롯과 퇴장 버튼은 Wi-Fi 상태 무관 100% 유지 */
+.player-cell:has(.player-info),
+.player-cell .btn-exit {
     opacity: 1 !important;
     filter: none !important;
+    pointer-events: auto !important;
 }
 
 .slot-footer { display: flex; gap: 6px; margin-top: 2px; }
