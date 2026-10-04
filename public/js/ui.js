@@ -662,9 +662,11 @@ function renderGameQueue() {
 
     container.innerHTML = allSlotsHtml.join('');
 
-    // 💡 슬롯 HTML 생성 완료 직후 Wi-Fi 제한 비활성화 스타일 강제 적용
+    // 💡 DOM 렌더링 완료 후 단 1회만 스타일 동기화 (1차/2차 중첩 및 새로고침 암전 방지)
     if (typeof updateWifiRestrictedButtons === 'function') {
-        updateWifiRestrictedButtons();
+        requestAnimationFrame(() => {
+            updateWifiRestrictedButtons();
+        });
     }
 }
 

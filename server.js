@@ -1983,6 +1983,23 @@ io.on('connection', (socket) => {
     }
     // =================================================================
 
+    // ⏱️ [Wi-Fi 이탈 시 1분 유예 타이머 시작]
+    socket.on('startDisconnectTimer', ({ phone, username, clubId }) => {
+        const targetClubId = clubId || socket.clubId || 'unjeong';
+        const identifier = phone || username;
+
+        if (!identifier) return;
+
+        console.log(`⏱️ [Wi-Fi 이탈 유예 타이머 가동] 클럽: ${targetClubId}, 사용자: ${identifier}`);
+
+        // 서버에 구현되어 있는 기존 연결해제/이탈 타이머 함수 호출
+        if (typeof handleUserDisconnectTimer === 'function') {
+            handleUserDisconnectTimer(identifier, targetClubId);
+        } else if (typeof startUserGraceTimer === 'function') {
+            startUserGraceTimer(identifier, targetClubId);
+        }
+    });
+
     // ⏱️ [핵심] Wi-Fi 복귀 시 미접속 퇴장 타이머 즉시 해제
     socket.on('cancelDisconnectTimer', (userData) => {
         const phone = userData && userData.phone;
@@ -2029,6 +2046,55 @@ io.on('connection', (socket) => {
                     delete sessionTimers[keyStr];
                 }
             });
+        }
+    });
+
+    // ⏱️ [핵심] Wi-Fi 이탈 시 대기열 삭제 유예 타이머 가동 (LTE 전환 등 대응)
+    socket.on('startDisconnectTimer', (userData) => {
+        const phone = userData && userData.phone;
+        const username = userData && userData.username;
+        const targetClubId = (userData && userData.clubId) || socket.clubId || 'unjeong';
+
+        const rawUser = username || phone || socket.username || socket.phone;
+        if (!rawUser) return;
+
+        const cleanUsername = String(rawUser).split('/')[0].trim();
+        const graceMinutes = (typeof disconnectGraceMinutes !== 'undefined') ? disconnectGraceMinutes : 1;
+
+        console.log(`⏱️️ [Wi-Fi 이탈 타이머 시작] 유저: ${cleanUsername}, 구장: ${targetClubId}, 유예: ${graceMinutes}분`);
+
+        // 이미 기존 타이머가 돌고 있다면 중복 방지를 위해 초기화
+        if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
+            clearTimeout(disconnectTimers[cleanUsername]);
+        }
+
+        if (typeof disconnectUserClubs !== 'undefined') disconnectUserClubs[cleanUsername] = targetClubId;
+        if (typeof disconnectRawUsers !== 'undefined') disconnectRawUsers[cleanUsername] = rawUser;
+
+        if (typeof disconnectTimers !== 'undefined') {
+            disconnectTimers[cleanUsername] = setTimeout(async () => {
+                // 🛡️ [핵심 판정] 타이머 만료 시점에 소켓이 다시 '체육관 Wi-Fi'로 인증되었는지 확인
+                // 다시 Wi-Fi에 붙지 않은 상태라면(LTE 유지 또는 미접속) 무조건 대기열 정리!
+                const isNowWifiValid = typeof isGymWifiUser === 'function' && isGymWifiUser(socket, targetClubId);
+                if (isNowWifiValid) {
+                    console.log(`🛡️ [대기열 유지] 유저(${cleanUsername})가 Wi-Fi에 정상 재접속되었으므로 대기열을 유지합니다.`);
+                    delete disconnectTimers[cleanUsername];
+                    return;
+                }
+
+                if (typeof cleanupUser === 'function') {
+                    await cleanupUser(rawUser, targetClubId);
+                }
+                
+                delete disconnectTimers[cleanUsername];
+                if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
+                if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
+                
+                if (typeof broadcastOnlineCount === 'function') {
+                    broadcastOnlineCount(targetClubId);
+                }
+                console.log(`🧹 [대기열 정리] 유저(${cleanUsername}) Wi-Fi 미인가 상태로 ${graceMinutes}분 경과하여 대기방/슬롯에서 제외되었습니다.`);
+            }, graceMinutes * 60 * 1000);
         }
     });
 
@@ -3021,7 +3087,7 @@ io.on('connection', (socket) => {
     socket.on('mergeSlot', ({ mySlotId, targetSlotId }) => {
         // 🛡️ 공통 Wi-Fi 검증 (미연결 시 방 통합 차단)
         if (!checkWifiGuard('게임 방을 통합')) return;
-        
+
         const currentClubId = socket.clubId || 'unjeong';
         const club = clubs[currentClubId] || clubs['unjeong'];
         
