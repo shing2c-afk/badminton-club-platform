@@ -3291,43 +3291,36 @@ io.on('connection', (socket) => {
                 }
 
                 // 💡 [1단계: 대기열 참여 여부 확인 후 조건부 유예 타이머 가동]
-                let isInQueue = false;
-                if (currentClub) {
-                    const checkQueue = (queue) => {
-                        if (!Array.isArray(queue)) return false;
-                        return queue.some(slot => {
-                            const str = JSON.stringify(slot);
-                            return str.includes(userKey);
-                        });
-                    };
-                    isInQueue = checkQueue(currentClub.gameQueue) || checkQueue(currentClub.nantaQueue);
+            let isUserInQueue = false;
+            const clubObj = (typeof getClub === 'function') ? getClub(currentClubId) : (typeof clubs !== 'undefined' ? clubs[currentClubId] : null);
+            if (clubObj) {
+                const checkInQueue = (queue) => {
+                    if (!Array.isArray(queue)) return false;
+                    return queue.some(slot => JSON.stringify(slot).includes(cleanUsername));
+                };
+                isUserInQueue = checkInQueue(clubObj.gameQueue) || checkInQueue(clubObj.nantaQueue);
+            }
+
+            if (isUserInQueue) {
+                console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${currentClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
+
+                if (typeof disconnectTimers !== 'undefined') {
+                    disconnectTimers[cleanUsername] = setTimeout(async () => {
+                        console.log(`⏰ [유예시간 ${graceMinutes}분 경과] 유저: ${cleanUsername} 대기열 자동 청소 실행`);
+
+                        if (typeof cleanupUser === 'function') {
+                            await cleanupUser(cleanUsername, currentClubId);
+                        }
+
+                        delete disconnectTimers[cleanUsername];
+                        if (typeof broadcastOnlineCount === 'function') {
+                            broadcastOnlineCount(currentClubId);
+                        }
+                    }, graceMinutes * 60 * 1000);
                 }
-
-                if (isInQueue) {
-                    socket.inGracePeriod = true; // 대기방 참여 중일 때만 운동중 카운트 유예 유지
-                    console.log(`📡 [대기방 유예 시작] 유저: ${userKey} (${targetClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
-
-                    if (typeof disconnectTimers !== 'undefined') {
-                        disconnectTimers[userKey] = setTimeout(async () => {
-                            console.log(`⏰ [유예시간 ${graceMinutes}분 경과] 유저: ${userKey} 대기열 자동 청소`);
-                            socket.inGracePeriod = false;
-
-                            if (typeof cleanupUser === 'function') {
-                                const targetUser = rawUser || userKey || socket.username || socket.userId;
-                                await cleanupUser(targetUser, targetClubId);
-                            }
-
-                            delete disconnectTimers[userKey];
-                            if (typeof broadcastOnlineCount === 'function') {
-                                broadcastOnlineCount(targetClubId);
-                            }
-                        }, graceMinutes * 60 * 1000);
-                    }
-                } else {
-                    // 대기열에 없으면 유예 없이 즉시 현장 체류 해제 (접속자는 유지됨)
-                    socket.inGracePeriod = false;
-                    console.log(`📡 [단순 이탈] 유저: ${userKey} (${targetClubId}) 대기방 없음 -> 유예 생략, 세션 만료 타이머만 가동`);
-                }
+            } else {
+                console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${currentClubId}) 대기열 미참여 -> 대기열 청소 생략, 세션 만료 타이머만 가동`);
+            }
 
                 // 💡 [2단계: 세션 만료 타이머 - 이탈 시점 기준 단독 카운트다운]
                 console.log(`⏳ [세션 만료 타이머 시작] 유저: ${userKey} - ${expireMinutes}분 후 강제 로그아웃 예정`);
