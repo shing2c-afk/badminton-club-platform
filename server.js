@@ -3461,26 +3461,31 @@ disconnectTimers[cleanUsername] = setTimeout(async () => {
                     expiredUsers[cleanUsername] = true;
                     delete sessionTimers[cleanUsername];
                     
-                    // 💡 [핵심 수정] clubUserKey 및 cleanUsername 양방향으로 살아있는 소켓 탐색
+                    const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
+
+                    // 💡 [핵심 수정] 스마트폰 클라이언트 리스너 이름(forceSessionExpire)과 일치화
                     let activeSid = null;
                     if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
                         activeSid = activeUserSockets.get(clubUserKey) || activeUserSockets.get(cleanUsername);
                     }
-
-                    // 💡 실시간 연결 소켓이 있으면 새로고침 없이 즉시 팝업 알림 및 퇴출
                     if (activeSid) {
-                        io.to(activeSid).emit('forceLogout', {
-                            message: `장시간(총 ${graceMinutes + expireMinutes}분) Wi-Fi 미접속으로 인해 안전하게 자동 로그아웃되었습니다.`
-                        });
+                        io.to(activeSid).emit('forceSessionExpire', { message: expireMsg });
                         activeUserSockets.delete(clubUserKey);
                         activeUserSockets.delete(cleanUsername);
                     }
 
+                    // 💡 [이중 안전장치] 개별 룸 및 구장 룸에도 동일 신호 전달
+                    io.to(`user_${cleanUsername}`).emit('forceSessionExpire', { message: expireMsg });
+                    io.to(`club_${currentClubId}`).emit('forceSessionExpire', { 
+                        targetUser: cleanUsername, 
+                        message: expireMsg 
+                    });
+
                     if (typeof broadcastOnlineCount === 'function') {
                         broadcastOnlineCount(currentClubId);
                     }
-                    console.log(`🔒 [세션 완전 만료] 유저(${cleanUsername}) ${expireMinutes}분 경과로 세션이 만료되었습니다.`);
-                }, (graceMinutes + expireMinutes) * 60 * 1000);
+                    console.log(`🔒 [세션 완전 만료] 유저(${cleanUsername}) ${expireMinutes}분 경과로 강제 로그아웃 신호 전송 완료`);
+                }, expireMinutes * 60 * 1000); // 💡 (핵심) 덧셈 제거 -> 이탈 시점 기준 단독 1분/30분 적용
             }
         }
     });
