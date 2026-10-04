@@ -3658,13 +3658,25 @@ function broadcastOnlineCount(targetClubId) {
             });
         }
 
-        // 2. 화면 꺼짐/수면 상태로 유예시간(disconnectTimers) 작동 중인 회원 합산
+        // 2. 화면 꺼짐/수면 상태 및 세션 만료 유예(sessionTimers) 회원 합산
         if (typeof disconnectTimers !== 'undefined' && typeof disconnectUserClubs !== 'undefined') {
             Object.keys(disconnectTimers).forEach((userKey) => {
                 if (disconnectUserClubs[userKey] === clubId) {
                     loggedInUsers.add(userKey);
-                    // 유예시간 중인 회원은 체육관 내부에서 꺼진 것이므로 운동중(wifiUsers)에도 보존
+                    // 대기방 유예 중인 회원은 운동중(wifiUsers)에도 보존
                     wifiUsers.add(userKey);
+                }
+            });
+        }
+
+        // 💡 [핵심 추가] Wi-Fi 이탈 후 2분 세션 만료 대기 중인 회원은 '접속자'로만 보존 (운동중에는 미포함)
+        if (typeof sessionTimers !== 'undefined') {
+            Object.keys(sessionTimers).forEach((cleanUser) => {
+                const userClub = (typeof disconnectUserClubs !== 'undefined' && disconnectUserClubs[cleanUser]) 
+                                 ? disconnectUserClubs[cleanUser] 
+                                 : 'unjeong';
+                if (userClub === clubId) {
+                    loggedInUsers.add(cleanUser);
                 }
             });
         }
