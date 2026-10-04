@@ -326,7 +326,27 @@ function getClientIp(socket) {
 }
 
 function isGymWifiUser(socket, clubId) {
-    // 💡 호출 시 넘겨준 clubId -> 소켓에 등록된 socket.clubId -> 기본값 'unjeong' 순서로 확인
+    // 💡 1. 소켓 객체에 이미 인가 플래그가 있는 경우 즉시 통과
+    if (socket && (socket.inGym === true || socket.isGymWifi === true || socket.inGymConfirmedLeft === false)) {
+        return true;
+    }
+
+    // 💡 2. 유저 식별자 확인 (복귀가 확인된 세션 통과)
+    const rawUser = (socket && socket.username) || (socket && socket.userId) || (typeof userSockets !== 'undefined' && userSockets[socket.id]);
+    let userKey = '';
+    if (rawUser) {
+        userKey = (typeof rawUser === 'object' && rawUser !== null)
+            ? (rawUser.id || rawUser.username || rawUser.name || rawUser.phone || '')
+            : String(rawUser);
+        userKey = userKey.trim();
+    }
+    
+    // 유예 타이머 목록에 없고(복귀 완료됨), socket.inGym이 활성화되어 있다면 승인
+    if (userKey && typeof disconnectTimers !== 'undefined' && !disconnectTimers[userKey] && socket && socket.inGym) {
+        return true;
+    }
+
+    // 💡 3. 기본 클럽 설정 및 IP 검사 (기존 로직 완벽 유지)
     const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
     const club = (typeof clubs !== 'undefined' && clubs[targetClubId]) ? clubs[targetClubId] : null;
     const targetConfig = (club && club.config) ? club.config : (typeof config !== 'undefined' ? config : {});
@@ -340,16 +360,12 @@ function isGymWifiUser(socket, clubId) {
 
     // IP 추출 및 정규화
     let rawIp = typeof getClientIp === 'function' ? getClientIp(socket) : (socket.handshake && (socket.handshake.headers['x-forwarded-for'] || socket.handshake.address)) || '';
-    
-    // X-Forwarded-For 헤더에 여러 IP가 쉼표로 나열된 경우 맨 첫 번째(실제 클라이언트) IP 추출
     if (rawIp.includes(',')) {
         rawIp = rawIp.split(',')[0].trim();
     }
-    
-    // IPv6 접두사(::ffff:) 정리
     const cleanClientIp = rawIp.replace(/^.*:/, '').trim();
 
-    // 등록된 허용 IP 목록 정규화 후 대조
+    // 등록된 허용 IP 목록 대조
     const isAllowed = targetConfig.allowedGymIps.some(ip => {
         const cleanAllowedIp = String(ip).replace(/^.*:/, '').trim();
         return cleanAllowedIp === cleanClientIp || rawIp.includes(cleanAllowedIp);
@@ -3216,16 +3232,23 @@ io.on('connection', (socket) => {
             userKey = userKey.trim();
         }
 
-        // 소켓 객체에 체류 상태 및 유예 플래그 기록
+        // 소켓 객체 및 유저 상태에 체류/인가 플래그 기록
         if (inGym) {
             socket.inGym = true;
-            socket.inGracePeriod = false; // 체육관 복귀 시 유예 해제
-
-            // 💡 [핵심 추가] 소켓 보안 검증 가드를 즉시 통과할 수 있도록 정식 Wi-Fi 인가 플래그 부여!
             socket.isGymWifi = true;
             socket.verifiedWifi = true;
+            socket.inGracePeriod = false; // 체육관 복귀 시 유예 해제
+            socket.inGymConfirmedLeft = false; // 이탈 플래그 완전 해제
 
-            // ⏱️ [핵심 해결] 체육관 복귀 시 실행 중이던 대기방 유예 삭제 타이머 즉시 취소!
+            // 💡 [핵심 보강] 소켓이 재연결되더라도 유저 식별자 기반으로 인가를 유지하도록 전역 기록
+            if (userKey) {
+                if (typeof global.verifiedGymUsers === 'undefined') {
+                    global.verifiedGymUsers = new Set();
+                }
+                global.verifiedGymUsers.add(userKey);
+            }
+
+            // ⏱️ 체육관 복귀 시 실행 중이던 대기방 유예 삭제 타이머 즉시 취소!
             if (userKey && typeof disconnectTimers !== 'undefined' && disconnectTimers[userKey]) {
                 clearTimeout(disconnectTimers[userKey]);
                 delete disconnectTimers[userKey];
@@ -3237,11 +3260,15 @@ io.on('connection', (socket) => {
             }
         } else {
             // 이탈 시: 유예 플래그를 켜서 유예시간 동안 운동중 카운트 유지
-            socket.inGracePeriod = true;
-
-            // 💡 [핵심 추가] Wi-Fi 이탈 시 인가 플래그 해제
+            socket.inGym = false;
             socket.isGymWifi = false;
             socket.verifiedWifi = false;
+            socket.inGracePeriod = true;
+
+            // 💡 [핵심 보강] 이탈 시 전역 인증 유저 목록에서도 제거
+            if (userKey && typeof global.verifiedGymUsers !== 'undefined') {
+                global.verifiedGymUsers.delete(userKey);
+            }
         }
 
         const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 10;
