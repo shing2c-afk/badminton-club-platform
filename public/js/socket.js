@@ -794,7 +794,7 @@ if (typeof socket !== 'undefined' && socket) {
         }
     }, 3000);
 
-    // 소켓이 준비되었을 때 forceSessionExpire 리스너 장착 (시각적 팝업 노출 시간 확보)
+    // 소켓이 준비되었을 때 forceSessionExpire 리스너 장착 (4초 가시시간 확보 및 실시간 카운트다운)
     function setupSessionExpireListener() {
         const activeSocket = (typeof socket !== 'undefined') ? socket : window.socket;
         if (activeSocket) {
@@ -802,6 +802,9 @@ if (typeof socket !== 'undefined' && socket) {
             activeSocket.off('forceSessionExpire');
 
             activeSocket.on('forceSessionExpire', (data) => {
+                // 이미 만료 안내 모달이 떠 있다면 중복 실행 방지
+                if (document.getElementById('session-expire-modal')) return;
+
                 const msg = (data && data.message) 
                     ? data.message 
                     : '체육관을 벗어나 장시간 경과하여 안전을 위해 자동 로그아웃되었습니다.';
@@ -821,50 +824,66 @@ if (typeof socket !== 'undefined' && socket) {
                     left: 0;
                     width: 100vw;
                     height: 100vh;
-                    background: rgba(15, 23, 42, 0.92);
-                    z-index: 9999999;
+                    background: rgba(15, 23, 42, 0.94);
+                    z-index: 2147483647;
                     display: flex;
                     flex-direction: column;
                     justify-content: center;
                     align-items: center;
                     padding: 24px;
                     box-sizing: border-box;
-                    backdrop-filter: blur(4px);
+                    backdrop-filter: blur(5px);
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 `;
 
                 overlay.innerHTML = `
-                    <div style="background: #ffffff; border-radius: 20px; max-width: 320px; width: 100%; padding: 28px 20px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);">
-                        <div style="font-size: 48px; line-height: 1; margin-bottom: 16px;">🔒</div>
-                        <h3 style="margin: 0 0 10px 0; font-size: 19px; font-weight: 800; color: #1e293b;">자동 로그아웃 안내</h3>
-                        <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.5; color: #64748b; word-break: keep-all;">${msg}</p>
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <button id="expire-confirm-btn" style="width: 100%; padding: 12px; background: #2563eb; color: #ffffff; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer;">
-                                확인 (로그인 화면으로 이동)
+                    <div style="background: #ffffff; border-radius: 20px; max-width: 320px; width: 100%; padding: 30px 22px; text-align: center; box-shadow: 0 20px 30px rgba(0, 0, 0, 0.4);">
+                        <div style="font-size: 50px; line-height: 1; margin-bottom: 16px;">🔒</div>
+                        <h3 style="margin: 0 0 10px 0; font-size: 20px; font-weight: 800; color: #1e293b;">자동 로그아웃 안내</h3>
+                        <p style="margin: 0 0 22px 0; font-size: 14px; line-height: 1.55; color: #475569; word-break: keep-all;">${msg}</p>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <button id="expire-confirm-btn" style="width: 100%; padding: 13px; background: #2563eb; color: #ffffff; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer;">
+                                지금 로그인 창으로 이동
                             </button>
-                            <span id="expire-timer-text" style="font-size: 12px; color: #94a3b8;">3초 후 자동으로 이동합니다...</span>
+                            <span id="expire-timer-text" style="font-size: 13px; font-weight: 600; color: #64748b;">4초 후 자동으로 이동합니다...</span>
                         </div>
                     </div>
                 `;
 
                 document.body.appendChild(overlay);
 
-                // 3. 사용자가 직접 '확인' 버튼을 누르면 즉시 이동
+                // 3. 페이지 새로고침 단일 실행 함수
+                let isReloading = false;
+                const doReload = () => {
+                    if (isReloading) return;
+                    isReloading = true;
+                    location.reload();
+                };
+
+                // 사용자가 직접 '확인' 버튼 클릭 시 즉시 새로고침
                 const btn = document.getElementById('expire-confirm-btn');
                 if (btn) {
-                    btn.addEventListener('click', () => {
-                        location.reload();
-                    });
+                    btn.addEventListener('click', doReload);
                 }
 
-                // 4. 가만히 두어도 3.5초 후 자동 새로고침(로그인 창 이동)
-                setTimeout(() => {
-                    location.reload();
-                }, 3500);
+                // 4. 4초 실시간 카운트다운 타이머
+                let remainingSeconds = 4;
+                const timerText = document.getElementById('expire-timer-text');
+                const intervalId = setInterval(() => {
+                    remainingSeconds -= 1;
+                    if (remainingSeconds > 0) {
+                        if (timerText) {
+                            timerText.innerText = `${remainingSeconds}초 후 자동으로 이동합니다...`;
+                        }
+                    } else {
+                        clearInterval(intervalId);
+                        doReload();
+                    }
+                }, 1000);
             });
         } else {
             setTimeout(setupSessionExpireListener, 500);
         }
     }
     setupSessionExpireListener();
-})();
+    })();
