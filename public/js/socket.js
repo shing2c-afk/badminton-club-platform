@@ -161,27 +161,19 @@ socket.on('wifiStatus', (data) => {
         }
 
         // ⏱️ [서버 알림] 1분 미접속 대기열 삭제 타이머 즉시 해제
-        if (currentPhone || currentName) {
-            socket.emit('cancelDisconnectTimer', {
-                phone: currentPhone,
-                username: currentName,
-                clubId: clubId
-            });
-        }
+if (currentPhone || currentName) {
+    socket.emit('cancelDisconnectTimer', {
+        phone: currentPhone,
+        username: currentName,
+        clubId: clubId
+    });
+}
 
-       // 🔄 [핵심] 새로고침 없이 최신 체육관 Wi-Fi IP 반영 및 룸 재동기화
-        if (typeof socket !== 'undefined' && socket) {
-            console.log("🔄 [Wi-Fi 복귀] 소켓을 재연결하고 구장 정보를 동기화합니다.");
-            socket.disconnect();
-            socket.connect();
-            
-            // 소켓이 새 IP로 붙는 즉시 구장 방 재입장 신호 전송
-            socket.once('connect', () => {
-                const targetClub = clubId || 'unjeong';
-                socket.emit('joinClub', { clubId: targetClub });
-                socket.emit('verifyWifi', { clubId: targetClub });
-            });
-        }
+// 🔄 [안전한 IP 재검증] 강제 재연결 없이 기존 통로로 1회 확인 요청만 전송
+if (typeof socket !== 'undefined' && socket && socket.connected) {
+    const targetClub = (typeof clubId !== 'undefined' && clubId) ? clubId : 'unjeong';
+    socket.emit('verifyWifi', { clubId: targetClub });
+}
 
         if (typeof updateWifiRestrictedButtons === 'function') {
             updateWifiRestrictedButtons();
