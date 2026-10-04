@@ -247,9 +247,9 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
 
         const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 
-        // 🟢 Case 1: 와이파이 재접속 확인 -> 완벽한 활성화 및 타이머 해제 복귀
+       // 🟢 Case 1: 와이파이 재접속 확인
         if (data.isGymWifi && !window.isGymWifiConnected) {
-            console.log('🎉 구장 Wi-Fi 복귀 감지 -> 화면 활성화 및 서버 타이머 즉시 해제');
+            console.log('🎉 구장 Wi-Fi 복귀 감지 -> 화면 활성화');
             window.isGymWifiConnected = true;
             document.body.classList.add('gym-wifi-active');
 
@@ -258,7 +258,7 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
             }
 
             if (activeSocket && activeSocket.connected) {
-                // 1. 서버의 1분 삭제 유예 타이머 취소 (동일한 정식 규격 전송)
+                // 1. 서버 유예 타이머 취소만 전송
                 if (currentPhone || currentName) {
                     activeSocket.emit('cancelDisconnectTimer', {
                         phone: currentPhone,
@@ -266,8 +266,7 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
                         clubId: clubId
                     });
                 }
-                // 2. 소켓 통로의 Wi-Fi 인가 상태 최신 갱신 요청
-                activeSocket.emit('verifyWifi', { clubId: clubId });
+                // 💡 반복 verifyWifi 호출 제거 -> HTTP API 결과(data.isGymWifi)를 단일 진실 공급원으로 인정
             }
         }
         // 🔴 Case 2: 와이파이 단절(LTE 전환) 순간 감지 -> 화면 비활성화 및 유예 타이머 가동

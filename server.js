@@ -2022,15 +2022,23 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🔄 [Wi-Fi 재검증 처리] 와이파이 복귀 시 소켓 IP 즉시 재판정
+    // 🔄 [Wi-Fi 재검증 처리]
     socket.on('verifyWifi', (data) => {
         const targetClubId = (data && data.clubId) || socket.clubId || 'unjeong';
+        
+        // 소켓의 실제 프록시/헤더 IP 추출 (api/check-wifi와 동일한 규격 적용)
+        const forwarded = socket.handshake.headers['x-forwarded-for'];
+        const clientIp = (forwarded ? forwarded.split(',')[0].trim() : socket.handshake.address) || '';
+
         const isValid = typeof isGymWifiUser === 'function' ? isGymWifiUser(socket, targetClubId) : true;
 
-        console.log(`📡 [Wi-Fi 재검증 응답] 클럽: ${targetClubId}, 소켓: ${socket.id}, 인가여부: ${isValid}`);
+        console.log(`📡 [Wi-Fi 재검증] IP: ${clientIp}, 결과: ${isValid}`);
         
-        // 브라우저 화면 상태 즉시 동기화
-        socket.emit('wifiStatus', { isGymWifi: isValid });
+        // 검증 결과를 클라이언트로 전송
+        socket.emit('wifiStatus', { 
+            isGymWifi: isValid,
+            clientIp: clientIp 
+        });
     });
     
     // ⏱️ [핵심] Wi-Fi 복귀 시 미접속 퇴장 타이머 즉시 해제
