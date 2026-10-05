@@ -3302,8 +3302,11 @@ io.on('connection', (socket) => {
                 ? getClub(activeClubId) 
                 : (typeof clubs !== 'undefined' ? clubs[activeClubId] : null);
 
-            // 🛡️ 2. 하이픈 유무에 상관없이 매칭할 번호 키 준비
-            const rawPhone = String(cleanUsername || '').replace(/[^0-9]/g, '');
+           // 🛡️ 2. cleanUsername 안전 정의 및 하이픈 제거 번호 준비
+            const activeUser = (typeof cleanUsername !== 'undefined' && cleanUsername)
+                ? cleanUsername
+                : (socket.username || socket.userId || (socket.handshake && socket.handshake.query && (socket.handshake.query.phone || socket.handshake.query.username)) || '');
+            const rawPhone = String(activeUser || '').replace(/[^0-9]/g, '');
 
             if (clubObj) {
                 const checkInQueue = (queue) => {
