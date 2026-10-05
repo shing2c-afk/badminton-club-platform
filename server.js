@@ -185,11 +185,22 @@ function loadClubsData() {
                 };
             }
 
-            // 환경설정 복원 (기본값과 저장된 파일 설정을 안전하게 병합)
+            // 환경설정 복원 (스크린샷 5가지 보안/제한시간 설정 + 와이파이 설정 영구 복원)
             const savedCfg = savedData[cId].config || {};
             clubs[cId].config = {
                 ...(clubs[cId].config || {}),
                 ...savedCfg,
+                // ⏱️ 1. 입장 대기 제한시간 (초 단위)
+                ENTRY_TIMEOUT_SEC: savedCfg.ENTRY_TIMEOUT_SEC !== undefined ? Number(savedCfg.ENTRY_TIMEOUT_SEC) : 180,
+                // ⏱️ 2. 난타 코트 이용시간 (초 단위)
+                NANTA_COURT_LIMIT_SEC: savedCfg.NANTA_COURT_LIMIT_SEC !== undefined ? Number(savedCfg.NANTA_COURT_LIMIT_SEC) : 300,
+                // ⏱️ 3. 대기방 보존 유예시간 (분 단위)
+                queueGraceMinutes: savedCfg.queueGraceMinutes !== undefined ? Number(savedCfg.queueGraceMinutes) : 30,
+                // ⏱️ 4. 세션 자동 만료시간 (분 단위)
+                sessionExpireMinutes: savedCfg.sessionExpireMinutes !== undefined ? Number(savedCfg.sessionExpireMinutes) : 60,
+                // 🔒 5. 관리자 접속 비밀번호
+                ADMIN_PASSWORD: savedCfg.ADMIN_PASSWORD || (clubs[cId].config?.ADMIN_PASSWORD || '1234'),
+
                 // 🎯 토글 스위치(boolean) 값과 IP 목록 영구 보존
                 useWifiRestriction: typeof savedCfg.useWifiRestriction === 'boolean' 
                     ? savedCfg.useWifiRestriction 
@@ -3354,51 +3365,6 @@ io.on('connection', (socket) => {
             const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 30;
             const expireMinutes = (currentClub && currentClub.config && currentClub.config.sessionExpireMinutes) ? currentClub.config.sessionExpireMinutes : 60;
 
-            // [1단계] 대기열 참여 여부 확인
-            let isUserInQueue = false;
-            if (currentClub) {
-                const checkInQueue = (queue) => {
-                    if (!Array.isArray(queue)) return false;
-                    return queue.some(slot => {
-                        const slotStr = JSON.stringify(slot);
-                        const slotDigits = slotStr.replace(/[^0-9]/g, '');
-                        return slotStr.includes(cleanUsername) || (rawPhone.length >= 8 && slotDigits.includes(rawPhone));
-                    });
-                };
-                isUserInQueue = checkInQueue(currentClub.gameQueue) || checkInQueue(currentClub.nantaQueue);
-            }
-
-            if (isUserInQueue) {
-                console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${currentClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
-
-                if (typeof disconnectTimers !== 'undefined') {
-                    disconnectTimers[cleanUsername] = setTimeout(async () => {
-                        const isUserReconnected = typeof userSockets !== 'undefined' && Object.values(userSockets).some(u => String(u).includes(cleanUsername) || cleanUsername.includes(String(u)));
-                        if (isUserReconnected) {
-                            delete disconnectTimers[cleanUsername];
-                            return;
-                        }
-
-                        if (typeof cleanupUser === 'function') {
-                            await cleanupUser(cleanUsername, currentClubId);
-                            if (rawPhone && rawPhone !== cleanUsername) {
-                                await cleanupUser(rawPhone, currentClubId);
-                            }
-                        }
-
-                        delete disconnectTimers[cleanUsername];
-                        if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
-                        if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
-
-                        if (typeof broadcastOnlineCount === 'function') {
-                            broadcastOnlineCount(currentClubId);
-                        }
-                    }, graceMinutes * 60 * 1000);
-                }
-            } else {
-                console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${currentClubId}) 대기열 미참여 -> 1단계 유예 생략, 세션 만료 타이머만 가동`);
-            }
-
             // [2단계] 세션 만료 타이머 가동
             if (typeof sessionTimers !== 'undefined') {
                 sessionTimers[cleanUsername] = setTimeout(() => {
@@ -3483,45 +3449,6 @@ io.on('connection', (socket) => {
             const currentClub = (typeof getClub === 'function') ? getClub(currentClubId) : null;
             const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 30;
             const expireMinutes = (currentClub && currentClub.config && currentClub.config.sessionExpireMinutes) ? currentClub.config.sessionExpireMinutes : 60;
-
-           // [1단계: 설정된 유예 시간] 대기열 참여 여부 확인 후 조건부 유예 타이머 가동
-let isUserInQueue = false;
-const clubObj = (typeof getClub === 'function') ? getClub(currentClubId) : (typeof clubs !== 'undefined' ? clubs[currentClubId] : null);
-if (clubObj) {
-    const checkInQueue = (queue) => {
-        if (!Array.isArray(queue)) return false;
-        return queue.some(slot => JSON.stringify(slot).includes(cleanUsername));
-    };
-    isUserInQueue = checkInQueue(clubObj.gameQueue) || checkInQueue(clubObj.nantaQueue);
-}
-
-if (isUserInQueue) {
-    console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${currentClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
-
-    disconnectTimers[cleanUsername] = setTimeout(async () => {
-        // 🛡️ [핵심 안전장치] 삭제 직전, 유저가 이미 소켓으로 재접속되어 있다면 삭제 취소!
-        const isUserReconnected = typeof userSockets !== 'undefined' && Object.values(userSockets).some(u => String(u).includes(cleanUsername) || cleanUsername.includes(String(u)));
-        if (isUserReconnected) {
-            console.log(`🛡️ [대기열 유지] 유저(${cleanUsername})가 이미 재접속 상태이므로 삭제를 건너뜁니다.`);
-            delete disconnectTimers[cleanUsername];
-            return;
-        }
-
-        if (typeof cleanupUser === 'function') {
-            await cleanupUser(rawUser, currentClubId);
-        }
-        delete disconnectTimers[cleanUsername];
-        if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
-        if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
-        
-        if (typeof broadcastOnlineCount === 'function') {
-            broadcastOnlineCount(currentClubId);
-        }
-        console.log(`🧹 [대기열 정리] 유저(${cleanUsername}) ${graceMinutes}분 미접속으로 대기방/슬롯에서 제외되었습니다.`);
-    }, graceMinutes * 60 * 1000);
-} else {
-    console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${currentClubId}) 대기열 미참여 -> 1단계 유예 생략, 세션 만료 타이머만 단독 가동`);
-}
 
             // [2단계: 설정된 만료 시간] 세션 만료 및 실시간 강제 로그아웃 전송
             if (typeof sessionTimers !== 'undefined') {
