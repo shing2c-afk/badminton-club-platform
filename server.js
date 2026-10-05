@@ -3221,7 +3221,7 @@ io.on('connection', (socket) => {
         const { inGym, clubId, userId, username } = data || {};
         const targetClubId = clubId || socket.clubId || 'unjeong';
         const currentClub = (typeof getClub === 'function') ? getClub(targetClubId) : (typeof clubs !== 'undefined' ? clubs[targetClubId] : null);
-        
+
         // 💡 소켓 객체 및 전송 데이터에서 유저 식별자 확보
         const rawUser = userId || username || (typeof userSockets !== 'undefined' && userSockets[socket.id]) || socket.username;
         let userKey = '';
@@ -3243,16 +3243,12 @@ io.on('connection', (socket) => {
             socket.inGracePeriod = false;
             socket.inGymConfirmedLeft = false;
 
-            // 전역 인증 유저 보존 (소켓 재연결 가드 통과용)
             if (userKey) {
                 if (typeof global.verifiedGymUsers === 'undefined') {
                     global.verifiedGymUsers = new Set();
                 }
                 global.verifiedGymUsers.add(userKey);
-            }
 
-            // ⏱️ 복귀 시 동작 중이던 유예 및 세션 타이머 즉시 해제 (완전 초기화)
-            if (userKey) {
                 if (typeof disconnectTimers !== 'undefined' && disconnectTimers[userKey]) {
                     clearTimeout(disconnectTimers[userKey]);
                     delete disconnectTimers[userKey];
@@ -3274,13 +3270,11 @@ io.on('connection', (socket) => {
             socket.isGymWifi = false;
             socket.verifiedWifi = false;
 
-            // 전역 인증 유저에서 제거
             if (userKey && typeof global.verifiedGymUsers !== 'undefined') {
                 global.verifiedGymUsers.delete(userKey);
             }
 
             if (userKey) {
-                // 기존 잔여 타이머 안전 초기화
                 if (typeof disconnectTimers !== 'undefined' && disconnectTimers[userKey]) {
                     clearTimeout(disconnectTimers[userKey]);
                     delete disconnectTimers[userKey];
@@ -3290,12 +3284,82 @@ io.on('connection', (socket) => {
                     delete sessionTimers[userKey];
                 }
 
-                // 💡 [1단계: 대기열 참여 여부 확인 후 조건부 유예 타이머 가동]
-            let isUserInQueue = false;
-            const clubObj = (typeof getClub === 'function') ? getClub(currentClubId) : (typeof clubs !== 'undefined' ? clubs[currentClubId] : null);
-            const rawPhone = String(cleanUsername || '').replace(/[^0-9]/g, '');
+                // 와이파이 이탈 시 세션 만료 타이머 가동
+                if (typeof sessionTimers !== 'undefined') {
+                    sessionTimers[userKey] = setTimeout(() => {
+                        const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
+                        io.to(socket.id).emit('forceSessionExpire', { message: expireMsg });
+                        io.to(`user_${userKey}`).emit('forceSessionExpire', { message: expireMsg });
+                        delete sessionTimers[userKey];
+                        if (typeof broadcastOnlineCount === 'function') {
+                            broadcastOnlineCount(targetClubId);
+                        }
+                    }, expireMinutes * 60 * 1000);
+                }
+            }
 
-            if (clubObj && cleanUsername) {
+            if (typeof broadcastOnlineCount === 'function') {
+                broadcastOnlineCount(targetClubId);
+            }
+        }
+    });
+
+    // =================================================================
+    // ⏱️ 2. 통합된 disconnect (화면 꺼짐, 와이파이 단절 시 2단계 유예)
+    // =================================================================
+    socket.on('disconnect', () => {
+        const currentSocketId = socket.id;
+        const currentClubId = socket.clubId || 'unjeong';
+        const rawUser = (typeof userSockets !== 'undefined' && userSockets[currentSocketId]) || socket.username || '';
+
+        let rawUsername = '';
+        if (rawUser) {
+            rawUsername = (typeof rawUser === 'object' && rawUser !== null)
+                ? (rawUser.name || rawUser.username || rawUser.id || '')
+                : String(rawUser);
+        }
+
+        const cleanUsername = String(rawUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
+        const rawPhone = String(cleanUsername || '').replace(/[^0-9]/g, '');
+        const clubUserKey = `${currentClubId}_${cleanUsername}`;
+
+        // 소켓 매핑 정보 정리
+        if (typeof userSockets !== 'undefined') {
+            delete userSockets[currentSocketId];
+        }
+        if (cleanUsername && typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+            if (activeUserSockets.get(clubUserKey) === currentSocketId) activeUserSockets.delete(clubUserKey);
+            if (activeUserSockets.get(cleanUsername) === currentSocketId) activeUserSockets.delete(cleanUsername);
+        }
+
+        // 명시적 로그아웃 여부 확인
+        if (socket.isExplicitLogout) {
+            if (typeof broadcastOnlineCount === 'function') {
+                broadcastOnlineCount(currentClubId);
+            }
+            return;
+        }
+
+        if (cleanUsername) {
+            if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
+                clearTimeout(disconnectTimers[cleanUsername]);
+                delete disconnectTimers[cleanUsername];
+            }
+            if (typeof sessionTimers !== 'undefined' && sessionTimers[cleanUsername]) {
+                clearTimeout(sessionTimers[cleanUsername]);
+                delete sessionTimers[cleanUsername];
+            }
+
+            if (typeof disconnectUserClubs !== 'undefined') disconnectUserClubs[cleanUsername] = currentClubId;
+            if (typeof disconnectRawUsers !== 'undefined') disconnectRawUsers[cleanUsername] = rawUser;
+
+            const currentClub = (typeof getClub === 'function') ? getClub(currentClubId) : (typeof clubs !== 'undefined' ? clubs[currentClubId] : null);
+            const graceMinutes = (currentClub && currentClub.config && currentClub.config.queueGraceMinutes) ? currentClub.config.queueGraceMinutes : 30;
+            const expireMinutes = (currentClub && currentClub.config && currentClub.config.sessionExpireMinutes) ? currentClub.config.sessionExpireMinutes : 60;
+
+            // [1단계] 대기열 참여 여부 확인
+            let isUserInQueue = false;
+            if (currentClub) {
                 const checkInQueue = (queue) => {
                     if (!Array.isArray(queue)) return false;
                     return queue.some(slot => {
@@ -3304,20 +3368,19 @@ io.on('connection', (socket) => {
                         return slotStr.includes(cleanUsername) || (rawPhone.length >= 8 && slotDigits.includes(rawPhone));
                     });
                 };
-                isUserInQueue = checkInQueue(clubObj.gameQueue) || checkInQueue(clubObj.nantaQueue);
+                isUserInQueue = checkInQueue(currentClub.gameQueue) || checkInQueue(currentClub.nantaQueue);
             }
 
             if (isUserInQueue) {
                 console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${currentClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
 
-                if (typeof disconnectUserClubs !== 'undefined') {
-                    disconnectUserClubs[cleanUsername] = currentClubId;
-                    if (rawPhone) disconnectUserClubs[rawPhone] = currentClubId;
-                }
-
                 if (typeof disconnectTimers !== 'undefined') {
                     disconnectTimers[cleanUsername] = setTimeout(async () => {
-                        console.log(`⏰ [유예시간 ${graceMinutes}분 경과] 유저: ${cleanUsername} 대기열 자동 청소 실행`);
+                        const isUserReconnected = typeof userSockets !== 'undefined' && Object.values(userSockets).some(u => String(u).includes(cleanUsername) || cleanUsername.includes(String(u)));
+                        if (isUserReconnected) {
+                            delete disconnectTimers[cleanUsername];
+                            return;
+                        }
 
                         if (typeof cleanupUser === 'function') {
                             await cleanupUser(cleanUsername, currentClubId);
@@ -3327,10 +3390,8 @@ io.on('connection', (socket) => {
                         }
 
                         delete disconnectTimers[cleanUsername];
-                        if (typeof disconnectUserClubs !== 'undefined') {
-                            delete disconnectUserClubs[cleanUsername];
-                            if (rawPhone) delete disconnectUserClubs[rawPhone];
-                        }
+                        if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
+                        if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
 
                         if (typeof broadcastOnlineCount === 'function') {
                             broadcastOnlineCount(currentClubId);
@@ -3338,52 +3399,32 @@ io.on('connection', (socket) => {
                     }, graceMinutes * 60 * 1000);
                 }
             } else {
-                console.log(`📡 [단순 이탈] 유저: ${cleanUsername || '알수없음'} (${currentClubId}) 대기열 미참여 -> 대기열 청소 생략, 세션 만료 타이머만 가동`);
-                if (typeof disconnectUserClubs !== 'undefined' && cleanUsername) {
-                    delete disconnectUserClubs[cleanUsername];
-                    if (rawPhone) delete disconnectUserClubs[rawPhone];
-                }
+                console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${currentClubId}) 대기열 미참여 -> 1단계 유예 생략, 세션 만료 타이머만 가동`);
             }
 
-                // 💡 [2단계: 세션 만료 타이머 - 이탈 시점 기준 단독 카운트다운]
-                console.log(`⏳ [세션 만료 타이머 시작] 유저: ${userKey} - ${expireMinutes}분 후 강제 로그아웃 예정`);
-                if (typeof sessionTimers !== 'undefined') {
-                    sessionTimers[userKey] = setTimeout(() => {
-                        console.log(`🔒 [세션만료 ${expireMinutes}분 경과] 유저: ${userKey} 강제 로그아웃 신호 전송`);
+            // [2단계] 세션 만료 타이머 가동
+            if (typeof sessionTimers !== 'undefined') {
+                sessionTimers[cleanUsername] = setTimeout(() => {
+                    if (typeof expiredUsers !== 'undefined') expiredUsers[cleanUsername] = true;
+                    delete sessionTimers[cleanUsername];
 
-                        // 최신 활성 소켓 탐색
-                        let currentSocketId = null;
-                        if (typeof userSockets !== 'undefined') {
-                            for (const [sId, u] of Object.entries(userSockets)) {
-                                const uId = (typeof u === 'object' && u !== null) ? (u.id || u.username || u.phone) : String(u);
-                                if (uId === userKey) {
-                                    currentSocketId = sId;
-                                    break;
-                                }
-                            }
-                        }
+                    const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
+                    io.to(socket.id).emit('forceSessionExpire', { message: expireMsg });
+                    io.to(`user_${cleanUsername}`).emit('forceSessionExpire', { message: expireMsg });
+                    io.to(`club_${currentClubId}`).emit('forceSessionExpire', {
+                        targetUser: cleanUsername,
+                        message: expireMsg
+                    });
 
-                        const targetSocketId = currentSocketId || socket.id;
-                        io.to(targetSocketId).emit('forceSessionExpire', {
-                            message: `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`
-                        });
-
-                        // 개별 유저 룸에도 동시 발송 (이중 안전장치)
-                        io.to(`user_${userKey}`).emit('forceSessionExpire', {
-                            message: `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`
-                        });
-
-                        delete sessionTimers[userKey];
-                        if (typeof broadcastOnlineCount === 'function') {
-                            broadcastOnlineCount(targetClubId);
-                        }
-                    }, expireMinutes * 60 * 1000); // 💡 (덧셈 제거) 이탈 시점 기준 단독 시간
-                }
+                    if (typeof broadcastOnlineCount === 'function') {
+                        broadcastOnlineCount(currentClubId);
+                    }
+                }, expireMinutes * 60 * 1000);
             }
+        }
 
-            if (typeof broadcastOnlineCount === 'function') {
-                broadcastOnlineCount(targetClubId);
-            }
+        if (typeof broadcastOnlineCount === 'function') {
+            broadcastOnlineCount(currentClubId);
         }
     });
 
