@@ -3292,34 +3292,70 @@ io.on('connection', (socket) => {
 
                 // 💡 [1단계: 대기열 참여 여부 확인 후 조건부 유예 타이머 가동]
             let isUserInQueue = false;
-            const clubObj = (typeof getClub === 'function') ? getClub(currentClubId) : (typeof clubs !== 'undefined' ? clubs[currentClubId] : null);
+            
+            // 🛡️ 1. currentClubId 안전 선언 (502 서버 다운 원천 차단)
+            const activeClubId = (typeof currentClubId !== 'undefined' && currentClubId) 
+                ? currentClubId 
+                : (socket.clubId || (socket.handshake && socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong');
+            
+            const clubObj = (typeof getClub === 'function') 
+                ? getClub(activeClubId) 
+                : (typeof clubs !== 'undefined' ? clubs[activeClubId] : null);
+
+            // 🛡️ 2. 하이픈 유무에 상관없이 매칭할 번호 키 준비
+            const rawPhone = String(cleanUsername || '').replace(/[^0-9]/g, '');
+
             if (clubObj) {
                 const checkInQueue = (queue) => {
                     if (!Array.isArray(queue)) return false;
-                    return queue.some(slot => JSON.stringify(slot).includes(cleanUsername));
+                    return queue.some(slot => {
+                        const slotStr = JSON.stringify(slot);
+                        const slotDigits = slotStr.replace(/[^0-9]/g, '');
+                        // 원본 번호 포함 여부 또는 순수 숫자(8자리 이상) 포함 여부 확인
+                        return (cleanUsername && slotStr.includes(cleanUsername)) ||
+                               (rawPhone.length >= 8 && slotDigits.includes(rawPhone));
+                    });
                 };
                 isUserInQueue = checkInQueue(clubObj.gameQueue) || checkInQueue(clubObj.nantaQueue);
             }
 
             if (isUserInQueue) {
-                console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${currentClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
+                console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${activeClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
+
+                // 유예 기간 동안 운동중 카운트 보존
+                if (typeof disconnectUserClubs !== 'undefined') {
+                    disconnectUserClubs[cleanUsername] = activeClubId;
+                    if (rawPhone) disconnectUserClubs[rawPhone] = activeClubId;
+                }
 
                 if (typeof disconnectTimers !== 'undefined') {
                     disconnectTimers[cleanUsername] = setTimeout(async () => {
                         console.log(`⏰ [유예시간 ${graceMinutes}분 경과] 유저: ${cleanUsername} 대기열 자동 청소 실행`);
 
                         if (typeof cleanupUser === 'function') {
-                            await cleanupUser(cleanUsername, currentClubId);
+                            await cleanupUser(cleanUsername, activeClubId);
+                            if (rawPhone && rawPhone !== cleanUsername) {
+                                await cleanupUser(rawPhone, activeClubId);
+                            }
                         }
 
                         delete disconnectTimers[cleanUsername];
+                        if (typeof disconnectUserClubs !== 'undefined') {
+                            delete disconnectUserClubs[cleanUsername];
+                            if (rawPhone) delete disconnectUserClubs[rawPhone];
+                        }
+
                         if (typeof broadcastOnlineCount === 'function') {
-                            broadcastOnlineCount(currentClubId);
+                            broadcastOnlineCount(activeClubId);
                         }
                     }, graceMinutes * 60 * 1000);
                 }
             } else {
-                console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${currentClubId}) 대기열 미참여 -> 대기열 청소 생략, 세션 만료 타이머만 가동`);
+                console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${activeClubId}) 대기열 미참여 -> 대기열 청소 생략, 세션 만료 타이머만 가동`);
+                if (typeof disconnectUserClubs !== 'undefined') {
+                    delete disconnectUserClubs[cleanUsername];
+                    if (rawPhone) delete disconnectUserClubs[rawPhone];
+                }
             }
 
                 // 💡 [2단계: 세션 만료 타이머 - 이탈 시점 기준 단독 카운트다운]
