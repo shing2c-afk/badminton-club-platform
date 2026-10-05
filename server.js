@@ -3292,43 +3292,27 @@ io.on('connection', (socket) => {
 
                 // 💡 [1단계: 대기열 참여 여부 확인 후 조건부 유예 타이머 가동]
             let isUserInQueue = false;
-            
-            // 🛡️ 1. currentClubId 안전 선언 (502 서버 다운 원천 차단)
-            const activeClubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                ? currentClubId 
-                : (socket.clubId || (socket.handshake && socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong');
-            
-            const clubObj = (typeof getClub === 'function') 
-                ? getClub(activeClubId) 
-                : (typeof clubs !== 'undefined' ? clubs[activeClubId] : null);
+            const clubObj = (typeof getClub === 'function') ? getClub(currentClubId) : (typeof clubs !== 'undefined' ? clubs[currentClubId] : null);
+            const rawPhone = String(cleanUsername || '').replace(/[^0-9]/g, '');
 
-           // 🛡️ 2. cleanUsername 안전 정의 및 하이픈 제거 번호 준비
-            const activeUser = (typeof cleanUsername !== 'undefined' && cleanUsername)
-                ? cleanUsername
-                : (socket.username || socket.userId || (socket.handshake && socket.handshake.query && (socket.handshake.query.phone || socket.handshake.query.username)) || '');
-            const rawPhone = String(activeUser || '').replace(/[^0-9]/g, '');
-
-            if (clubObj) {
+            if (clubObj && cleanUsername) {
                 const checkInQueue = (queue) => {
                     if (!Array.isArray(queue)) return false;
                     return queue.some(slot => {
                         const slotStr = JSON.stringify(slot);
                         const slotDigits = slotStr.replace(/[^0-9]/g, '');
-                        // 원본 번호 포함 여부 또는 순수 숫자(8자리 이상) 포함 여부 확인
-                        return (cleanUsername && slotStr.includes(cleanUsername)) ||
-                               (rawPhone.length >= 8 && slotDigits.includes(rawPhone));
+                        return slotStr.includes(cleanUsername) || (rawPhone.length >= 8 && slotDigits.includes(rawPhone));
                     });
                 };
                 isUserInQueue = checkInQueue(clubObj.gameQueue) || checkInQueue(clubObj.nantaQueue);
             }
 
             if (isUserInQueue) {
-                console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${activeClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
+                console.log(`📡 [대기방 유예 가동] 유저: ${cleanUsername} (${currentClubId}) 대기열 참여 확인 -> ${graceMinutes}분 유예 시작`);
 
-                // 유예 기간 동안 운동중 카운트 보존
                 if (typeof disconnectUserClubs !== 'undefined') {
-                    disconnectUserClubs[cleanUsername] = activeClubId;
-                    if (rawPhone) disconnectUserClubs[rawPhone] = activeClubId;
+                    disconnectUserClubs[cleanUsername] = currentClubId;
+                    if (rawPhone) disconnectUserClubs[rawPhone] = currentClubId;
                 }
 
                 if (typeof disconnectTimers !== 'undefined') {
@@ -3336,9 +3320,9 @@ io.on('connection', (socket) => {
                         console.log(`⏰ [유예시간 ${graceMinutes}분 경과] 유저: ${cleanUsername} 대기열 자동 청소 실행`);
 
                         if (typeof cleanupUser === 'function') {
-                            await cleanupUser(cleanUsername, activeClubId);
+                            await cleanupUser(cleanUsername, currentClubId);
                             if (rawPhone && rawPhone !== cleanUsername) {
-                                await cleanupUser(rawPhone, activeClubId);
+                                await cleanupUser(rawPhone, currentClubId);
                             }
                         }
 
@@ -3349,13 +3333,13 @@ io.on('connection', (socket) => {
                         }
 
                         if (typeof broadcastOnlineCount === 'function') {
-                            broadcastOnlineCount(activeClubId);
+                            broadcastOnlineCount(currentClubId);
                         }
                     }, graceMinutes * 60 * 1000);
                 }
             } else {
-                console.log(`📡 [단순 이탈] 유저: ${cleanUsername} (${activeClubId}) 대기열 미참여 -> 대기열 청소 생략, 세션 만료 타이머만 가동`);
-                if (typeof disconnectUserClubs !== 'undefined') {
+                console.log(`📡 [단순 이탈] 유저: ${cleanUsername || '알수없음'} (${currentClubId}) 대기열 미참여 -> 대기열 청소 생략, 세션 만료 타이머만 가동`);
+                if (typeof disconnectUserClubs !== 'undefined' && cleanUsername) {
                     delete disconnectUserClubs[cleanUsername];
                     if (rawPhone) delete disconnectUserClubs[rawPhone];
                 }
