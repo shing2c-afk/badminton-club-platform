@@ -2537,15 +2537,15 @@ io.on('connection', (socket) => {
                     targetConfig.ADMIN_PASSWORD = newConfig.ADMIN_PASSWORD;
                 }
 
-                // ⏱️ 유예 시간 관리자 설정 갱신
+                // ⏱️ 유예 시간 및 세션 만료 시간 관리자 설정 갱신 (숫자형 강제 변환)
                 if (newConfig.queueGraceMinutes !== undefined) {
-                    targetConfig.queueGraceMinutes = Number(newConfig.queueGraceMinutes) || 30;
+                    targetConfig.queueGraceMinutes = Number(newConfig.queueGraceMinutes);
                 }
                 if (newConfig.sessionExpireMinutes !== undefined) {
-                    targetConfig.sessionExpireMinutes = Number(newConfig.sessionExpireMinutes) || 60;
+                    targetConfig.sessionExpireMinutes = Number(newConfig.sessionExpireMinutes);
                 }
 
-                // 🏟️ [핵심 추가] 코트 설정(개수, 코트 목록) 갱신
+                // 🏟️ 코트 설정(개수, 코트 목록) 갱신
                 if (newConfig.courts !== undefined) {
                     clubs[clubId].courts = newConfig.courts;
                 }
@@ -2583,19 +2583,23 @@ io.on('connection', (socket) => {
                     }
                 }
 
-                console.log(`📌 [클럽별 설정 안전 병합 완료] 클럽: ${clubId} (코트수: ${clubs[clubId].courtCount || '유지'}, 유예: ${targetConfig.queueGraceMinutes}분)`);
-            }
+                console.log(`📌 [클럽별 설정 안전 갱신] 클럽: ${clubId} (유예: ${targetConfig.queueGraceMinutes}분, 만료: ${targetConfig.sessionExpireMinutes}분)`);
 
-            const targetClubId = newConfig.clubId || socket.clubId || 'unjeong';
-            
-            // 1. 해당 클럽에 변경된 설정 실시간 전송
-            if (typeof broadcastState === 'function') {
-                broadcastState(targetClubId);
-            }
+                // 💾 1. clubs-data.json 디스크 파일 영구 저장 (서버 재시작 대비)
+                if (typeof saveClubsData === 'function') {
+                    saveClubsData();
+                }
+                if (typeof saveConfigToFile === 'function') {
+                    saveConfigToFile();
+                }
 
-            // 2. 💾 구장 환경설정 파일에 영구 저장
-            if (typeof saveClubsData === 'function') {
-                saveClubsData();
+                // 📡 2. 클라이언트 실시간 동기화 (전체 룸에 새 설정 전송)
+                if (typeof io !== 'undefined') {
+                    io.to(`club_${clubId}`).emit('syncConfig', targetConfig);
+                }
+                if (typeof broadcastState === 'function') {
+                    broadcastState(clubId);
+                }
             }
         } catch (err) {
             console.error('환경 설정 변경 에러:', err);
