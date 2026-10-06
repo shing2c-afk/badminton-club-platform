@@ -55,16 +55,39 @@ class GymSessionManager {
 
     _isUserInQueue(club, cleanUsername) {
         if (!club || !cleanUsername) return false;
-        const rawPhone = String(cleanUsername).replace(/[^0-9]/g, '');
-        const check = (queue) => {
+        
+        const pureName = String(cleanUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
+        const digits = String(cleanUsername).replace(/[^0-9]/g, '');
+
+        const checkQueue = (queue) => {
             if (!Array.isArray(queue)) return false;
             return queue.some(slot => {
+                if (!slot) return false;
+                
+                // 1. players 배열 검사
+                if (Array.isArray(slot.players)) {
+                    return slot.players.some(p => {
+                        if (!p) return false;
+                        const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
+                        const pPureName = pStr.replace(/님$/, '').split('/')[0].split('|')[0].trim();
+                        const pDigits = pStr.replace(/[^0-9]/g, '');
+
+                        if (pureName && pPureName.includes(pureName)) return true;
+                        if (digits.length >= 7 && pDigits.includes(digits)) return true;
+                        return false;
+                    });
+                }
+
+                // 2. 단일 슬롯 객체 검사
                 const slotStr = JSON.stringify(slot);
-                const slotDigits = slotStr.replace(/[^0-9]/g, '');
-                return slotStr.includes(cleanUsername) || (rawPhone.length >= 8 && slotDigits.includes(rawPhone));
+                if (pureName && slotStr.includes(pureName)) return true;
+                if (digits.length >= 7 && slotStr.replace(/[^0-9]/g, '').includes(digits)) return true;
+
+                return false;
             });
         };
-        return check(club.gameQueue) || check(club.nantaQueue);
+
+        return checkQueue(club.gameQueue) || checkQueue(club.nantaQueue);
     }
 
     /**

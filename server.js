@@ -1115,7 +1115,7 @@ app.post('/api/member/update', (req, res) => {
 });
 
 // 3. 🧹 [디버깅 로그가 강화된 슬롯 청소 및 자동 방 폭파 함수]
-async function cleanupUser(usernameOrObj, clubId = null) { // 💡 특정 구장이 없으면 전 구장 자동 청소
+async function cleanupUser(usernameOrObj, clubId = null) {
     if (!usernameOrObj) {
         console.log("⚠️ [청소 중단] 전달된 유저 정보가 없습니다.");
         return;
@@ -1143,11 +1143,9 @@ async function cleanupUser(usernameOrObj, clubId = null) { // 💡 특정 구장
         }
     }
 
-    // 💡 [핵심 보정] "user_01000000000" 형태에서 순수 전화번호 및 하이픈 번호 추출
     const cleanId = String(targetId).replace(/^user_/, '').trim();
     const hyphenId = cleanId.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
 
-    // DB에서 해당 유저의 정확한 정보(이름, ID 등)를 조회
     let dbRow = null;
     if (targetId === '010-0000-0000' || targetName === '관리자' || targetId === '관리자') {
         dbRow = { id: '010-0000-0000', name: '관리자' };
@@ -1155,7 +1153,6 @@ async function cleanupUser(usernameOrObj, clubId = null) { // 💡 특정 구장
         try {
             dbRow = await new Promise((resolve, reject) => {
                 db.get(
-                    // 변경:
                     `SELECT id, name FROM regular_members WHERE id = ? OR phone = ? OR phone = ? OR phone = ? OR name = ?`, 
                     [targetId, cleanId, hyphenId, targetId, targetName],
                     (err, row) => {
@@ -1171,47 +1168,38 @@ async function cleanupUser(usernameOrObj, clubId = null) { // 💡 특정 구장
 
     const realId = dbRow ? dbRow.id : targetId;
     const realName = dbRow ? dbRow.name : targetName;
+    const pureName = String(realName).replace(/님$/, '').split('/')[0].split('|')[0].trim();
+    const purePhone = String(realId).replace(/[^0-9]/g, '');
 
-    // 💡 구장이 특정되지 않은 경우 모든 활성 구장(운정, 대원 등)을 대상으로 청소
     const targetClubs = (clubId && clubId !== 'all') 
         ? [clubId] 
         : (typeof clubs !== 'undefined' ? Object.keys(clubs) : ['unjeong', 'daewon']);
 
     console.log(`\n========================================`);
-    console.log(`🧹 [청소 시작] 대상: "${realName}" (ID: ${realId}), 검사 대상 구장:`, targetClubs);
+    console.log(`🧹 [청소 시작] 대상: "${pureName}" (ID: ${realId}), 구장:`, targetClubs);
 
     for (const cid of targetClubs) {
         const club = (typeof getClub === 'function') ? getClub(cid) : (typeof clubs !== 'undefined' ? clubs[cid] : null);
         if (!club) continue;
 
-        const gameQueue = club.gameQueue;
-        const nantaQueue = club.nantaQueue;
+        const checkMatch = (str) => {
+            if (!str) return false;
+            const s = typeof str === 'object' ? JSON.stringify(str) : String(str);
+            if (pureName && s.includes(pureName)) return true;
+            if (purePhone.length >= 7 && s.replace(/[^0-9]/g, '').includes(purePhone)) return true;
+            return false;
+        };
 
         // 1️⃣ 게임 대기열 청소
-        if (Array.isArray(gameQueue)) {
+        if (Array.isArray(club.gameQueue)) {
             const validGameQueue = [];
-            gameQueue.forEach((slot) => {
-                const slotStr = JSON.stringify(slot);
-                const isMatched = 
-                    (realId && slotStr.includes(realId)) ||
-                    (realName && slotStr.includes(realName));
-
-                if (isMatched) {
+            club.gameQueue.forEach((slot) => {
+                if (checkMatch(slot)) {
                     if (slot.userIds && Array.isArray(slot.userIds)) {
-                        slot.userIds = slot.userIds.filter(id => id !== realId);
+                        slot.userIds = slot.userIds.filter(id => id !== realId && !checkMatch(id));
                     }
                     if (slot.players && Array.isArray(slot.players)) {
-                        slot.players = slot.players.map(p => {
-                            if (!p) return '';
-                            const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
-                            if (
-                                (realId && pStr.includes(realId)) ||
-                                (realName && pStr.includes(realName))
-                            ) {
-                                return '';
-                            }
-                            return p;
-                        });
+                        slot.players = slot.players.map(p => checkMatch(p) ? '' : p);
                     }
                 }
 
@@ -1224,54 +1212,44 @@ async function cleanupUser(usernameOrObj, clubId = null) { // 💡 특정 구장
                 }
             });
 
-            gameQueue.length = 0;
-            gameQueue.push(...validGameQueue);
+            club.gameQueue.length = 0;
+            club.gameQueue.push(...validGameQueue);
         }
 
         // 2️⃣ 난타 대기열 청소
-        if (Array.isArray(nantaQueue)) {
+        if (Array.isArray(club.nantaQueue)) {
             const validNantaQueue = [];
-            nantaQueue.forEach((slot) => {
-                const slotStr = JSON.stringify(slot);
-                const isMatched = 
-                    (realId && slotStr.includes(realId)) ||
-                    (realName && slotStr.includes(realName));
-
-                if (isMatched) {
+            club.nantaQueue.forEach((slot) => {
+                if (checkMatch(slot)) {
                     if (slot.userIds && Array.isArray(slot.userIds)) {
-                        slot.userIds = slot.userIds.filter(id => id !== realId);
+                        slot.userIds = slot.userIds.filter(id => id !== realId && !checkMatch(id));
                     }
                     if (slot.players && Array.isArray(slot.players)) {
-                        slot.players = slot.players.map(p => {
-                            if (!p) return '';
-                            const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
-                            if (
-                                (realId && pStr.includes(realId)) ||
-                                (realName && pStr.includes(realName))
-                            ) {
-                                return '';
-                            }
-                            return p;
-                        });
+                        slot.players = slot.players.map(p => checkMatch(p) ? '' : p);
                     }
                 }
 
                 const validPlayers = (typeof getValidPlayers === 'function') 
                     ? getValidPlayers(slot.players) 
                     : (slot.players || []).filter(p => p && p !== '');
-
+                
                 if (validPlayers.length > 0) {
                     validNantaQueue.push(slot);
                 }
             });
 
-            nantaQueue.length = 0;
-            nantaQueue.push(...validNantaQueue);
+            club.nantaQueue.length = 0;
+            club.nantaQueue.push(...validNantaQueue);
         }
 
-        // 💡 각 구장에 대기방 삭제 최신 상태를 실시간 방송
+        // 💡 대기방 목록 브로드캐스트
         if (typeof broadcastState === 'function') {
             broadcastState(cid);
+        }
+
+        // 💡 [핵심 보강] 상단 4대 현황(게임, 난타, 운동중, 접속자) 카운트 즉시 동기화
+        if (typeof broadcastOnlineCount === 'function') {
+            broadcastOnlineCount(cid);
         }
     }
 
