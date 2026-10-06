@@ -156,10 +156,11 @@ const clubs = {
     }
 };
 
-// ==========================================
-// 💾 [영구 저장] 클럽 설정 및 코트 구성 파일 입출력 로직
-// ==========================================
-const CLUBS_DATA_FILE = path.join(__dirname, 'clubs-data.json');
+// 💾 Render 영구 디스크(/var/data) 우선 사용, 로컬 환경은 기본 폴더 사용
+const DISK_PATH = '/var/data';
+const CLUBS_DATA_FILE = fs.existsSync(DISK_PATH)
+    ? path.join(DISK_PATH, 'clubs-data.json')
+    : path.join(__dirname, 'clubs-data.json');
 
 // 1. 파일에서 설정 불러오기
 function loadClubsData() {
