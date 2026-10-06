@@ -180,6 +180,34 @@ class GymSessionManager {
             this.expireTimers.delete(userKey);
         }
     }
+
+    /**
+     * 📊 [현황 집계 헬퍼] 특정 클럽의 유예 및 잔여 세션 유저 목록 조회
+     * broadcastOnlineCount에서 카운트를 정확하게 유지하기 위해 사용
+     */
+    getPendingUsers(clubId) {
+        const targetClubId = clubId || 'unjeong';
+        const prefix = `${targetClubId}:`;
+        
+        const graceUsers = [];   // 1단계 유예 중 (대기방 보존 & 운동중 유지)
+        const sessionUsers = []; // 2단계 세션 유지 중 (접속자 수만 유지)
+
+        // 1. 유예 타이머 가동 중인 유저
+        for (const [key] of this.graceTimers) {
+            if (key.startsWith(prefix)) {
+                graceUsers.push(key.replace(prefix, ''));
+            }
+        }
+
+        // 2. 세션 만료 타이머 가동 중인 유저 (유예가 끝난 2단계 유저)
+        for (const [key] of this.expireTimers) {
+            if (key.startsWith(prefix) && !this.graceTimers.has(key)) {
+                sessionUsers.push(key.replace(prefix, ''));
+            }
+        }
+
+        return { graceUsers, sessionUsers };
+    }
 }
 
 module.exports = new GymSessionManager();
