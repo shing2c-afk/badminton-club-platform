@@ -133,20 +133,28 @@ class GymSessionManager {
         // ==========================================
         // 2단계: 세션 자동 만료 타이머 가동 (이탈 시점 기준 단독 카운트다운)
         // ==========================================
+        // 🛡️️ [중복 방지] 기존에 실행 중이던 타이머가 있다면 먼저 취소
+        if (this.expireTimers.has(userKey)) {
+            clearTimeout(this.expireTimers.get(userKey));
+            this.expireTimers.delete(userKey);
+        }
+
         console.log(`⏳ [세션 타이머 시작] [${targetClubId}] 유저: ${cleanUsername} -> ${expireMinutes}분 후 만료 예정`);
+        
         const expireTimer = setTimeout(() => {
             console.log(`🔒 [세션 완전 만료] [${targetClubId}] 유저: ${cleanUsername} 강제 로그아웃 신호 전송`);
             
             const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
             
             if (this.io) {
-                // 특정 소켓 및 개별 룸 전송 (멀티 클럽 격리)
-                this.io.to(socket.id).emit('forceSessionExpire', { message: expireMsg });
+                // 🎯 [핵심 수정] 구장 전체(club_) 전송 제거! 해당 유저에게만 단독 타겟팅 전송
+                const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
+                
+                if (socket && socket.id) {
+                    this.io.to(socket.id).emit('forceSessionExpire', { message: expireMsg });
+                }
+                this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', { message: expireMsg });
                 this.io.to(`user_${cleanUsername}`).emit('forceSessionExpire', { message: expireMsg });
-                this.io.to(`club_${targetClubId}`).emit('forceSessionExpire', {
-                    targetUser: cleanUsername,
-                    message: expireMsg
-                });
             }
 
             this._clearTimers(userKey);
