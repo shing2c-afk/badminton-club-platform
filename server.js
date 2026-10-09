@@ -3275,7 +3275,7 @@ io.on('connection', (socket) => {
     // =================================================================
     // ⏱️ 소켓 단절 통합 처리 (화면 꺼짐, 와이파이 단절, 명시적 로그아웃 대응)
     // =================================================================
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => { // 💡 [수정1] DB 조회를 위해 async 추가
         const currentSocketId = socket.id;
         const currentClubId = socket.clubId || 'unjeong';
         const rawUser = (typeof userSockets !== 'undefined' && userSockets[currentSocketId]) || socket.username || '';
@@ -3309,6 +3309,30 @@ io.on('connection', (socket) => {
 
         // 3. 비명시적 단절(Wi-Fi 단절, 화면 꺼짐): gymSessionManager로 2단계 유예 라이프사이클 가동
         if (cleanUsername) {
+            // 💡 [핵심 추가] cleanUsername이 전화번호 형태라면 DB에서 진짜 이름을 찾아 소켓에 주입!
+            const isPhone = /^[0-9\-]+$/.test(cleanUsername);
+            if (isPhone && typeof db !== 'undefined') {
+                const digits = cleanUsername.replace(/[^0-9]/g, '');
+                const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+                
+                try {
+                    const row = await new Promise((resolve) => {
+                        db.get(
+                            `SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`,
+                            [cleanUsername, digits, hyphen],
+                            (err, res) => resolve(res)
+                        );
+                    });
+                    
+                    if (row && row.name) {
+                        socket.name = row.name; // 찾아낸 진짜 이름(예: 신윤채)을 소켓 주머니에 넣어줌
+                        console.log(`🔍 [이름 복원 성공] 번호: ${cleanUsername} -> 이름: ${row.name}`);
+                    }
+                } catch (e) {
+                    console.error("❌ [이름 복원 DB 에러]:", e.message);
+                }
+            }
+
             gymSessionManager.handleDisconnect(socket, cleanUsername, currentClubId);
         } else {
             // 로그인 전 단순 방문자 소켓 해제 시 접속자 수만 갱신
