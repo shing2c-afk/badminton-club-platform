@@ -53,36 +53,43 @@ class GymSessionManager {
         return { club, graceMinutes, expireMinutes };
     }
 
-    _isUserInQueue(club, cleanUsername) {
-        if (!club || !cleanUsername) return false;
-        
-        const pureName = String(cleanUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
-        const digits = String(cleanUsername).replace(/[^0-9]/g, '');
+    _isUserInQueue(club, cleanUsername, socket = {}) {
+        if (!club) return false;
+
+        // 💡 [핵심 보강] 소켓에 저장된 유저의 진짜 이름(name)과 아이디(phone)를 모두 긁어모읍니다.
+        const searchKeywords = [
+            cleanUsername,
+            socket.name,
+            socket.userName,
+            socket.userId,
+            socket.phone
+        ].filter(Boolean); // 값이 존재하는 것만 추려냄
+
+        const targetNames = [];
+        const targetPhones = [];
+
+        searchKeywords.forEach(val => {
+            const str = String(val).trim();
+            const pure = str.replace(/님$/, '').split('/')[0].split('|')[0].trim();
+            const digit = str.replace(/[^0-9]/g, '');
+            if (pure && pure.length >= 2) targetNames.push(pure);
+            if (digit && digit.length >= 7) targetPhones.push(digit);
+        });
 
         const checkQueue = (queue) => {
             if (!Array.isArray(queue)) return false;
             return queue.some(slot => {
                 if (!slot) return false;
-                
-                // 1. players 배열 검사
-                if (Array.isArray(slot.players)) {
-                    return slot.players.some(p => {
-                        if (!p) return false;
-                        const pStr = typeof p === 'object' ? JSON.stringify(p) : String(p);
-                        const pPureName = pStr.replace(/님$/, '').split('/')[0].split('|')[0].trim();
-                        const pDigits = pStr.replace(/[^0-9]/g, '');
-
-                        if (pureName && pPureName.includes(pureName)) return true;
-                        if (digits.length >= 7 && pDigits.includes(digits)) return true;
-                        return false;
-                    });
-                }
-
-                // 2. 단일 슬롯 객체 검사
                 const slotStr = JSON.stringify(slot);
-                if (pureName && slotStr.includes(pureName)) return true;
-                if (digits.length >= 7 && slotStr.replace(/[^0-9]/g, '').includes(digits)) return true;
 
+                // 1. 이름으로 검색 (예: 홍길동)
+                for (const name of targetNames) {
+                    if (slotStr.includes(name)) return true;
+                }
+                // 2. 전화번호로 검색 (예: 01085462995)
+                for (const phone of targetPhones) {
+                    if (slotStr.replace(/[^0-9]/g, '').includes(phone)) return true;
+                }
                 return false;
             });
         };
@@ -102,7 +109,8 @@ class GymSessionManager {
         // 이전 잔존 타이머 정리 (흔들림 방지)
         this._clearTimers(userKey);
 
-        const inQueue = this._isUserInQueue(club, cleanUsername);
+        // 💡 [수정] socket 객체도 같이 넘겨서 이름/번호를 둘 다 찾아내게 합니다.
+        const inQueue = this._isUserInQueue(club, cleanUsername, socket);
 
         // ==========================================
         // 1단계: 대기열 보존 유예 타이머 가동
@@ -112,12 +120,13 @@ class GymSessionManager {
             const graceTimer = setTimeout(async () => {
                 console.log(`⏰ [유예시간 경과] [${targetClubId}] 유저: ${cleanUsername} 대기열 자동 퇴출 실행`);
                 
-                // 대기방에서 삭제 (운동중 -1, 게임/난타 -1 반영)
+                // 🚨 [중요 진단용 경고 추가] server.js와 청소 함수가 잘 연결되었는지 확인
                 if (typeof this.cleanupUser === 'function') {
                     await this.cleanupUser(cleanUsername, targetClubId);
+                } else {
+                    console.log(`⚠️ [경고] cleanupUser 함수가 매니저에 연결되지 않아 대기방 삭제가 스킵되었습니다! server.js를 확인하세요.`);
                 }
                 
-                // 퇴출 표식 남김 (이후 세션 만료 전 복귀 시 '운동중 +1' 복원 트리거)
                 this.evictedUsers.add(userKey);
                 this.graceTimers.delete(userKey);
 
@@ -131,9 +140,8 @@ class GymSessionManager {
         }
 
         // ==========================================
-        // 2단계: 세션 자동 만료 타이머 가동 (이탈 시점 기준 단독 카운트다운)
+        // 2단계: 세션 자동 만료 타이머 가동
         // ==========================================
-        // 🛡️️ [중복 방지] 기존에 실행 중이던 타이머가 있다면 먼저 취소
         if (this.expireTimers.has(userKey)) {
             clearTimeout(this.expireTimers.get(userKey));
             this.expireTimers.delete(userKey);
@@ -143,13 +151,10 @@ class GymSessionManager {
         
         const expireTimer = setTimeout(() => {
             console.log(`🔒 [세션 완전 만료] [${targetClubId}] 유저: ${cleanUsername} 강제 로그아웃 신호 전송`);
-            
             const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
             
             if (this.io) {
-                // 🎯 [핵심 수정] 구장 전체(club_) 전송 제거! 해당 유저에게만 단독 타겟팅 전송
                 const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
-                
                 if (socket && socket.id) {
                     this.io.to(socket.id).emit('forceSessionExpire', { message: expireMsg });
                 }
