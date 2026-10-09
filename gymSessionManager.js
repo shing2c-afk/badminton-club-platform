@@ -53,43 +53,45 @@ class GymSessionManager {
         return { club, graceMinutes, expireMinutes };
     }
 
+    // 💡 [수정] socket 객체를 추가로 받아서 이름과 전화번호 모두를 알아냅니다.
     _isUserInQueue(club, cleanUsername, socket = {}) {
-        if (!club) return false;
+        if (!club || !cleanUsername) return false;
 
-        // 💡 [핵심 보강] 소켓에 저장된 유저의 진짜 이름(name)과 아이디(phone)를 모두 긁어모읍니다.
-        const searchKeywords = [
-            cleanUsername,
-            socket.name,
-            socket.userName,
-            socket.userId,
-            socket.phone
-        ].filter(Boolean); // 값이 존재하는 것만 추려냄
+        // 1. 단절 시 넘어온 전화번호 추출 (예: 01011112222)
+        const targetPhoneDigits = String(cleanUsername).replace(/[^0-9]/g, '');
 
+        // 2. 소켓에 남아있는 유저 정보에서 진짜 '이름' 추출
+        // (소켓에 "홍길동/남/50대/C조"로 들어있어도 "홍길동"만 정확히 잘라냅니다)
         const targetNames = [];
-        const targetPhones = [];
-
+        const searchKeywords = [ cleanUsername, socket.name, socket.userName, socket.userId ].filter(Boolean);
+        
         searchKeywords.forEach(val => {
-            const str = String(val).trim();
-            const pure = str.replace(/님$/, '').split('/')[0].split('|')[0].trim();
-            const digit = str.replace(/[^0-9]/g, '');
-            if (pure && pure.length >= 2) targetNames.push(pure);
-            if (digit && digit.length >= 7) targetPhones.push(digit);
+            const pureName = String(val).replace(/님$/, '').split('/')[0].split('|')[0].trim();
+            // 숫자가 아닌 순수 한글/영문 이름만 추출
+            if (pureName && isNaN(pureName) && pureName.length >= 2) {
+                targetNames.push(pureName);
+            }
         });
 
+        // 3. 대기방(전체 회원정보 문자열) 샅샅이 검색
         const checkQueue = (queue) => {
             if (!Array.isArray(queue)) return false;
             return queue.some(slot => {
                 if (!slot) return false;
+                
+                // 슬롯 전체 데이터를 문자열로 쫙 폅니다 (예: "홍길동/남/50대/C조")
                 const slotStr = JSON.stringify(slot);
-
-                // 1. 이름으로 검색 (예: 홍길동)
+                
+                // [기본] 전화번호가 숨어있는지 검사
+                if (targetPhoneDigits.length >= 7 && slotStr.replace(/[^0-9]/g, '').includes(targetPhoneDigits)) {
+                    return true;
+                }
+                
+                // [핵심] "홍길동"라는 이름이 전체 회원정보 안에 포함되어 있는지 검사
                 for (const name of targetNames) {
                     if (slotStr.includes(name)) return true;
                 }
-                // 2. 전화번호로 검색 (예: 01085462995)
-                for (const phone of targetPhones) {
-                    if (slotStr.replace(/[^0-9]/g, '').includes(phone)) return true;
-                }
+                
                 return false;
             });
         };
@@ -109,7 +111,7 @@ class GymSessionManager {
         // 이전 잔존 타이머 정리 (흔들림 방지)
         this._clearTimers(userKey);
 
-        // 💡 [수정] socket 객체도 같이 넘겨서 이름/번호를 둘 다 찾아내게 합니다.
+       // 💡 [수정] 돋보기 함수에 socket을 통째로 넘겨서 진짜 이름을 찾게 돕습니다.
         const inQueue = this._isUserInQueue(club, cleanUsername, socket);
 
         // ==========================================
