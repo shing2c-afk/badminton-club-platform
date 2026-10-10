@@ -100,7 +100,7 @@ class GymSessionManager {
     }
 
     /**
-     * 🚪 [이탈 처리] Wi-Fi 단절 또는 소켓 disconnect 발생 시 호출
+     * 🚪 [이탈 처리] Wi-Fi 불일치(단절) 시 세션/유예 타이머 동시 시작
      */
     handleDisconnect(socket, cleanUsername, clubId) {
         if (!cleanUsername) return;
@@ -108,10 +108,10 @@ class GymSessionManager {
         const userKey = this._getKey(targetClubId, cleanUsername);
         const { club, graceMinutes, expireMinutes } = this._getClubConfig(targetClubId);
 
-        // 이전 잔존 타이머 정리 (흔들림 방지)
-        this._clearTimers(userKey);
+        // 이전 잔존 타이머 정리 (흔들림 방지 - 강력한 버전 호출)
+        this._clearTimers(targetClubId, cleanUsername);
 
-       // 💡 [수정] 돋보기 함수에 socket을 통째로 넘겨서 진짜 이름을 찾게 돕습니다.
+        // 💡 돋보기 함수에 socket을 통째로 넘겨서 진짜 이름을 찾게 돕습니다.
         const inQueue = this._isUserInQueue(club, cleanUsername, socket);
 
         // ==========================================
@@ -157,14 +157,39 @@ class GymSessionManager {
             
             if (this.io) {
                 const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
-                if (socket && socket.id) {
-                    this.io.to(socket.id).emit('forceSessionExpire', { message: expireMsg });
-                }
+                
+                // 1. 기존 룸 방식 유지
                 this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', { message: expireMsg });
                 this.io.to(`user_${cleanUsername}`).emit('forceSessionExpire', { message: expireMsg });
+
+                // 2. 💡 [핵심 보강] LTE 전환으로 생성된 '새 소켓'을 찾아내어 정확히 조준 타격
+                const targetSockets = new Set();
+                if (socket && socket.id) targetSockets.add(socket.id);
+                
+                if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+                    const s1 = activeUserSockets.get(`${targetClubId}_${cleanUsername}`);
+                    const s2 = activeUserSockets.get(cleanUsername);
+                    if (s1) targetSockets.add(s1);
+                    if (s2) targetSockets.add(s2);
+                }
+                if (typeof userSockets !== 'undefined') {
+                    for (const [sId, uInfo] of Object.entries(userSockets)) {
+                        const rawName = typeof uInfo === 'object' ? (uInfo.name || uInfo.id || '') : String(uInfo);
+                        const pureName = rawName.replace(/님$/, '').split('/')[0].split('|')[0].trim();
+                        if (pureName === cleanUsername || pureName === cleanPhone) {
+                            targetSockets.add(sId);
+                        }
+                    }
+                }
+
+                targetSockets.forEach(sId => {
+                    this.io.to(sId).emit('forceSessionExpire', { message: expireMsg });
+                });
+                
+                console.log(`🎯 [신호 명중] 발송 대상 소켓들:`, Array.from(targetSockets));
             }
 
-            this._clearTimers(userKey);
+            this._clearTimers(targetClubId, cleanUsername);
             this.evictedUsers.delete(userKey);
 
             if (typeof this.broadcastOnlineCount === 'function') {
@@ -176,9 +201,9 @@ class GymSessionManager {
     }
 
     /**
-     * 🟢 [복귀 처리] Wi-Fi 재연결 또는 소켓 재접속 시 호출
+     * 🟢 [접속/복귀 처리] Wi-Fi 일치 시 호출 (이름을 handleConnect로 맞춤)
      */
-    handleReconnect(socket, cleanUsername, clubId) {
+    handleConnect(socket, cleanUsername, clubId) {
         if (!cleanUsername) return;
         const targetClubId = clubId || socket.clubId || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
@@ -187,16 +212,16 @@ class GymSessionManager {
         const hadExpireTimer = this.expireTimers.has(userKey);
         const wasEvictedFromQueue = this.evictedUsers.has(userKey);
 
-        // 복귀 시점 타이머 즉시 전면 해제
-        this._clearTimers(userKey);
+        // 💡 복귀 시점 타이머 즉시 전면 해제 (강력한 청소 함수 호출)
+        this._clearTimers(targetClubId, cleanUsername);
 
         // [시나리오 1] 유예 시간 경과 전 조기 복귀: 대기열 완벽 보존
         if (hadGraceTimer) {
-            console.log(`🎉 [유예 복귀 성공] [${targetClubId}] 유저: ${cleanUsername} 대기열 상태 그대로 유지`);
+            console.log(`🎉 [유예 복귀 성공] [${targetClubId}] 유저: ${cleanUsername} 대기열 상태 그대로 유지 (타이머 취소됨)`);
         } 
         // [시나리오 2] 유예 시간은 경과하여 대기열은 삭제되었으나, 세션 만료 전 복귀
         else if (hadExpireTimer && wasEvictedFromQueue) {
-            console.log(`🔄 [세션 복귀 - 운동중 복원] [${targetClubId}] 유저: ${cleanUsername} 체육관 재입장 확인 -> 운동중 카운트 복원 트리거`);
+            console.log(`🔄 [세션 복귀 - 운동중 복원] [${targetClubId}] 유저: ${cleanUsername} 체육관 재입장 확인 -> 운동중 카운트 복원 대기`);
             this.evictedUsers.delete(userKey);
 
             // 해당 클럽 상태 최신화 브로드캐스트
@@ -208,15 +233,36 @@ class GymSessionManager {
         }
     }
 
-    _clearTimers(userKey) {
-        if (this.graceTimers.has(userKey)) {
-            clearTimeout(this.graceTimers.get(userKey));
-            this.graceTimers.delete(userKey);
-        }
-        if (this.expireTimers.has(userKey)) {
-            clearTimeout(this.expireTimers.get(userKey));
-            this.expireTimers.delete(userKey);
-        }
+    /**
+     * 🧹 [타이머 무적 청소기] 식별자 꼬임 방지를 위해 관련된 모든 키를 찾아내어 박살 냄
+     */
+    _clearTimers(targetClubId, cleanUsername) {
+        if (!cleanUsername) return;
+        const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
+        
+        // 발생할 수 있는 모든 이름/전화번호 조합의 식별키 생성
+        const keysToClear = [
+            this._getKey(targetClubId, cleanUsername),
+            this._getKey(targetClubId, cleanPhone),
+            `${targetClubId}_${cleanUsername}`,
+            `${targetClubId}_${cleanPhone}`,
+            cleanUsername,
+            cleanPhone
+        ];
+
+        // 싹쓸이 검색 후 타이머 강제 종료
+        keysToClear.forEach(key => {
+            if (this.graceTimers && this.graceTimers.has(key)) {
+                clearTimeout(this.graceTimers.get(key));
+                this.graceTimers.delete(key);
+                console.log(`🗑️ [청소 완료] ${key} 의 유예 타이머 해제`);
+            }
+            if (this.expireTimers && this.expireTimers.has(key)) {
+                clearTimeout(this.expireTimers.get(key));
+                this.expireTimers.delete(key);
+                console.log(`🗑️ [청소 완료] ${key} 의 세션 타이머 해제`);
+            }
+        });
     }
 
     /**

@@ -384,8 +384,11 @@ function isGymWifiUser(socket, clubId) {
         return cleanAllowedIp === cleanClientIp || rawIp.includes(cleanAllowedIp);
     });
 
+    // 💡 [수정] 거부는 '불일치'로 용어 변경, 허용 시에는 '일치' 로그 추가
     if (!isAllowed) {
-        console.log(`🚫 [Wi-Fi 거부] 클라이언트 IP: "${cleanClientIp}" (원본: "${rawIp}") | 등록된 허용 IP:`, targetConfig.allowedGymIps);
+        console.log(`🚫 [Wi-Fi 불일치] 클라이언트 IP: "${cleanClientIp}" (외부망 접속)`);
+    } else {
+        console.log(`✅ [Wi-Fi 일치] 클라이언트 IP: "${cleanClientIp}" (구장망 접속)`);
     }
 
     return isAllowed;
@@ -1976,22 +1979,36 @@ function sendPersonalNotification(targetIdentifier, message) {
 
 io.on('connection', (socket) => {
 
-    // server.js의 Wi-Fi 가드 거부 메시지 부분
-    const checkWifiGuard = (actionTitle = '기능을 이용') => {
-    const clubId = socket.clubId || 'unjeong';
-    if (typeof isGymWifiUser === 'function' && !isGymWifiUser(socket, clubId)) {
-        // ui.js와 동일한 문구로 통일
-        socket.emit('alertMessage', '⚠️ 구장 전용 Wi-Fi에 접속 후 이용해 주세요.');
-        return false;
-    }
-    return true;
-    };
-
     // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정 (구장 식별자를 먼저 설정)
     const clientClubId = (socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong';
     socket.clubId = clientClubId;
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
+
+    // =================================================================
+    // ⏱️ [신규] Wi-Fi 상태 기반 타이머 통합 제어 (유예 & 만료 동시 작동)
+    // =================================================================
+    const applyWifiTimerLogic = (socket, cleanUsername, clubId) => {
+        if (!cleanUsername) return; // 유저 정보가 없으면 작동하지 않음
+
+        const isWifiMatch = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, clubId) : true;
+
+        if (isWifiMatch) {
+            // ✅ [Wi-Fi 일치] 구장망 접속: 매니저에게 기존 타이머 전면 초기화(취소) 지시
+            // (대기방 삭제 방지, 버튼 활성화 유지, 카운트 유지)
+            console.log(`🔄 [타이머 초기화] [${clubId}] 유저(${cleanUsername}) Wi-Fi 일치 확인 완료`);
+            if (typeof gymSessionManager !== 'undefined') {
+                gymSessionManager.handleConnect(socket, cleanUsername, clubId);
+            }
+        } else {
+            // 🚫 [Wi-Fi 불일치] 외부망 접속: 매니저에게 유예시간 & 만료시간 동시 가동 지시
+            // (관리자 모드 설정값 기반 작동)
+            console.log(`⚠️ [타이머 동시 가동] [${clubId}] 유저(${cleanUsername}) Wi-Fi 불일치로 타이머 시작`);
+            if (typeof gymSessionManager !== 'undefined') {
+                gymSessionManager.handleDisconnect(socket, cleanUsername, clubId);
+            }
+        }
+    };
 
     // =================================================================
     // ⏱️ [핵심 복구] 재접속 소켓을 userSockets에 매핑하고 1분 퇴장 타이머 즉시 해제
@@ -2232,10 +2249,11 @@ io.on('connection', (socket) => {
                 activeUserSockets.set(`${targetClubId}_${cleanUsername}`, socket.id);
             }
             
-            console.log(`👤 [소켓 등록/복귀] 유저(${cleanUsername}), 구장(${targetClubId}), 소켓ID(${socket.id})`);
+           console.log(`👤 [소켓 등록/복귀] 유저(${cleanUsername}), 구장(${targetClubId}), 소켓ID(${socket.id})`);
 
-            // 🟢 [핵심] 재접속/화면 복귀 시 유예 및 세션 타이머 취소 & 복원 처리
-            gymSessionManager.handleReconnect(socket, cleanUsername, targetClubId);
+            // 🟢 [핵심 변경] 단순 복귀 처리가 아닌, Wi-Fi 일치 여부에 따른 스마트 타이머 제어
+            // [Wi-Fi 일치]면 타이머 취소(버튼 활성화), [Wi-Fi 불일치]면 타이머 동시 시작(퇴출 카운트다운)
+            applyWifiTimerLogic(socket, cleanUsername, targetClubId);
 
             // 접속자 수 즉시 갱신
             if (typeof broadcastOnlineCount === 'function') {
