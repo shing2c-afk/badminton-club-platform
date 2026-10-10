@@ -53,50 +53,49 @@ class GymSessionManager {
         return { club, graceMinutes, expireMinutes };
     }
 
-    // 💡 [수정] socket 객체를 추가로 받아서 이름과 전화번호 모두를 알아냅니다.
-    _isUserInQueue(club, cleanUsername, socket = {}) {
-        if (!club || !cleanUsername) return false;
-
-        // 1. 단절 시 넘어온 전화번호 추출 (예: 01011112222)
-        const targetPhoneDigits = String(cleanUsername).replace(/[^0-9]/g, '');
-
-        // 2. 소켓에 남아있는 유저 정보에서 진짜 '이름' 추출
-        // (소켓에 "홍길동/남/50대/C조"로 들어있어도 "홍길동"만 정확히 잘라냅니다)
-        const targetNames = [];
-        const searchKeywords = [ cleanUsername, socket.name, socket.userName, socket.userId ].filter(Boolean);
+    /**
+     * 🔍 [무적 판독기] 유저가 대기열(Queue)이나 현재 플레이 중인 코트(Court)에 있는지 완벽 검사
+     */
+    _isUserInQueue(club, cleanUsername, socket) {
+        if (!club) return false;
         
-        searchKeywords.forEach(val => {
-            const pureName = String(val).replace(/님$/, '').split('/')[0].split('|')[0].trim();
-            // 숫자가 아닌 순수 한글/영문 이름만 추출
-            if (pureName && isNaN(pureName) && pureName.length >= 2) {
-                targetNames.push(pureName);
-            }
-        });
+        // 1. 유저가 가질 수 있는 모든 식별자(이름, 번호) 영혼까지 끌어모으기
+        const searchKeys = [cleanUsername];
+        const cleanPhone = String(cleanUsername).replace(/[^0-9]/g, '');
+        if (cleanPhone) searchKeys.push(cleanPhone);
+        
+        if (socket) {
+            if (socket.name) searchKeys.push(socket.name);
+            if (socket.username) searchKeys.push(socket.username);
+            if (socket.userIdentifier) searchKeys.push(socket.userIdentifier);
+            if (socket.phone) searchKeys.push(String(socket.phone).replace(/[^0-9]/g, ''));
+        }
 
-        // 3. 대기방(전체 회원정보 문자열) 샅샅이 검색
-        const checkQueue = (queue) => {
-            if (!Array.isArray(queue)) return false;
-            return queue.some(slot => {
-                if (!slot) return false;
-                
-                // 슬롯 전체 데이터를 문자열로 쫙 폅니다 (예: "홍길동/남/50대/C조")
-                const slotStr = JSON.stringify(slot);
-                
-                // [기본] 전화번호가 숨어있는지 검사
-                if (targetPhoneDigits.length >= 7 && slotStr.replace(/[^0-9]/g, '').includes(targetPhoneDigits)) {
-                    return true;
-                }
-                
-                // [핵심] "홍길동"라는 이름이 전체 회원정보 안에 포함되어 있는지 검사
-                for (const name of targetNames) {
-                    if (slotStr.includes(name)) return true;
-                }
-                
-                return false;
-            });
-        };
+        const uniqueKeys = [...new Set(searchKeys.filter(Boolean))];
 
-        return checkQueue(club.gameQueue) || checkQueue(club.nantaQueue);
+        // 2. 대기열(Queue) 검사
+        const inGameQueue = club.gameQueue && club.gameQueue.some(slot => 
+            slot.players && slot.players.some(p => uniqueKeys.some(key => p && p.includes(key)))
+        );
+        const inNantaQueue = club.nantaQueue && club.nantaQueue.some(slot => 
+            slot.players && slot.players.some(p => uniqueKeys.some(key => p && p.includes(key)))
+        );
+
+        // 3. 💡 코트(Court)에서 실제로 플레이 중인지도 추가로 검사! (매우 중요)
+        const inGameCourt = club.courtsData && club.courtsData.some(c => 
+            c.type === 'game' && !c.isEmpty && c.players && uniqueKeys.some(key => c.players.includes(key))
+        );
+        const inNantaCourt = club.courtsData && club.courtsData.some(c => 
+            c.type === 'nanta' && (
+                (c.sideA && !c.sideA.isEmpty && c.sideA.players && uniqueKeys.some(key => c.sideA.players.includes(key))) ||
+                (c.sideB && !c.sideB.isEmpty && c.sideB.players && uniqueKeys.some(key => c.sideB.players.includes(key)))
+            )
+        );
+
+        const result = inGameQueue || inNantaQueue || inGameCourt || inNantaCourt;
+        console.log(`🔍 [상태 판독] 검색키: [${uniqueKeys.join(', ')}] -> 참여중 여부: ${result}`);
+        
+        return result;
     }
 
     /**
@@ -151,6 +150,7 @@ class GymSessionManager {
 
         console.log(`⏳ [세션 타이머 시작] [${targetClubId}] 유저: ${cleanUsername} -> ${expireMinutes}분 후 만료 예정`);
         
+        // 💡 [원상 복구] async 제거, 순수하게 스마트폰 강제 로그아웃 신호만 전송 (청소는 1분 유예 타이머의 역할)
         const expireTimer = setTimeout(() => {
             console.log(`🔒 [세션 완전 만료] [${targetClubId}] 유저: ${cleanUsername} 강제 로그아웃 신호 전송`);
             const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
@@ -162,7 +162,7 @@ class GymSessionManager {
                 this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', { message: expireMsg });
                 this.io.to(`user_${cleanUsername}`).emit('forceSessionExpire', { message: expireMsg });
 
-                // 2. 💡 [핵심 보강] LTE 전환으로 생성된 '새 소켓'을 찾아내어 정확히 조준 타격
+                // 2. [핵심 유지] LTE 전환으로 생성된 '새 소켓'을 찾아내어 정확히 조준 타격
                 const targetSockets = new Set();
                 if (socket && socket.id) targetSockets.add(socket.id);
                 
@@ -189,6 +189,7 @@ class GymSessionManager {
                 console.log(`🎯 [신호 명중] 발송 대상 소켓들:`, Array.from(targetSockets));
             }
 
+            // 💡 [원상 복구] 서버 내부의 cleanupUser는 여기서 하지 않음
             this._clearTimers(targetClubId, cleanUsername);
             this.evictedUsers.delete(userKey);
 
