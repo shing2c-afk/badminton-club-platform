@@ -355,20 +355,33 @@ if (!socket.hasListeners('connect')) {
     });
 }
 
-// 🚨 [필수 유지] 세션 만료 시 자동 로그아웃 처리
+// 🚨 [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리
+const handleForceLogout = (data) => {
+    console.warn("⚠️ 세션 만료/강제 로그아웃 수신:", data);
+    
+    // 1. 브라우저에 남아있을 수 있는 모든 종류의 로그인 정보 완벽 싹쓸이 (좀비 방지)
+    localStorage.removeItem("currentUser");
+    localStorage.removeItem("username");
+    localStorage.removeItem("phone");
+    localStorage.removeItem("userKey");
+    sessionStorage.clear(); 
+    
+    // 2. 만료 안내 알림창 표시
+    const alertMsg = (data && data.message) ? data.message : "장시간 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.";
+    alert(alertMsg);
+    
+    // 3. 단순 새로고침 대신 메인(로그인) 화면으로 주소를 완전히 덮어씌워 이동
+    window.location.replace('/'); 
+};
+
+// 기존 로그인 처리/중복 로그인 시 서버가 보내는 신호
 if (!socket.hasListeners('forceLogout')) {
-    socket.on('forceLogout', (data) => {
-        console.warn("⚠️ 세션 만료 강제 로그아웃 수신:", data);
-        // 1. 브라우저에 남아있던 로그인 정보 완전 삭제
-        localStorage.removeItem("currentUser");
-        
-        // 2. 만료 안내 알림창 표시
-        const alertMsg = (data && data.message) ? data.message : "장시간 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.";
-        alert(alertMsg);
-        
-        // 3. 페이지 새로고침하여 로그인 화면으로 자동 이동
-        location.reload();
-    });
+    socket.on('forceLogout', handleForceLogout);
+}
+
+// 💡 [핵심 추가] Wi-Fi 이탈 후 2분 타이머가 끝났을 때 서버가 쏘는 퇴출 신호 수신
+if (!socket.hasListeners('forceSessionExpire')) {
+    socket.on('forceSessionExpire', handleForceLogout);
 }
 
 // ==========================================
