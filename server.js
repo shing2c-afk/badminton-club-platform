@@ -378,17 +378,23 @@ function isGymWifiUser(socket, clubId) {
     }
     const cleanClientIp = rawIp.replace(/^.*:/, '').trim();
 
-    // 등록된 허용 IP 목록 대조
+   // 등록된 허용 IP 목록 대조
     const isAllowed = targetConfig.allowedGymIps.some(ip => {
         const cleanAllowedIp = String(ip).replace(/^.*:/, '').trim();
         return cleanAllowedIp === cleanClientIp || rawIp.includes(cleanAllowedIp);
     });
 
-    // 💡 [수정] 거부는 '불일치'로 용어 변경, 허용 시에는 '일치' 로그 추가
+    // 💡 [수정] 로그 도배 방지: 소켓에 이전 상태를 기억시켜서 상태가 변할 때만 출력
     if (!isAllowed) {
-        console.log(`🚫 [Wi-Fi 불일치] 클라이언트 IP: "${cleanClientIp}" (외부망 접속)`);
+        if (socket && socket.lastWifiLog !== 'mismatch') {
+            console.log(`🚫 [Wi-Fi 불일치] 클라이언트 IP: "${cleanClientIp}" (외부망 접속)`);
+            if (socket) socket.lastWifiLog = 'mismatch';
+        }
     } else {
-        console.log(`✅ [Wi-Fi 일치] 클라이언트 IP: "${cleanClientIp}" (구장망 접속)`);
+        if (socket && socket.lastWifiLog !== 'match') {
+            console.log(`✅ [Wi-Fi 일치] 클라이언트 IP: "${cleanClientIp}" (구장망 접속)`);
+            if (socket) socket.lastWifiLog = 'match';
+        }
     }
 
     return isAllowed;
@@ -3280,7 +3286,8 @@ io.on('connection', (socket) => {
             socket.inGym = true;
             socket.isGymWifi = true;
             socket.verifiedWifi = true;
-            gymSessionManager.handleReconnect(socket, cleanUsername, targetClubId);
+            // 💡 [수정] handleReconnect를 handleConnect로 이름 변경
+            gymSessionManager.handleConnect(socket, cleanUsername, targetClubId);
         } else {
             // 🔴 체육관 Wi-Fi 이탈
             socket.inGym = false;
