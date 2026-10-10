@@ -1992,6 +1992,19 @@ io.on('connection', (socket) => {
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
 
     // =================================================================
+    // 🛡️ [복구됨] Wi-Fi 상태 기반 접근 제어 가드
+    // =================================================================
+    const checkWifiGuard = (actionTitle = '기능을 이용') => {
+        const clubId = socket.clubId || 'unjeong';
+        if (typeof isGymWifiUser === 'function' && !isGymWifiUser(socket, clubId)) {
+            // ui.js와 동일한 문구로 통일
+            socket.emit('alertMessage', '⚠️ 구장 전용 Wi-Fi에 접속 후 이용해 주세요.');
+            return false;
+        }
+        return true;
+    };
+
+    // =================================================================
     // ⏱️ [신규] Wi-Fi 상태 기반 타이머 통합 제어 (유예 & 만료 동시 작동)
     // =================================================================
     const applyWifiTimerLogic = (socket, cleanUsername, clubId) => {
