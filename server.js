@@ -2226,9 +2226,9 @@ io.on('connection', (socket) => {
         useWifiRestriction: true 
     });
 
-    // 📶 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 처리
-    socket.on('requestWifiStatus', () => {
-        const targetClubId = socket.clubId || clientClubId || 'unjeong';
+    // 📶 [수정] 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 및 타이머 즉시 해제
+    socket.on('requestWifiStatus', (data) => {
+        const targetClubId = (data && data.clubId) || socket.clubId || clientClubId || 'unjeong';
         const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
         const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
         
@@ -2238,13 +2238,39 @@ io.on('connection', (socket) => {
             useWifiRestriction: true 
         });
 
-        // 💡 [핵심 추가] 재검사 시 구장 Wi-Fi로 확인되면 즉시 1분/2분 퇴출 타이머 멈춤 및 복구
-        if (socket.username) {
-            console.log(`📶 [상태 재검증] 유저(${socket.username})의 Wi-Fi 상태 재확인 ➔ 타이머 로직 재적용`);
-            applyWifiTimerLogic(socket, socket.username, targetClubId);
+        // 💡 [핵심] 클라이언트에서 던져준 이름표로 유저 식별 (소켓 재연결 기억상실 방어)
+        let rawUsername = '';
+        if (data && (data.username || data.phone)) {
+            rawUsername = String(data.username || data.phone);
+        } else {
+            rawUsername = socket.username || '';
         }
+        
+        const cleanUsername = rawUsername.replace(/님$/, '').split('/')[0].split('|')[0].trim();
 
-        console.log(`📶 [즉시 푸시] 소켓(${socket.id}) Wi-Fi 검증 완료: ${isGym ? '인증(구장내)' : '외부 접속'} (IP: ${clientIp})`);
+        if (cleanUsername) {
+            console.log(`📶 [상태 재검증] 유저(${cleanUsername}) Wi-Fi 재확인 결과: ${isGym ? '구장망 복귀 🟢' : '외부망 유지 🔴'}`);
+            
+            if (isGym) {
+                // 🛡️ [1차 방어] 1분 유예 타이머(대기열 삭제)가 돌고 있다면 즉시 취소!
+                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
+                    clearTimeout(disconnectTimers[cleanUsername]);
+                    delete disconnectTimers[cleanUsername];
+                    console.log(`⏱️ [유예 타이머 해제] 유저(${cleanUsername}) Wi-Fi 복귀 완료! ➔ 대기열 삭제 타이머 즉시 취소`);
+                }
+                
+                // 🛡️ [2차 방어] 2분 세션 자동 로그아웃 타이머 취소!
+                if (typeof gymSessionManager !== 'undefined') {
+                    console.log(`⏱️ [세션 타이머 해제] 유저(${cleanUsername}) Wi-Fi 복귀 완료! ➔ 로그아웃 타이머 즉시 취소`);
+                    gymSessionManager.handleConnect(socket, cleanUsername, targetClubId);
+                }
+            } else {
+                // 와이파이가 아닌 외부망임이 확인되면 다시 타이머 작동
+                if (typeof gymSessionManager !== 'undefined') {
+                    gymSessionManager.handleDisconnect(socket, cleanUsername, targetClubId);
+                }
+            }
+        }
     });
 
     console.log('새 소켓 연결:', socket.id);
