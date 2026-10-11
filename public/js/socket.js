@@ -357,9 +357,25 @@ if (!socket.hasListeners('connect')) {
 
 // 🚨 [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리
 const handleForceLogout = (data) => {
+    // ==========================================================
+    // 💡 [핵심 판별] 광역 지명 수배(Broadcast)로 신호가 온 경우, 본인이 맞는지 확인
+    // ==========================================================
+    if (data && data.targetUser) {
+        const myName = localStorage.getItem("username") || localStorage.getItem("currentUser") || "";
+        const myPhone = localStorage.getItem("phone") || "";
+        
+        const cleanMyName = myName.split('/')[0].trim();
+        const cleanMyPhone = myPhone.replace(/[^0-9]/g, '');
+        
+        const isMe = (cleanMyName === data.targetUser) || (cleanMyPhone && cleanMyPhone === data.targetPhone);
+        
+        // 내 로그아웃 신호가 아니면 팝업 띄우지 않고 조용히 무시 (다른 사람의 퇴출 신호임)
+        if (!isMe) return; 
+    }
+
     console.warn("⚠️ 세션 만료/강제 로그아웃 수신:", data);
     
-    // 1. 브라우저에 남아있을 수 있는 모든 종류의 로그인 정보 완벽 싹쓸이 (좀비 방지)
+    // 1. 브라우저에 남아있을 수 있는 모든 종류의 로그인 정보 완벽 싹쓸이
     localStorage.removeItem("currentUser");
     localStorage.removeItem("username");
     localStorage.removeItem("phone");
@@ -370,7 +386,7 @@ const handleForceLogout = (data) => {
     const alertMsg = (data && data.message) ? data.message : "장시간 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.";
     alert(alertMsg);
     
-    // 3. 단순 새로고침 대신 메인(로그인) 화면으로 주소를 완전히 덮어씌워 이동
+    // 3. 메인(로그인) 화면으로 주소를 완전히 덮어씌워 이동
     window.location.replace('/'); 
 };
 
@@ -379,7 +395,7 @@ if (!socket.hasListeners('forceLogout')) {
     socket.on('forceLogout', handleForceLogout);
 }
 
-// 💡 [핵심 추가] Wi-Fi 이탈 후 2분 타이머가 끝났을 때 서버가 쏘는 퇴출 신호 수신
+// 💡 Wi-Fi 이탈 후 2분 타이머가 끝났을 때 서버가 쏘는 퇴출 신호 수신
 if (!socket.hasListeners('forceSessionExpire')) {
     socket.on('forceSessionExpire', handleForceLogout);
 }

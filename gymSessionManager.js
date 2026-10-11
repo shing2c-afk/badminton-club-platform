@@ -187,6 +187,17 @@ class GymSessionManager {
                 });
                 
                 console.log(`🎯 [신호 명중] 발송 대상 소켓들:`, Array.from(targetSockets));
+
+                // ====================================================================
+                // 💡 3. [추가] 광역 수배 타격 (LTE 닌자 소켓 완벽 퇴출)
+                // 구장 룸 전체에 방송하여, 타겟 폰이 자신의 이름을 확인하고 스스로 자폭하도록 만듦
+                // ====================================================================
+                console.log(`📢 [광역 타격] 구장(club_${targetClubId}) 전체에 유저(${cleanUsername}) 강제 로그아웃 수배 전송`);
+                this.io.to(`club_${targetClubId}`).emit('forceSessionExpire', { 
+                    targetUser: cleanUsername, 
+                    targetPhone: cleanPhone, 
+                    message: expireMsg 
+                });
             }
 
             // 💡 [원상 복구] 서버 내부의 cleanupUser는 여기서 하지 않음
