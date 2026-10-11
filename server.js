@@ -3346,84 +3346,90 @@ io.on('connection', (socket) => {
     // =================================================================
     // ⏱️ 소켓 단절 통합 처리 (화면 꺼짐, 와이파이 단절, 명시적 로그아웃 대응)
     // =================================================================
-    socket.on('disconnect', async () => { // 💡 [수정1] DB 조회를 위해 async 추가
+    socket.on('disconnect', async () => {
         const currentSocketId = socket.id;
-        const currentClubId = socket.clubId || 'unjeong';
-        const rawUser = (typeof userSockets !== 'undefined' && userSockets[currentSocketId]) || socket.username || '';
+        const currentClubId = socket.clubId || clientClubId || 'unjeong';
 
+        // 1. 단절된 소켓의 초기 정보 추출
+        const rawUser = (typeof userSockets !== 'undefined' && userSockets[currentSocketId]) || socket.username || '';
         let rawUsername = '';
         if (rawUser) {
             rawUsername = (typeof rawUser === 'object' && rawUser !== null)
                 ? (rawUser.name || rawUser.username || rawUser.id || '')
                 : String(rawUser);
         }
+        let cleanUsername = String(rawUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
 
-        const cleanUsername = String(rawUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
-        const clubUserKey = `${currentClubId}_${cleanUsername}`;
-
-        // 1. 소켓 매핑 정보 안전 정리
-        if (typeof userSockets !== 'undefined') {
-            delete userSockets[currentSocketId];
-        }
-        if (cleanUsername && typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
-            if (activeUserSockets.get(clubUserKey) === currentSocketId) activeUserSockets.delete(clubUserKey);
-            if (activeUserSockets.get(cleanUsername) === currentSocketId) activeUserSockets.delete(cleanUsername);
-        }
-
-        // 2. 명시적 로그아웃인 경우 유예 없이 즉시 세션 종료
-        if (socket.isExplicitLogout) {
-            if (typeof broadcastOnlineCount === 'function') {
-                broadcastOnlineCount(currentClubId);
-            }
+        if (!cleanUsername) {
+            if (typeof userSockets !== 'undefined') delete userSockets[currentSocketId];
+            if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
             return;
         }
 
-        // 3. 비명시적 단절(Wi-Fi 단절, 화면 꺼짐): gymSessionManager로 2단계 유예 라이프사이클 가동
-        if (cleanUsername) {
-            // =====================================================================
-            // 🛡️ [추가된 방패 로직] 과거 유령 소켓이 뒤늦게 끊어지며 타이머를 켜는 현상 방지
-            // 이미 다른 새 소켓(와이파이 등)으로 연결되어 있다면, 타이머 가동을 무시!
-            // =====================================================================
-            if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
-                const currentActiveSocket = activeUserSockets.get(clubUserKey) || activeUserSockets.get(cleanUsername);
-                
-                if (currentActiveSocket && currentActiveSocket !== currentSocketId) {
-                    console.log(`🛡️ [타이머 가동 무시] 유저(${cleanUsername})의 과거 소켓(${currentSocketId})이 끊어졌으나, 이미 새 소켓(${currentActiveSocket})으로 안전하게 접속 중입니다.`);
-                    return; // 💡 여기서 함수를 즉시 종료하여 아래의 DB조회 및 타이머 가동을 원천 차단합니다.
+        // =====================================================================
+        // 💡 [핵심 수정 1] 0순위 작업: 번호를 무조건 '진짜 이름'으로 선(先) 복원
+        // 타이머나 방패 로직이 서로 엇갈리지 않도록 기준을 하나로 통일합니다.
+        // =====================================================================
+        let finalName = cleanUsername;
+        const isPhone = /^[0-9\-]+$/.test(cleanUsername);
+        
+        if (isPhone && typeof db !== 'undefined') {
+            const digits = cleanUsername.replace(/[^0-9]/g, '');
+            const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+            try {
+                const row = await new Promise((resolve) => {
+                    db.get(
+                        `SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, 
+                        [cleanUsername, digits, hyphen], 
+                        (err, res) => resolve(res)
+                    );
+                });
+                if (row && row.name) {
+                    finalName = row.name; 
+                    console.log(`🔍 [이름 복원] 단절 소켓 번호(${cleanUsername}) -> 진짜 이름(${finalName}) 통일 완료`);
                 }
-            }
-
-            // 💡 [핵심 추가] cleanUsername이 전화번호 형태라면 DB에서 진짜 이름을 찾아 소켓에 주입!
-            const isPhone = /^[0-9\-]+$/.test(cleanUsername);
-            if (isPhone && typeof db !== 'undefined') {
-                const digits = cleanUsername.replace(/[^0-9]/g, '');
-                const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
-                
-                try {
-                    const row = await new Promise((resolve) => {
-                        db.get(
-                            `SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`,
-                            [cleanUsername, digits, hyphen],
-                            (err, res) => resolve(res)
-                        );
-                    });
-                    
-                    if (row && row.name) {
-                        socket.name = row.name; // 찾아낸 진짜 이름(예: 신윤채)을 소켓 주머니에 넣어줌
-                        console.log(`🔍 [이름 복원 성공] 번호: ${cleanUsername} -> 이름: ${row.name}`);
-                    }
-                } catch (e) {
-                    console.error("❌ [이름 복원 DB 에러]:", e.message);
-                }
-            }
-
-            gymSessionManager.handleDisconnect(socket, cleanUsername, currentClubId);
-        } else {
-            // 로그인 전 단순 방문자 소켓 해제 시 접속자 수만 갱신
-            if (typeof broadcastOnlineCount === 'function') {
-                broadcastOnlineCount(currentClubId);
+            } catch (e) {
+                console.error("❌ [이름 복원 에러]:", e.message);
             }
         }
+
+        // 2. 과거 찌꺼기 소켓 매핑 정보 확실하게 청소
+        if (typeof userSockets !== 'undefined') delete userSockets[currentSocketId];
+        const clubUserKey = `${currentClubId}_${finalName}`;
+        const clubPhoneKey = `${currentClubId}_${cleanUsername}`;
+
+        if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+            if (activeUserSockets.get(clubUserKey) === currentSocketId) activeUserSockets.delete(clubUserKey);
+            if (activeUserSockets.get(clubPhoneKey) === currentSocketId) activeUserSockets.delete(clubPhoneKey);
+            if (activeUserSockets.get(finalName) === currentSocketId) activeUserSockets.delete(finalName);
+            if (activeUserSockets.get(cleanUsername) === currentSocketId) activeUserSockets.delete(cleanUsername);
+        }
+
+        if (socket.isExplicitLogout) {
+            if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
+            return;
+        }
+
+        // =====================================================================
+        // 💡 [핵심 수정 2] 통일된 진짜 이름(finalName)을 기반으로 '절대 방패' 가동
+        // =====================================================================
+        if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+            // 현재 활성화된 소켓 중에 진짜 이름이나 번호로 연결된 새 소켓이 있는지 전방위 스캔
+            const active1 = activeUserSockets.get(clubUserKey);
+            const active2 = activeUserSockets.get(finalName);
+            const active3 = activeUserSockets.get(clubPhoneKey);
+            const active4 = activeUserSockets.get(cleanUsername);
+            
+            const currentActiveSocket = active1 || active2 || active3 || active4;
+            
+            if (currentActiveSocket && currentActiveSocket !== currentSocketId) {
+                console.log(`🛡️ [타이머 무시] 과거 소켓(${currentSocketId}) 단절됨. 유저(${finalName})는 이미 새 소켓(${currentActiveSocket})으로 정상 접속 중입니다.`);
+                return; // 여기서 완벽하게 차단하여 타이머가 아예 켜지지 않게 만듦!
+            }
+        }
+
+        // 3. 방패를 통과했다면 진짜로 폰이 나간 것이므로 '진짜 이름(finalName)'으로 타이머 가동!
+        gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
     });
 
     // ==========================================
