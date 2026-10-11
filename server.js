@@ -2227,47 +2227,50 @@ io.on('connection', (socket) => {
     });
 
     // 📶 [수정] 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 및 타이머 즉시 해제
-    socket.on('requestWifiStatus', (data) => {
+    socket.on('requestWifiStatus', async (data) => {
         const targetClubId = (data && data.clubId) || socket.clubId || clientClubId || 'unjeong';
         const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
         const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
         
-        socket.emit('wifiStatus', { 
-            isGymWifi: isGym, 
-            clientIp: clientIp,
-            useWifiRestriction: true 
-        });
+        socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: clientIp, useWifiRestriction: true });
 
-        // 💡 [핵심] 클라이언트에서 던져준 이름표로 유저 식별 (소켓 재연결 기억상실 방어)
-        let rawUsername = '';
-        if (data && (data.username || data.phone)) {
-            rawUsername = String(data.username || data.phone);
-        } else {
-            rawUsername = socket.username || '';
-        }
-        
-        const cleanUsername = rawUsername.replace(/님$/, '').split('/')[0].split('|')[0].trim();
+        // 이름 복원 (무적 판독기)
+        let rawUsername = (data && (data.username || data.phone)) ? String(data.username || data.phone) : (socket.username || '');
+        let cleanUsername = rawUsername.replace(/님$/, '').split('/')[0].split('|')[0].trim();
+        let finalName = cleanUsername;
 
         if (cleanUsername) {
-            console.log(`📶 [상태 재검증] 유저(${cleanUsername}) Wi-Fi 재확인 결과: ${isGym ? '구장망 복귀 🟢' : '외부망 유지 🔴'}`);
-            
+            const isPhone = /^[0-9\-]+$/.test(cleanUsername);
+            if (isPhone && typeof db !== 'undefined') {
+                const digits = cleanUsername.replace(/[^0-9]/g, '');
+                const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+                try {
+                    const row = await new Promise((resolve) => {
+                        db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
+                    });
+                    if (row && row.name) finalName = row.name;
+                } catch (e) {}
+            }
+
+            console.log(`📶 [즉각 트리거] 유저(${finalName}) 상태: ${isGym ? '🟢 [Wi-Fi 일치]' : '🔴 [Wi-Fi 불일치]'}`);
+
             if (isGym) {
-                // 🛡️ [1차 방어] 1분 유예 타이머(대기열 삭제)가 돌고 있다면 즉시 취소!
-                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
-                    clearTimeout(disconnectTimers[cleanUsername]);
-                    delete disconnectTimers[cleanUsername];
-                    console.log(`⏱️ [유예 타이머 해제] 유저(${cleanUsername}) Wi-Fi 복귀 완료! ➔ 대기열 삭제 타이머 즉시 취소`);
+                // [일치] 즉각 타이머 해제
+                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[finalName]) {
+                    clearTimeout(disconnectTimers[finalName]);
+                    delete disconnectTimers[finalName];
+                    console.log(`🛡️ [타이머 즉각 해제] 유저(${finalName}) 구장 복귀 확인됨.`);
                 }
-                
-                // 🛡️ [2차 방어] 2분 세션 자동 로그아웃 타이머 취소!
                 if (typeof gymSessionManager !== 'undefined') {
-                    console.log(`⏱️ [세션 타이머 해제] 유저(${cleanUsername}) Wi-Fi 복귀 완료! ➔ 로그아웃 타이머 즉시 취소`);
-                    gymSessionManager.handleConnect(socket, cleanUsername, targetClubId);
+                    gymSessionManager.handleConnect(socket, finalName, targetClubId);
                 }
             } else {
-                // 와이파이가 아닌 외부망임이 확인되면 다시 타이머 작동
-                if (typeof gymSessionManager !== 'undefined') {
-                    gymSessionManager.handleDisconnect(socket, cleanUsername, targetClubId);
+                // [불일치] 즉각 타이머 가동 (단, 이미 돌고 있는 타이머가 없을 때만 새로 시작)
+                if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
+                    console.log(`⏱️ [타이머 즉각 가동] 유저(${finalName}) 외부망 전환 ➔ 1분 유예 가동 시작`);
+                    if (typeof gymSessionManager !== 'undefined') {
+                        gymSessionManager.handleDisconnect(socket, finalName, targetClubId);
+                    }
                 }
             }
         }
@@ -3349,55 +3352,34 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         const currentSocketId = socket.id;
         const currentClubId = socket.clubId || clientClubId || 'unjeong';
-
-        // 1. 단절된 소켓의 초기 정보 추출
         const rawUser = (typeof userSockets !== 'undefined' && userSockets[currentSocketId]) || socket.username || '';
         let rawUsername = '';
         if (rawUser) {
-            rawUsername = (typeof rawUser === 'object' && rawUser !== null)
-                ? (rawUser.name || rawUser.username || rawUser.id || '')
-                : String(rawUser);
+            rawUsername = (typeof rawUser === 'object' && rawUser !== null) ? (rawUser.name || rawUser.username || rawUser.id || '') : String(rawUser);
         }
         let cleanUsername = String(rawUsername).replace(/님$/, '').split('/')[0].split('|')[0].trim();
 
-        if (!cleanUsername) {
-            if (typeof userSockets !== 'undefined') delete userSockets[currentSocketId];
-            if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
-            return;
-        }
+        if (!cleanUsername) return;
 
-        // =====================================================================
-        // 💡 [핵심 수정 1] 0순위 작업: 번호를 무조건 '진짜 이름'으로 선(先) 복원
-        // 타이머나 방패 로직이 서로 엇갈리지 않도록 기준을 하나로 통일합니다.
-        // =====================================================================
+        // 1. 이름 복원
         let finalName = cleanUsername;
         const isPhone = /^[0-9\-]+$/.test(cleanUsername);
-        
         if (isPhone && typeof db !== 'undefined') {
             const digits = cleanUsername.replace(/[^0-9]/g, '');
             const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
             try {
                 const row = await new Promise((resolve) => {
-                    db.get(
-                        `SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, 
-                        [cleanUsername, digits, hyphen], 
-                        (err, res) => resolve(res)
-                    );
+                    db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
                 });
-                if (row && row.name) {
-                    finalName = row.name; 
-                    console.log(`🔍 [이름 복원] 단절 소켓 번호(${cleanUsername}) -> 진짜 이름(${finalName}) 통일 완료`);
-                }
-            } catch (e) {
-                console.error("❌ [이름 복원 에러]:", e.message);
-            }
+                if (row && row.name) finalName = row.name;
+            } catch (e) {}
         }
 
-        // 2. 과거 찌꺼기 소켓 매핑 정보 확실하게 청소
+        // 2. 소켓 매핑 청소
         if (typeof userSockets !== 'undefined') delete userSockets[currentSocketId];
         const clubUserKey = `${currentClubId}_${finalName}`;
         const clubPhoneKey = `${currentClubId}_${cleanUsername}`;
-
+        
         if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
             if (activeUserSockets.get(clubUserKey) === currentSocketId) activeUserSockets.delete(clubUserKey);
             if (activeUserSockets.get(clubPhoneKey) === currentSocketId) activeUserSockets.delete(clubPhoneKey);
@@ -3405,31 +3387,27 @@ io.on('connection', (socket) => {
             if (activeUserSockets.get(cleanUsername) === currentSocketId) activeUserSockets.delete(cleanUsername);
         }
 
-        if (socket.isExplicitLogout) {
-            if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
-            return;
-        }
-
-        // =====================================================================
-        // 💡 [핵심 수정 2] 통일된 진짜 이름(finalName)을 기반으로 '절대 방패' 가동
-        // =====================================================================
+        // 3. 무적 방패 (새 소켓이 있는지 확인)
         if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
-            // 현재 활성화된 소켓 중에 진짜 이름이나 번호로 연결된 새 소켓이 있는지 전방위 스캔
             const active1 = activeUserSockets.get(clubUserKey);
             const active2 = activeUserSockets.get(finalName);
             const active3 = activeUserSockets.get(clubPhoneKey);
             const active4 = activeUserSockets.get(cleanUsername);
             
             const currentActiveSocket = active1 || active2 || active3 || active4;
-            
             if (currentActiveSocket && currentActiveSocket !== currentSocketId) {
-                console.log(`🛡️ [타이머 무시] 과거 소켓(${currentSocketId}) 단절됨. 유저(${finalName})는 이미 새 소켓(${currentActiveSocket})으로 정상 접속 중입니다.`);
-                return; // 여기서 완벽하게 차단하여 타이머가 아예 켜지지 않게 만듦!
+                // 이미 새 소켓이 있거나 requestWifiStatus 트리거가 관리 중이므로 무시
+                return; 
             }
         }
 
-        // 3. 방패를 통과했다면 진짜로 폰이 나간 것이므로 '진짜 이름(finalName)'으로 타이머 가동!
-        gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
+        // 4. 최후의 보루: 새 소켓도 없고, 아직 타이머가 안 돌고 있다면(앱 강제 종료 상황) 타이머 가동
+        if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
+            console.log(`⏱️ [백업 타이머 가동] 유저(${finalName}) 앱 완전 종료(단절) 의심 ➔ 타이머 백업 가동`);
+            if (typeof gymSessionManager !== 'undefined') {
+                gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
+            }
+        }
     });
 
     // ==========================================
