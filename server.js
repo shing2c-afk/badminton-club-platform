@@ -3380,6 +3380,19 @@ io.on('connection', (socket) => {
 
         // 3. 비명시적 단절(Wi-Fi 단절, 화면 꺼짐): gymSessionManager로 2단계 유예 라이프사이클 가동
         if (cleanUsername) {
+            // =====================================================================
+            // 🛡️ [추가된 방패 로직] 과거 유령 소켓이 뒤늦게 끊어지며 타이머를 켜는 현상 방지
+            // 이미 다른 새 소켓(와이파이 등)으로 연결되어 있다면, 타이머 가동을 무시!
+            // =====================================================================
+            if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+                const currentActiveSocket = activeUserSockets.get(clubUserKey) || activeUserSockets.get(cleanUsername);
+                
+                if (currentActiveSocket && currentActiveSocket !== currentSocketId) {
+                    console.log(`🛡️ [타이머 가동 무시] 유저(${cleanUsername})의 과거 소켓(${currentSocketId})이 끊어졌으나, 이미 새 소켓(${currentActiveSocket})으로 안전하게 접속 중입니다.`);
+                    return; // 💡 여기서 함수를 즉시 종료하여 아래의 DB조회 및 타이머 가동을 원천 차단합니다.
+                }
+            }
+
             // 💡 [핵심 추가] cleanUsername이 전화번호 형태라면 DB에서 진짜 이름을 찾아 소켓에 주입!
             const isPhone = /^[0-9\-]+$/.test(cleanUsername);
             if (isPhone && typeof db !== 'undefined') {
