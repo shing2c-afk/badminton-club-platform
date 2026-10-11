@@ -916,3 +916,24 @@ if (typeof socket !== 'undefined' && socket) {
     }
     setupSessionExpireListener();
     })();
+
+    // =================================================================
+// 💡 [추가] 스마트폰 네트워크 변경 및 화면 켜짐 자동 감지 로직
+// 와이파이를 껐다 켰을 때 발생하는 '서버-클라이언트 간 통신 침묵' 방지
+// =================================================================
+
+// 1. 스마트폰 화면을 껐다 켰을 때 (또는 앱을 백그라운드에서 다시 띄웠을 때)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && typeof socket !== 'undefined' && socket.connected) {
+        console.log('📱 [화면 켜짐 감지] 서버에 Wi-Fi 상태 재확인 요청 발송');
+        socket.emit('requestWifiStatus');
+    }
+});
+
+// 2. 스마트폰의 통신망이 변경되었을 때 (LTE ↔ Wi-Fi 전환 시)
+window.addEventListener('online', () => {
+    if (typeof socket !== 'undefined' && socket.connected) {
+        console.log('🌐 [네트워크 전환 감지] 서버에 Wi-Fi 상태 재확인 요청 발송');
+        socket.emit('requestWifiStatus');
+    }
+});

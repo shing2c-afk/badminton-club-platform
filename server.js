@@ -2226,7 +2226,7 @@ io.on('connection', (socket) => {
         useWifiRestriction: true 
     });
 
-    // 📶 [추가] 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 처리 (관리자 강제 푸시 방식)
+    // 📶 클라이언트가 Wi-Fi 켰을 때 실시간 상태 재검사 요청 처리
     socket.on('requestWifiStatus', () => {
         const targetClubId = socket.clubId || clientClubId || 'unjeong';
         const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
@@ -2237,6 +2237,13 @@ io.on('connection', (socket) => {
             clientIp: clientIp,
             useWifiRestriction: true 
         });
+
+        // 💡 [핵심 추가] 재검사 시 구장 Wi-Fi로 확인되면 즉시 1분/2분 퇴출 타이머 멈춤 및 복구
+        if (socket.username) {
+            console.log(`📶 [상태 재검증] 유저(${socket.username})의 Wi-Fi 상태 재확인 ➔ 타이머 로직 재적용`);
+            applyWifiTimerLogic(socket, socket.username, targetClubId);
+        }
+
         console.log(`📶 [즉시 푸시] 소켓(${socket.id}) Wi-Fi 검증 완료: ${isGym ? '인증(구장내)' : '외부 접속'} (IP: ${clientIp})`);
     });
 
