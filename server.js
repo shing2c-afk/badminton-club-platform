@@ -3302,6 +3302,12 @@ io.on('connection', (socket) => {
         let cleanUsername = rawUsername.replace(/님$/, '').split('/')[0].split('|')[0].trim();
         let finalName = cleanUsername;
 
+        // 🕵️‍♂️ [범인 색출용 임시 코드] 0100이 들어오면 어디서 왔는지 추적
+    if (data && (data.username === '0100' || data.phone === '0100')) {
+        console.error('🚨 [범인 포착!] 0100을 보낸 소켓 ID:', socket.id);
+        console.error('🚨 [전송된 데이터 내용]:', data);
+    }
+
         // 💡 잃어버렸던 DB 이름 복원 로직 부활! (전화번호로 타이머 도는 현상 방지)
         if (cleanUsername) {
             const isPhone = /^[0-9\-]+$/.test(cleanUsername);
