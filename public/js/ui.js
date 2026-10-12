@@ -1562,7 +1562,7 @@ if (document.readyState === 'loading') {
 }
 window.addEventListener('load', applyUserProfile);
 
-// 💡 로그아웃 버튼 클릭 함수 (깜빡이는 확인 창 제거, 즉시 스무스하게 로그아웃)
+// 💡 [최종 수정본] 확실하고 안전한 로그아웃 함수
 async function handleLogout(event) {
     if (event) event.preventDefault();
 
@@ -1580,39 +1580,40 @@ async function handleLogout(event) {
         try { userData = JSON.parse(rawUser); } catch(e) { userData = rawUser; }
     }
 
-    // 🧹 마무리 청소 함수
-    const finishLogout = async () => {
-        if (rawUser) {
-            try {
-                await fetch('/api/logout', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user: userData, clubId: clubId })
-                });
-            } catch(e) {}
-        }
-        
-        // 데이터 깨끗이 비우기
+    // 🧹 데이터 청소 및 새로고침 함수 (중복 실행 방지 처리)
+    let isFinished = false;
+    const finishLogout = () => {
+        if (isFinished) return;
+        isFinished = true;
+
+        // 로컬스토리지 정보 깨끗이 비우기
         localStorage.removeItem(storageKey);
         localStorage.removeItem("currentUser");
         localStorage.removeItem("username");
+        localStorage.removeItem("phone");
         sessionStorage.clear();
         
-        // 💡 현재 페이지를 새로고침하여 자연스럽게 인트로 화면 띄우기
+        // 새로고침
         window.location.reload(); 
     };
 
     const activeSocket = window.socket;
     
     if (activeSocket && activeSocket.connected) {
-        // 서버로 방 폭파 암호 전송
+        // 1. 서버에 명시적 로그아웃 요청 전송
         activeSocket.emit('explicitLogout', userData, () => {
+            // 서버가 처리를 완료하고 응답을 준 경우에만 실행
             activeSocket.disconnect();
             finishLogout();
         });
 
-        // 0.3초 안전장치
-        setTimeout(() => { finishLogout(); }, 300);
+        // 2. 서버 응답이 지연되더라도 최대 1.5초 뒤에는 강제로 소켓을 끊고 마무리 (0.3초는 너무 짧아 늘림)
+        setTimeout(() => {
+            try {
+                activeSocket.disconnect();
+            } catch(e) {}
+            finishLogout();
+        }, 1500);
     } else {
         finishLogout();
     }
