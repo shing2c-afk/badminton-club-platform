@@ -917,41 +917,28 @@ if (typeof socket !== 'undefined' && socket) {
     setupSessionExpireListener();
     })();
 
- // =================================================================
-// 💡 스마트폰 네트워크 변경 및 화면 켜짐 자동 감지 로직 (중복 제거 및 최신화 완성본)
-// 와이파이를 껐다 켰을 때 발생하는 '서버-클라이언트 간 통신 침묵' 방지
 // =================================================================
-
+// 💡 스마트폰 네트워크 변경/화면 켜짐/재연결 시 자동 감지 및 신분증 제출
+// =================================================================
 const sendWifiStatusRequest = () => {
     if (typeof socket !== 'undefined' && socket.connected) {
-        // 소켓이 끊겼다 재연결되더라도 서버가 누군지 알 수 있게 내 정보 추출
+        // 내 신분증(로컬스토리지 정보) 추출
         const myName = localStorage.getItem("username") || localStorage.getItem("currentUser") || "";
         const myPhone = localStorage.getItem("phone") || "";
         const clubId = localStorage.getItem("clubId") || "";
         
-        console.log('🌐 [네트워크/화면/재연결 감지] 서버에 Wi-Fi 상태 재확인 요청 발송');
-        // 서버에 내 정보를 담아서 와이파이 검사 요청!
+        console.log('🌐 [네트워크/재연결 감지] 서버에 내 신분증 제출 및 Wi-Fi 상태 확인 요청');
         socket.emit('requestWifiStatus', { username: myName, phone: myPhone, clubId: clubId });
     }
 };
 
-// 1. 스마트폰 화면을 껐다 켰을 때 (절전모드 해제 등)
+// 1. 화면 켜질 때
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        sendWifiStatusRequest();
-    }
+    if (document.visibilityState === 'visible') sendWifiStatusRequest();
 });
-
-// 2. 스마트폰의 통신망이 변경되었을 때 (LTE ↔ Wi-Fi 전환 시)
-window.addEventListener('online', () => {
-    sendWifiStatusRequest();
-});
-
-// 3. 💡 [핵심 추가] 소켓이 백그라운드에서 자동으로 재연결(Reconnect) 되었을 때 확실하게 찌르기
+// 2. 망 바뀔 때 (LTE <-> Wi-Fi)
+window.addEventListener('online', sendWifiStatusRequest);
+// 3. 소켓이 백그라운드에서 다시 붙었을 때
 if (typeof socket !== 'undefined') {
-    socket.on('connect', () => {
-        if (typeof sendWifiStatusRequest === 'function') {
-            sendWifiStatusRequest();
-        }
-    });
+    socket.on('connect', sendWifiStatusRequest);
 }
