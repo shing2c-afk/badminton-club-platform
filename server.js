@@ -2236,7 +2236,6 @@ io.on('connection', (socket) => {
         let cleanUsername = rawUsername.replace(/님$/, '').split('/')[0].split('|')[0].trim();
         let finalName = cleanUsername;
 
-        // 1. 진짜 이름 복원 (무적 판독기)
         if (cleanUsername) {
             const isPhone = /^[0-9\-]+$/.test(cleanUsername);
             if (isPhone && typeof db !== 'undefined') {
@@ -2250,33 +2249,35 @@ io.on('connection', (socket) => {
                 } catch (e) {}
             }
             
-            // 2. 소켓에 정보 포장 (신분증 부착)
             socket.finalName = finalName;
             socket.cleanUsername = cleanUsername;
             socket.clubId = targetClubId;
 
-            // 3. 새 소켓을 장부에 등록하고 룸에 정식 입장 (카운트 동기화의 핵심)
             if (typeof activeUserSockets !== 'undefined') {
                 activeUserSockets.set(`${targetClubId}_${finalName}`, socket.id);
                 activeUserSockets.set(finalName, socket.id);
             }
+            
+            // 💡 [핵심 1] 접속자 2명 버그 해결: 새 소켓이 오면, 명부에서 내 이름으로 된 유령 소켓들을 즉시 쓸어버림!
             if (typeof userSockets !== 'undefined') {
-                userSockets[socket.id] = userSockets[socket.id] || { username: finalName, clubId: targetClubId };
+                for (let sid in userSockets) {
+                    if (userSockets[sid].username === finalName && sid !== socket.id) {
+                        delete userSockets[sid];
+                    }
+                }
+                userSockets[socket.id] = { username: finalName, clubId: targetClubId };
             }
-            socket.join(targetClubId); // 새 소켓 구장 룸 입장
+            socket.join(targetClubId);
         }
 
-        // 4. Wi-Fi 일치 여부 판정
         const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
         const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
         socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: clientIp, useWifiRestriction: true });
 
-        // 5. 판정 결과에 따라 즉시 타이머 가동 또는 해제
         if (socket.finalName) {
             console.log(`📶 [즉각 트리거] 유저(${socket.finalName}) 실시간 상태: ${isGym ? '🟢 [Wi-Fi 일치]' : '🔴 [Wi-Fi 불일치]'}`);
 
             if (isGym) {
-                // Wi-Fi 일치 -> 대기방 보존 및 유예 타이머 파괴
                 if (typeof disconnectTimers !== 'undefined' && disconnectTimers[socket.finalName]) {
                     clearTimeout(disconnectTimers[socket.finalName]);
                     delete disconnectTimers[socket.finalName];
@@ -2284,7 +2285,6 @@ io.on('connection', (socket) => {
                 }
                 if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleConnect(socket, socket.finalName, targetClubId);
             } else {
-                // Wi-Fi 불일치 -> 즉시 유예 타이머 가동
                 if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[socket.finalName]) {
                     console.log(`⏱️ [타이머 즉시 가동] 유저(${socket.finalName}) 외부망 전환 ➔ 1분 유예 가동 시작`);
                     if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, socket.finalName, targetClubId);
@@ -2292,7 +2292,6 @@ io.on('connection', (socket) => {
             }
         }
         
-        // 6. 새 소켓이 들어왔으니 전광판(카운트) 즉시 최신화
         if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(targetClubId);
     });
 
@@ -3370,54 +3369,46 @@ io.on('connection', (socket) => {
     // 🧹 [백업 청소부] 유령 소켓 단절 처리 및 앱 강제 종료 방어
     // =================================================================
     socket.on('disconnect', () => {
-        // 위에서 포장해둔 신분증을 꺼내어 바로 사용합니다.
         const finalName = socket.finalName;
         const currentClubId = socket.clubId || 'unjeong';
 
-        // 1. 단순 익명 방문자거나 정보가 없는 경우 찌꺼기만 지움
         if (!finalName) {
             if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
             if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
             return;
         }
 
-        // 2. 완벽한 찌꺼기 청소 (접속자 2명 버그 해결)
-        if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
-        
-        let isReplacedByNewSocket = false; // 내 자리를 다른 새 소켓이 차지했는가?
+        let isReplacedByNewSocket = false;
         if (typeof activeUserSockets !== 'undefined') {
             const clubUserKey = `${currentClubId}_${finalName}`;
-            
-            // 장부에 적힌 소켓ID가 지금 죽은 소켓ID와 같을 때만 지움
-            if (activeUserSockets.get(clubUserKey) === socket.id) {
+            if (activeUserSockets.get(clubUserKey) === socket.id || activeUserSockets.get(finalName) === socket.id) {
                 activeUserSockets.delete(clubUserKey);
+                activeUserSockets.delete(finalName);
+                if (socket.cleanUsername) activeUserSockets.delete(socket.cleanUsername);
             } else {
-                isReplacedByNewSocket = true; // 다르면 이미 새 소켓으로 갈아탄 상태
+                isReplacedByNewSocket = true;
             }
-            if (activeUserSockets.get(finalName) === socket.id) activeUserSockets.delete(finalName);
-            if (socket.cleanUsername && activeUserSockets.get(socket.cleanUsername) === socket.id) activeUserSockets.delete(socket.cleanUsername);
         }
 
-        // 명시적 로그아웃은 즉시 종료
         if (socket.isExplicitLogout) {
+            if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
             if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
             return;
         }
 
-        // 3. 백업 방패 작동 (유령 소켓 입막음)
         if (isReplacedByNewSocket) {
             console.log(`🛡️ [단절 무시] 과거 소켓 찌꺼기 청소 완료. 카운트 차감 없이 조용히 소멸합니다.`);
-            // 💡 여기가 핵심! 새 소켓이 이미 있으므로 카운트 -1을 막기 위해 함수를 여기서 멈춥니다.
+            // 💡 [핵심 2] 방패가 작동하면 명부(userSockets)에서 카운트를 빼지 않음 (위에서 이미 청소했음)
             return; 
         } else {
-            // 새 소켓이 없는 상태(앱 완전 종료 등)라면 백업 타이머 가동
+            // 진짜 단절일 때만 명부에서 제거하고 타이머 가동
+            if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
             if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
                 console.log(`⏱️ [백업 타이머 가동] 앱 완전 종료(단절) 의심 ➔ 타이머 백업 가동`);
                 if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
             }
         }
         
-        // 최종 접속자 수 방송
         if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
     });
 

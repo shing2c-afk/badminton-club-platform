@@ -918,60 +918,62 @@ if (typeof socket !== 'undefined' && socket) {
     })();
 
 // =================================================================
-// 💡 [최종 완결판] 프론트엔드 상태 변화 감지 및 신분증 자동 캡처 제출
+// 💡 [최종 완결판] 프론트엔드 상태 변화 감지 및 신분증 절대 누락 방지
 // =================================================================
-
-// 1. 회원님의 정보(이름, 번호)를 자동으로 수집하는 '스마트 캡처' 로직
 let secretMyName = "";
 let secretMyPhone = "";
 let secretClubId = "";
 
+const sendWifiStatusRequest = () => {
+    if (typeof socket !== 'undefined' && socket.connected) {
+        const finalName = secretMyName || localStorage.getItem("username") || sessionStorage.getItem("username") || "";
+        const finalPhone = secretMyPhone || localStorage.getItem("phone") || sessionStorage.getItem("phone") || "";
+        const finalClub = secretClubId || localStorage.getItem("clubId") || sessionStorage.getItem("clubId") || "";
+        
+        if(finalName) {
+            console.log(`🌐 [네트워크 감지] 진짜 신분증 서버로 제출: (이름: ${finalName})`);
+            socket.emit('requestWifiStatus', { username: finalName, phone: finalPhone, clubId: finalClub });
+        }
+    }
+};
+
 if (typeof socket !== 'undefined') {
     const originalEmit = socket.emit;
     socket.emit = function(eventName, data, ...args) {
-        // 기존 통신에서 이름이나 번호가 지나가면 그걸 훔쳐서(Capture) 기억해둠
         if (data && typeof data === 'object') {
             if (data.username) secretMyName = data.username;
             if (data.name) secretMyName = data.name;
             if (data.phone) secretMyPhone = data.phone;
             if (data.clubId) secretClubId = data.clubId;
         }
+        
+        // 💡 [핵심 3] 앱에서 방 입장(joinClub) 등 활동을 할 때 0.3초 뒤에 신분증도 무조건 같이 찔러줌 (누락 원천 차단)
+        if (eventName === 'joinClub' || eventName === 'registerUser') {
+            setTimeout(sendWifiStatusRequest, 300);
+        }
+        
         return originalEmit.apply(this, [eventName, data, ...args]);
     };
 }
 
-// 2. 소켓 강제 재부팅 (미니 새로고침)
 const forceSocketSync = () => {
     if (typeof socket !== 'undefined') {
-        if (socket.connected) socket.disconnect(); // 코마 상태인 기존 선 끊기
-        setTimeout(() => { socket.connect(); }, 300); // 0.3초 뒤 새 선 연결
+        if (socket.connected) socket.disconnect();
+        setTimeout(() => { 
+            socket.connect(); 
+            // 통신선이 꽂히면 0.5초 뒤에 신분증 강제 발송
+            setTimeout(sendWifiStatusRequest, 500);
+        }, 300);
     }
 };
 
-// 3. 서버에 내 진짜 신분증 100% 확실하게 제출
-const sendWifiStatusRequest = () => {
-    if (typeof socket !== 'undefined' && socket.connected) {
-        // 캡처된 정보 최우선 사용 + 로컬스토리지/세션스토리지 보조 사용
-        const finalName = secretMyName || localStorage.getItem("username") || sessionStorage.getItem("username") || "";
-        const finalPhone = secretMyPhone || localStorage.getItem("phone") || sessionStorage.getItem("phone") || "";
-        const finalClub = secretClubId || localStorage.getItem("clubId") || sessionStorage.getItem("clubId") || "";
-        
-        console.log(`🌐 [네트워크 감지] 진짜 신분증 서버로 제출: (이름: ${finalName})`);
-        
-        // 빈 값이 아닐 때만 찔러줌
-        if(finalName) {
-            socket.emit('requestWifiStatus', { username: finalName, phone: finalPhone, clubId: finalClub });
-        }
-    }
-};
-
-// 4. 화면 켜지거나 망 바뀔 때 미니 새로고침 가동
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') forceSocketSync();
 });
 window.addEventListener('online', forceSocketSync);
 
-// 5. 재연결 성공 시 무조건 신분증 발송
 if (typeof socket !== 'undefined') {
-    socket.on('connect', sendWifiStatusRequest);
+    socket.on('connect', () => {
+        setTimeout(sendWifiStatusRequest, 300);
+    });
 }
