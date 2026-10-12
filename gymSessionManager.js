@@ -267,12 +267,12 @@ class GymSessionManager {
             if (this.graceTimers && this.graceTimers.has(key)) {
                 clearTimeout(this.graceTimers.get(key));
                 this.graceTimers.delete(key);
-                console.log(`🗑️ [청소 완료] ${key} 의 유예 타이머 해제`);
+                console.log(`🗑️ [타이머 해제] ${key} 의 유예 타이머 해제`);
             }
             if (this.expireTimers && this.expireTimers.has(key)) {
                 clearTimeout(this.expireTimers.get(key));
                 this.expireTimers.delete(key);
-                console.log(`🗑️ [청소 완료] ${key} 의 세션 타이머 해제`);
+                console.log(`🗑️ [타이머 해제] ${key} 의 세션 타이머 해제`);
             }
         });
     }

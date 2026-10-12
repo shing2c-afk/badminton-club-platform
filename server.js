@@ -3350,11 +3350,11 @@ io.on('connection', (socket) => {
     });
 
     // =================================================================
-    // 🧹 [부품 B] 카운트 -1 현상 및 0명 증발 방어막 (Presence Check)
+    // 🧹 [바통 터치 방식] 통신 단절 시 5초 대기 후 유령 소켓 방어
     // =================================================================
     socket.on('disconnect', () => {
-        // requestWifiStatus에서 복원한 진짜 이름(finalName)을 최우선으로 사용
-        const finalName = socket.finalName || socket.username || socket.cleanUsername;
+        // 기존 회원님 앱 코드에서 설정된 username을 그대로 사용합니다.
+        const finalName = socket.username || socket.finalName || socket.cleanUsername;
         const currentClubId = socket.clubId || 'unjeong';
 
         if (!finalName) {
@@ -3363,38 +3363,44 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 1. 방금 끊어진 통신선만 지움
+        // 1. 방금 끊어진 옛날 소켓만 명부에서 조용히 지웁니다.
         if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
-
-        // 💡 2. 상용 앱 수준의 방어막: 내 이름(신윤채)으로 된 다른 새 통신선이 있는지 장부 전수검사
-        let hasOtherActiveSocket = false;
-        if (typeof userSockets !== 'undefined') {
-            for (let sid in userSockets) {
-                if (userSockets[sid].username === finalName) {
-                    hasOtherActiveSocket = true;
-                    break;
-                }
-            }
-        }
 
         if (socket.isExplicitLogout) {
             if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
             return;
         }
 
-        // 💡 3. 새 소켓이 살아있다면 카운트를 빼지 않고 조용히 함수를 종료! (카운트 -1 방지)
-        if (hasOtherActiveSocket) {
-            console.log(`🛡️ [단절 무시] 유저(${finalName})의 다른 연결이 살아있습니다. 카운트 정상 유지.`);
-            return; 
-        } else {
-            // 새 소켓마저 없다면 (앱 강제종료 등) 백업 타이머 가동
-            if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
-                console.log(`⏱️ [백업 타이머 가동] 유저(${finalName}) 앱 완전 종료(단절) 의심`);
-                if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
+        console.log(`⏳ [바통 터치 대기] 유저(${finalName}) 구 통신선 끊김. 5초 내 새 통신선 확인 대기...`);
+
+        // 💡 2. 회원님의 '바통 터치' 아이디어 적용: 5초 대기 후 검사!
+        setTimeout(() => {
+            let hasOtherActiveSocket = false;
+            if (typeof userSockets !== 'undefined') {
+                for (let sid in userSockets) {
+                    // 5초 뒤 명부에 내 이름으로 된 새 소켓이 있는지 확인
+                    if (userSockets[sid].username === finalName) {
+                        hasOtherActiveSocket = true;
+                        break;
+                    }
+                }
             }
-        }
-        
-        if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
+
+            if (hasOtherActiveSocket) {
+                // 바통 터치 성공: 카운트를 빼지 않고 조용히 넘어갑니다.
+                console.log(`🛡️ [바통 터치 성공] 유저(${finalName})의 새 연결이 확인되었습니다. 카운트 정상 유지!`);
+                return; 
+            } else {
+                // 5초가 지나도 새 소켓이 없으면 진짜 앱을 끈 것으로 판정
+                console.log(`⏱️ [진짜 단절] 유저(${finalName}) 바통 터치 실패 (완전 이탈). 백업 타이머 가동.`);
+                if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
+                    if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
+                }
+            }
+            
+            // 5초 뒤에 모든 상황이 정리된 후 접속자 전광판 최종 갱신
+            if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
+        }, 5000); // 5000ms = 5초 대기
     });
 
     // ==========================================
