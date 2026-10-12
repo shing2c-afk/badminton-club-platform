@@ -918,44 +918,60 @@ if (typeof socket !== 'undefined' && socket) {
     })();
 
 // =================================================================
-// 💡 [최종] 스마트폰 망 변경/화면 켜짐 시 '소켓 강제 재부팅 및 신분증 제출'
+// 💡 [최종 완결판] 프론트엔드 상태 변화 감지 및 신분증 자동 캡처 제출
 // =================================================================
 
-// 소켓을 강제로 끊었다가 다시 연결하는 미니 새로고침 함수 (새로 추가됨)
+// 1. 회원님의 정보(이름, 번호)를 자동으로 수집하는 '스마트 캡처' 로직
+let secretMyName = "";
+let secretMyPhone = "";
+let secretClubId = "";
+
+if (typeof socket !== 'undefined') {
+    const originalEmit = socket.emit;
+    socket.emit = function(eventName, data, ...args) {
+        // 기존 통신에서 이름이나 번호가 지나가면 그걸 훔쳐서(Capture) 기억해둠
+        if (data && typeof data === 'object') {
+            if (data.username) secretMyName = data.username;
+            if (data.name) secretMyName = data.name;
+            if (data.phone) secretMyPhone = data.phone;
+            if (data.clubId) secretClubId = data.clubId;
+        }
+        return originalEmit.apply(this, [eventName, data, ...args]);
+    };
+}
+
+// 2. 소켓 강제 재부팅 (미니 새로고침)
 const forceSocketSync = () => {
     if (typeof socket !== 'undefined') {
-        console.log('🔄 [미니 새로고침] 스마트폰 상태 변화 감지 -> 통신선 강제 재연결 시도');
-        if (socket.connected) {
-            socket.disconnect(); // 코마 상태일지 모르는 기존 선을 확실히 뽑음
-        }
-        // 0.3초 뒤에 새 선을 꽂음 (이때 자동으로 아래의 connect 이벤트가 터짐)
-        setTimeout(() => {
-            socket.connect(); 
-        }, 300);
+        if (socket.connected) socket.disconnect(); // 코마 상태인 기존 선 끊기
+        setTimeout(() => { socket.connect(); }, 300); // 0.3초 뒤 새 선 연결
     }
 };
 
-// 서버에 내 정보를 담아서 와이파이 상태 확인을 요청하는 함수
+// 3. 서버에 내 진짜 신분증 100% 확실하게 제출
 const sendWifiStatusRequest = () => {
     if (typeof socket !== 'undefined' && socket.connected) {
-        const myName = localStorage.getItem("username") || localStorage.getItem("currentUser") || "";
-        const myPhone = localStorage.getItem("phone") || "";
-        const clubId = localStorage.getItem("clubId") || "";
+        // 캡처된 정보 최우선 사용 + 로컬스토리지/세션스토리지 보조 사용
+        const finalName = secretMyName || localStorage.getItem("username") || sessionStorage.getItem("username") || "";
+        const finalPhone = secretMyPhone || localStorage.getItem("phone") || sessionStorage.getItem("phone") || "";
+        const finalClub = secretClubId || localStorage.getItem("clubId") || sessionStorage.getItem("clubId") || "";
         
-        console.log('🌐 [네트워크/재연결 감지] 서버에 내 신분증 제출 및 Wi-Fi 상태 확인 요청');
-        socket.emit('requestWifiStatus', { username: myName, phone: myPhone, clubId: clubId });
+        console.log(`🌐 [네트워크 감지] 진짜 신분증 서버로 제출: (이름: ${finalName})`);
+        
+        // 빈 값이 아닐 때만 찔러줌
+        if(finalName) {
+            socket.emit('requestWifiStatus', { username: finalName, phone: finalPhone, clubId: finalClub });
+        }
     }
 };
 
-// 1. 스마트폰 화면을 껐다 켰을 때 -> 미니 새로고침 실행
+// 4. 화면 켜지거나 망 바뀔 때 미니 새로고침 가동
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') forceSocketSync();
 });
-
-// 2. 스마트폰의 통신망이 변경되었을 때 (LTE ↔ Wi-Fi 전환 시) -> 미니 새로고침 실행
 window.addEventListener('online', forceSocketSync);
 
-// 3. 소켓이 새 선으로 연결 완료되었을 때 -> 내 정보(신분증) 즉시 제출
+// 5. 재연결 성공 시 무조건 신분증 발송
 if (typeof socket !== 'undefined') {
     socket.on('connect', sendWifiStatusRequest);
 }
