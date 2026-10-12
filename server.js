@@ -2232,11 +2232,11 @@ io.on('connection', (socket) => {
     socket.on('requestWifiStatus', async (data) => {
         const targetClubId = (data && data.clubId) || socket.clubId || clientClubId || 'unjeong';
         
-        // --- 1단계: 유저 신분증(진짜 이름) 0.1초 만에 포장(Binding) ---
         let rawUsername = (data && (data.username || data.phone)) ? String(data.username || data.phone) : (socket.username || '');
         let cleanUsername = rawUsername.replace(/님$/, '').split('/')[0].split('|')[0].trim();
         let finalName = cleanUsername;
 
+        // 1. 진짜 이름 복원 (무적 판독기)
         if (cleanUsername) {
             const isPhone = /^[0-9\-]+$/.test(cleanUsername);
             if (isPhone && typeof db !== 'undefined') {
@@ -2250,28 +2250,33 @@ io.on('connection', (socket) => {
                 } catch (e) {}
             }
             
-            // 💡 소켓 객체 자체에 진짜 이름을 지워지지 않게 꽉 묶어둠 (휘발성 포장)
+            // 2. 소켓에 정보 포장 (신분증 부착)
             socket.finalName = finalName;
             socket.cleanUsername = cleanUsername;
             socket.clubId = targetClubId;
 
-            // 💡 찌꺼기 덮어쓰기 (접속자가 2명으로 뜨는 버그 원천 차단)
+            // 3. 새 소켓을 장부에 등록하고 룸에 정식 입장 (카운트 동기화의 핵심)
             if (typeof activeUserSockets !== 'undefined') {
                 activeUserSockets.set(`${targetClubId}_${finalName}`, socket.id);
                 activeUserSockets.set(finalName, socket.id);
             }
+            if (typeof userSockets !== 'undefined') {
+                userSockets[socket.id] = userSockets[socket.id] || { username: finalName, clubId: targetClubId };
+            }
+            socket.join(targetClubId); // 새 소켓 구장 룸 입장
         }
 
-        // --- 2단계: 즉각 판독 및 타이머 가동/초기화 (회원님 아이디어 적용) ---
+        // 4. Wi-Fi 일치 여부 판정
         const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
         const clientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
         socket.emit('wifiStatus', { isGymWifi: isGym, clientIp: clientIp, useWifiRestriction: true });
 
+        // 5. 판정 결과에 따라 즉시 타이머 가동 또는 해제
         if (socket.finalName) {
             console.log(`📶 [즉각 트리거] 유저(${socket.finalName}) 실시간 상태: ${isGym ? '🟢 [Wi-Fi 일치]' : '🔴 [Wi-Fi 불일치]'}`);
 
             if (isGym) {
-                // [Wi-Fi 일치] 유예시간 내 복귀 -> 대기방 살리고 타이머 즉시 파괴!
+                // Wi-Fi 일치 -> 대기방 보존 및 유예 타이머 파괴
                 if (typeof disconnectTimers !== 'undefined' && disconnectTimers[socket.finalName]) {
                     clearTimeout(disconnectTimers[socket.finalName]);
                     delete disconnectTimers[socket.finalName];
@@ -2279,13 +2284,16 @@ io.on('connection', (socket) => {
                 }
                 if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleConnect(socket, socket.finalName, targetClubId);
             } else {
-                // [Wi-Fi 불일치] 구장 이탈 -> 지연 없이 타이머 즉각 가동!
+                // Wi-Fi 불일치 -> 즉시 유예 타이머 가동
                 if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[socket.finalName]) {
                     console.log(`⏱️ [타이머 즉시 가동] 유저(${socket.finalName}) 외부망 전환 ➔ 1분 유예 가동 시작`);
                     if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, socket.finalName, targetClubId);
                 }
             }
         }
+        
+        // 6. 새 소켓이 들어왔으니 전광판(카운트) 즉시 최신화
+        if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(targetClubId);
     });
 
     console.log('새 소켓 연결:', socket.id);
@@ -3362,7 +3370,7 @@ io.on('connection', (socket) => {
     // 🧹 [백업 청소부] 유령 소켓 단절 처리 및 앱 강제 종료 방어
     // =================================================================
     socket.on('disconnect', () => {
-        // 이미 위에서 포장해둔 신분증을 그대로 꺼내 씁니다. DB 조회 불필요!
+        // 위에서 포장해둔 신분증을 꺼내어 바로 사용합니다.
         const finalName = socket.finalName;
         const currentClubId = socket.clubId || 'unjeong';
 
@@ -3373,17 +3381,18 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 2. 완벽한 찌꺼기 청소 (접속자 2명 버그 해결의 핵심)
+        // 2. 완벽한 찌꺼기 청소 (접속자 2명 버그 해결)
         if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
         
-        let isReplacedByNewSocket = false; // 내 자리를 다른 새 소켓(와이파이 등)이 차지했는가?
+        let isReplacedByNewSocket = false; // 내 자리를 다른 새 소켓이 차지했는가?
         if (typeof activeUserSockets !== 'undefined') {
             const clubUserKey = `${currentClubId}_${finalName}`;
-            // 현재 활성화된 소켓이 '나(방금 죽은 소켓)'일 때만 레지스트리에서 지움
+            
+            // 장부에 적힌 소켓ID가 지금 죽은 소켓ID와 같을 때만 지움
             if (activeUserSockets.get(clubUserKey) === socket.id) {
                 activeUserSockets.delete(clubUserKey);
             } else {
-                isReplacedByNewSocket = true; // 이미 새 소켓으로 갈아탄 상태
+                isReplacedByNewSocket = true; // 다르면 이미 새 소켓으로 갈아탄 상태
             }
             if (activeUserSockets.get(finalName) === socket.id) activeUserSockets.delete(finalName);
             if (socket.cleanUsername && activeUserSockets.get(socket.cleanUsername) === socket.id) activeUserSockets.delete(socket.cleanUsername);
@@ -3395,18 +3404,20 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 3. 백업 방패 및 타이머 가동
+        // 3. 백업 방패 작동 (유령 소켓 입막음)
         if (isReplacedByNewSocket) {
-            console.log(`🛡️ [단절 무시] 유저(${finalName})의 과거 소켓이 죽었으나, 이미 새 소켓이 구장에 연결되어 있습니다.`);
+            console.log(`🛡️ [단절 무시] 과거 소켓 찌꺼기 청소 완료. 카운트 차감 없이 조용히 소멸합니다.`);
+            // 💡 여기가 핵심! 새 소켓이 이미 있으므로 카운트 -1을 막기 위해 함수를 여기서 멈춥니다.
+            return; 
         } else {
-            // 앱을 강제 스와이프 종료해서 새 소켓도 없고 타이머도 안 돌고 있는 진짜 '좀비 방어용'
+            // 새 소켓이 없는 상태(앱 완전 종료 등)라면 백업 타이머 가동
             if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
-                console.log(`⏱️ [백업 타이머 가동] 유저(${finalName}) 앱 완전 종료(단절) 의심 ➔ 타이머 백업 가동`);
+                console.log(`⏱️ [백업 타이머 가동] 앱 완전 종료(단절) 의심 ➔ 타이머 백업 가동`);
                 if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
             }
         }
         
-        // 접속자 수 최종 갱신
+        // 최종 접속자 수 방송
         if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
     });
 

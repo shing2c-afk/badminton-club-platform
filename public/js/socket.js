@@ -918,11 +918,26 @@ if (typeof socket !== 'undefined' && socket) {
     })();
 
 // =================================================================
-// 💡 스마트폰 네트워크 변경/화면 켜짐/재연결 시 자동 감지 및 신분증 제출
+// 💡 [최종] 스마트폰 망 변경/화면 켜짐 시 '소켓 강제 재부팅 및 신분증 제출'
 // =================================================================
+
+// 소켓을 강제로 끊었다가 다시 연결하는 미니 새로고침 함수 (새로 추가됨)
+const forceSocketSync = () => {
+    if (typeof socket !== 'undefined') {
+        console.log('🔄 [미니 새로고침] 스마트폰 상태 변화 감지 -> 통신선 강제 재연결 시도');
+        if (socket.connected) {
+            socket.disconnect(); // 코마 상태일지 모르는 기존 선을 확실히 뽑음
+        }
+        // 0.3초 뒤에 새 선을 꽂음 (이때 자동으로 아래의 connect 이벤트가 터짐)
+        setTimeout(() => {
+            socket.connect(); 
+        }, 300);
+    }
+};
+
+// 서버에 내 정보를 담아서 와이파이 상태 확인을 요청하는 함수
 const sendWifiStatusRequest = () => {
     if (typeof socket !== 'undefined' && socket.connected) {
-        // 내 신분증(로컬스토리지 정보) 추출
         const myName = localStorage.getItem("username") || localStorage.getItem("currentUser") || "";
         const myPhone = localStorage.getItem("phone") || "";
         const clubId = localStorage.getItem("clubId") || "";
@@ -932,13 +947,15 @@ const sendWifiStatusRequest = () => {
     }
 };
 
-// 1. 화면 켜질 때
+// 1. 스마트폰 화면을 껐다 켰을 때 -> 미니 새로고침 실행
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') sendWifiStatusRequest();
+    if (document.visibilityState === 'visible') forceSocketSync();
 });
-// 2. 망 바뀔 때 (LTE <-> Wi-Fi)
-window.addEventListener('online', sendWifiStatusRequest);
-// 3. 소켓이 백그라운드에서 다시 붙었을 때
+
+// 2. 스마트폰의 통신망이 변경되었을 때 (LTE ↔ Wi-Fi 전환 시) -> 미니 새로고침 실행
+window.addEventListener('online', forceSocketSync);
+
+// 3. 소켓이 새 선으로 연결 완료되었을 때 -> 내 정보(신분증) 즉시 제출
 if (typeof socket !== 'undefined') {
     socket.on('connect', sendWifiStatusRequest);
 }
