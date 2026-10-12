@@ -918,24 +918,37 @@ if (typeof socket !== 'undefined' && socket) {
     })();
 
 // =================================================================
-// 💡 [초간단/확실] 망 변경 시 소켓 재부팅 (중복 실행 방지 적용)
+// 💡 [최종 조립본] 망 변경 시 디바운스 재연결 및 신분증 자동 제출
 // =================================================================
-let reconnectTimeout = null;
+let syncTimeout = null;
 
-const forceReconnect = () => {
-    // 0.5초 안에 여러 번 신호가 오면 무시하고 마지막 딱 한 번만 실행 (2명 버그 해결)
-    if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    reconnectTimeout = setTimeout(() => {
-        console.log('🔄 [네트워크 상태 변경] 소켓 재연결 시도');
+const forceSocketSync = () => {
+    if (syncTimeout) clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(() => {
         if (typeof socket !== 'undefined') {
-            socket.disconnect();
+            if (socket.connected) socket.disconnect();
             setTimeout(() => { socket.connect(); }, 300);
         }
-    }, 500); 
+    }, 500); // 0.5초 안에 여러 번 신호가 와도 한 번만 껐다 켬 (2명 버그 방지)
 };
 
-// 망이 바뀌거나 화면이 켜질 때 딱 한 번만 재연결
-window.addEventListener('online', forceReconnect);
+window.addEventListener('online', forceSocketSync);
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') forceReconnect();
+    if (document.visibilityState === 'visible') forceSocketSync();
 });
+
+if (typeof socket !== 'undefined') {
+    socket.on('connect', () => {
+        // 소켓이 연결되고 0.5초 뒤에 내 진짜 신분증을 서버로 쏨
+        setTimeout(() => {
+            const myName = localStorage.getItem("username") || sessionStorage.getItem("username") || "";
+            const myPhone = localStorage.getItem("phone") || sessionStorage.getItem("phone") || "";
+            const clubId = localStorage.getItem("clubId") || sessionStorage.getItem("clubId") || "";
+            
+            if(myName || myPhone) {
+                console.log('🌐 [네트워크 감지] 서버에 내 신분증 제출 및 타이머 제어 요청');
+                socket.emit('requestWifiStatus', { username: myName, phone: myPhone, clubId: clubId });
+            }
+        }, 500); 
+    });
+}
