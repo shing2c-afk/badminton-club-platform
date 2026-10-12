@@ -918,62 +918,24 @@ if (typeof socket !== 'undefined' && socket) {
     })();
 
 // =================================================================
-// 💡 [최종 완결판] 프론트엔드 상태 변화 감지 및 신분증 절대 누락 방지
+// 💡 [초간단/확실] 망 변경 시 소켓 재부팅 (중복 실행 방지 적용)
 // =================================================================
-let secretMyName = "";
-let secretMyPhone = "";
-let secretClubId = "";
+let reconnectTimeout = null;
 
-const sendWifiStatusRequest = () => {
-    if (typeof socket !== 'undefined' && socket.connected) {
-        const finalName = secretMyName || localStorage.getItem("username") || sessionStorage.getItem("username") || "";
-        const finalPhone = secretMyPhone || localStorage.getItem("phone") || sessionStorage.getItem("phone") || "";
-        const finalClub = secretClubId || localStorage.getItem("clubId") || sessionStorage.getItem("clubId") || "";
-        
-        if(finalName) {
-            console.log(`🌐 [네트워크 감지] 진짜 신분증 서버로 제출: (이름: ${finalName})`);
-            socket.emit('requestWifiStatus', { username: finalName, phone: finalPhone, clubId: finalClub });
+const forceReconnect = () => {
+    // 0.5초 안에 여러 번 신호가 오면 무시하고 마지막 딱 한 번만 실행 (2명 버그 해결)
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    reconnectTimeout = setTimeout(() => {
+        console.log('🔄 [네트워크 상태 변경] 소켓 재연결 시도');
+        if (typeof socket !== 'undefined') {
+            socket.disconnect();
+            setTimeout(() => { socket.connect(); }, 300);
         }
-    }
+    }, 500); 
 };
 
-if (typeof socket !== 'undefined') {
-    const originalEmit = socket.emit;
-    socket.emit = function(eventName, data, ...args) {
-        if (data && typeof data === 'object') {
-            if (data.username) secretMyName = data.username;
-            if (data.name) secretMyName = data.name;
-            if (data.phone) secretMyPhone = data.phone;
-            if (data.clubId) secretClubId = data.clubId;
-        }
-        
-        // 💡 [핵심 3] 앱에서 방 입장(joinClub) 등 활동을 할 때 0.3초 뒤에 신분증도 무조건 같이 찔러줌 (누락 원천 차단)
-        if (eventName === 'joinClub' || eventName === 'registerUser') {
-            setTimeout(sendWifiStatusRequest, 300);
-        }
-        
-        return originalEmit.apply(this, [eventName, data, ...args]);
-    };
-}
-
-const forceSocketSync = () => {
-    if (typeof socket !== 'undefined') {
-        if (socket.connected) socket.disconnect();
-        setTimeout(() => { 
-            socket.connect(); 
-            // 통신선이 꽂히면 0.5초 뒤에 신분증 강제 발송
-            setTimeout(sendWifiStatusRequest, 500);
-        }, 300);
-    }
-};
-
+// 망이 바뀌거나 화면이 켜질 때 딱 한 번만 재연결
+window.addEventListener('online', forceReconnect);
 document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') forceSocketSync();
+    if (document.visibilityState === 'visible') forceReconnect();
 });
-window.addEventListener('online', forceSocketSync);
-
-if (typeof socket !== 'undefined') {
-    socket.on('connect', () => {
-        setTimeout(sendWifiStatusRequest, 300);
-    });
-}
