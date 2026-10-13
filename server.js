@@ -3338,15 +3338,22 @@ io.on('connection', (socket) => {
             console.log(`📶 [즉각 트리거] 유저(${socket.finalName}) 실시간 상태: ${isGym ? '🟢 [Wi-Fi 일치]' : '🔴 [Wi-Fi 불일치]'}`);
 
             if (isGym) {
-                // Wi-Fi 일치: 타이머 즉시 파괴 (억울한 강제 로그아웃 방지)
-                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[socket.finalName]) {
-                    clearTimeout(disconnectTimers[socket.finalName]);
-                    delete disconnectTimers[socket.finalName];
-                    console.log(`🛡️ [타이머 완전 초기화] 유저(${socket.finalName}) 구장 복귀 완료. 대기방 보존!`);
+                // 💡 [해결 1] 이름표 불일치 방지: '진짜 이름'과 '전화번호' 타이머를 동시에 찾아 완벽하게 멸종시킴
+                const keysToClear = [socket.finalName, socket.username, cleanUsername];
+                keysToClear.forEach(key => {
+                    if (key && typeof disconnectTimers !== 'undefined' && disconnectTimers[key]) {
+                        clearTimeout(disconnectTimers[key]);
+                        delete disconnectTimers[key];
+                        console.log(`🛡️ [타이머 파괴] 유저(${key}) 구장 복귀 확인. 대기방 보존!`);
+                    }
+                });
+
+                // 매니저에게도 두 이름표 모두 복구 명령 하달
+                if (typeof gymSessionManager !== 'undefined') {
+                    if (socket.finalName) gymSessionManager.handleConnect(socket, socket.finalName, targetClubId);
+                    if (socket.username && socket.username !== socket.finalName) gymSessionManager.handleConnect(socket, socket.username, targetClubId);
                 }
-                if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleConnect(socket, socket.finalName, targetClubId);
             } else {
-                // Wi-Fi 불일치: 지연 없이 1분 유예 즉시 가동
                 if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[socket.finalName]) {
                     console.log(`⏱️ [타이머 즉시 가동] 유저(${socket.finalName}) 외부망 전환 ➔ 1분 유예 가동 시작`);
                     if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, socket.finalName, targetClubId);
@@ -3359,7 +3366,8 @@ io.on('connection', (socket) => {
     // 🧹 [최종 방어] 바통 터치 및 살아있는 소켓 전수 검사 로직
     // =================================================================
     socket.on('disconnect', () => {
-        const rawName = socket.username || socket.finalName || socket.cleanUsername;
+        // 💡 [해결 2] 단절 시에도 진짜 이름(finalName)을 최우선으로 사용하여 추적
+        const rawName = socket.finalName || socket.username || socket.cleanUsername;
         const currentClubId = socket.clubId || 'unjeong';
 
         if (!rawName || rawName === '0100' || rawName.length < 2) {
@@ -3369,8 +3377,6 @@ io.on('connection', (socket) => {
         }
 
         const finalName = rawName;
-
-        // 1. 방금 끊어진 옛날 소켓만 명부에서 조용히 지웁니다.
         if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
 
         if (socket.isExplicitLogout) {
@@ -3378,13 +3384,12 @@ io.on('connection', (socket) => {
             return;
         }
 
-        console.log(`⏳ [바통 터치 대기] 유저(${finalName}) 구 통신선 끊김. 5초 내 새 통신선 확인 대기...`);
+        console.log(`⏳ [바통 터치 대기] 유저(${finalName}) 통신선 끊김. 15초 내 새 통신선 확인 대기...`);
 
-        // 💡 2. 5초 대기 후 명부뿐만 아니라 실제 살아있는 소켓까지 이중 검사!
+        // 💡 [해결 3] 스마트폰의 물리적 Wi-Fi 재연결 시간(8~12초)을 고려하여 대기 시간을 15초로 연장
         setTimeout(() => {
             let hasOtherActiveSocket = false;
             
-            // 검사 1: 기존 userSockets 명부 확인
             if (typeof userSockets !== 'undefined') {
                 for (let sid in userSockets) {
                     if (userSockets[sid].username === finalName || userSockets[sid].phone === finalName) {
@@ -3394,7 +3399,6 @@ io.on('connection', (socket) => {
                 }
             }
 
-            // 🚀 검사 2: 명부에 누락되었더라도, 서버에 살아있는 실제 소켓을 뒤져서 내 이름표를 확인 (절대 속지 않음)
             if (!hasOtherActiveSocket && socket.nsp) {
                 const allSockets = Array.from(socket.nsp.sockets.values());
                 for (let s of allSockets) {
@@ -3406,11 +3410,9 @@ io.on('connection', (socket) => {
             }
 
             if (hasOtherActiveSocket) {
-                // 바통 터치 성공: 새 소켓이 살아있으므로 타이머를 돌리지 않고 무시함
-                console.log(`🛡️ [바통 터치 성공] 유저(${finalName})의 새 연결이 확인되었습니다. 카운트 정상 유지!`);
+                console.log(`🛡️ [바통 터치 성공] 유저(${finalName})의 새 연결이 15초 내에 확인되었습니다. 카운트 정상 유지!`);
                 return; 
             } else {
-                // 5초 뒤에도 새 소켓이 정말 없으면 진짜 단절로 판정
                 console.log(`⏱️ [진짜 단절] 유저(${finalName}) 바통 터치 실패 (완전 이탈). 백업 타이머 가동.`);
                 if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
                     if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
@@ -3418,7 +3420,7 @@ io.on('connection', (socket) => {
             }
             
             if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
-        }, 5000); 
+        }, 15000); 
     });
 
     // ==========================================
