@@ -3356,18 +3356,19 @@ io.on('connection', (socket) => {
     });
 
     // =================================================================
-    // 🧹 [바통 터치 방식] 통신 단절 시 5초 대기 후 유령 소켓 방어
+    // 🧹 [최종 방어] 바통 터치 및 살아있는 소켓 전수 검사 로직
     // =================================================================
     socket.on('disconnect', () => {
-        // 기존 회원님 앱 코드에서 설정된 username을 그대로 사용합니다.
-        const finalName = socket.username || socket.finalName || socket.cleanUsername;
+        const rawName = socket.username || socket.finalName || socket.cleanUsername;
         const currentClubId = socket.clubId || 'unjeong';
 
-        if (!finalName) {
+        if (!rawName || rawName === '0100' || rawName.length < 2) {
             if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
             if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
             return;
         }
+
+        const finalName = rawName;
 
         // 1. 방금 끊어진 옛날 소켓만 명부에서 조용히 지웁니다.
         if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
@@ -3379,13 +3380,25 @@ io.on('connection', (socket) => {
 
         console.log(`⏳ [바통 터치 대기] 유저(${finalName}) 구 통신선 끊김. 5초 내 새 통신선 확인 대기...`);
 
-        // 💡 2. 회원님의 '바통 터치' 아이디어 적용: 5초 대기 후 검사!
+        // 💡 2. 5초 대기 후 명부뿐만 아니라 실제 살아있는 소켓까지 이중 검사!
         setTimeout(() => {
             let hasOtherActiveSocket = false;
+            
+            // 검사 1: 기존 userSockets 명부 확인
             if (typeof userSockets !== 'undefined') {
                 for (let sid in userSockets) {
-                    // 5초 뒤 명부에 내 이름으로 된 새 소켓이 있는지 확인
-                    if (userSockets[sid].username === finalName) {
+                    if (userSockets[sid].username === finalName || userSockets[sid].phone === finalName) {
+                        hasOtherActiveSocket = true;
+                        break;
+                    }
+                }
+            }
+
+            // 🚀 검사 2: 명부에 누락되었더라도, 서버에 살아있는 실제 소켓을 뒤져서 내 이름표를 확인 (절대 속지 않음)
+            if (!hasOtherActiveSocket && socket.nsp) {
+                const allSockets = Array.from(socket.nsp.sockets.values());
+                for (let s of allSockets) {
+                    if (s.id !== socket.id && (s.finalName === finalName || s.username === finalName || s.cleanUsername === finalName)) {
                         hasOtherActiveSocket = true;
                         break;
                     }
@@ -3393,20 +3406,19 @@ io.on('connection', (socket) => {
             }
 
             if (hasOtherActiveSocket) {
-                // 바통 터치 성공: 카운트를 빼지 않고 조용히 넘어갑니다.
+                // 바통 터치 성공: 새 소켓이 살아있으므로 타이머를 돌리지 않고 무시함
                 console.log(`🛡️ [바통 터치 성공] 유저(${finalName})의 새 연결이 확인되었습니다. 카운트 정상 유지!`);
                 return; 
             } else {
-                // 5초가 지나도 새 소켓이 없으면 진짜 앱을 끈 것으로 판정
+                // 5초 뒤에도 새 소켓이 정말 없으면 진짜 단절로 판정
                 console.log(`⏱️ [진짜 단절] 유저(${finalName}) 바통 터치 실패 (완전 이탈). 백업 타이머 가동.`);
                 if (typeof disconnectTimers !== 'undefined' && !disconnectTimers[finalName]) {
                     if (typeof gymSessionManager !== 'undefined') gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
                 }
             }
             
-            // 5초 뒤에 모든 상황이 정리된 후 접속자 전광판 최종 갱신
             if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(currentClubId);
-        }, 5000); // 5000ms = 5초 대기
+        }, 5000); 
     });
 
     // ==========================================
