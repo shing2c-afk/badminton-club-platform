@@ -66,28 +66,19 @@ const activeClubId = new URLSearchParams(window.location.search).get('club') || 
 window.currentClubId = activeClubId;
 localStorage.setItem('preferredClubId', activeClubId);
 
-// 💡 [핵심] 브라우저 저장소 전체를 안전하게 탐색하여 로그인 유저 식별자(전화번호/이름) 자동 추출
 let myStoredPhone = localStorage.getItem('userPhone') || localStorage.getItem('phone') || '';
 let myStoredName = window.currentUserName || localStorage.getItem('userName') || '';
 
-for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    const val = localStorage.getItem(key);
-    if (val && typeof val === 'string') {
-        if (val.includes('010-') || val.includes('010')) {
-            const match = val.match(/010[-\d]+/);
-            if (match) myStoredPhone = match[0];
+// 🟢 [안전한 추출] 전체를 뒤지지 않고, 정식으로 저장된 회원 정보만 깔끔하게 꺼냅니다.
+const rawUserStorage = localStorage.getItem('currentUser') || localStorage.getItem('user');
+if (rawUserStorage) {
+    try {
+        const parsed = JSON.parse(rawUserStorage);
+        if (parsed && typeof parsed === 'object') {
+            if (parsed.phone) myStoredPhone = parsed.phone;
+            if (parsed.name || parsed.username) myStoredName = parsed.name || parsed.username;
         }
-        if (key.toLowerCase().includes('user') || key.toLowerCase().includes('member') || val.includes('신윤채')) {
-            try {
-                const parsed = JSON.parse(val);
-                if (parsed && typeof parsed === 'object') {
-                    if (parsed.phone) myStoredPhone = parsed.phone;
-                    if (parsed.name || parsed.username) myStoredName = parsed.name || parsed.username;
-                }
-            } catch(e) {}
-        }
-    }
+    } catch(e) {}
 }
 
 const socket = window.socket || io({
