@@ -2205,30 +2205,6 @@ socket.on('startDisconnectTimer', (userData) => {
     }
 });
 
-    // ⏱️ [핵심 복구] 재접속 소켓을 userSockets에 매핑하고 1분 퇴장 타이머 즉시 해제
-    const __rc_Phone = socket.handshake.query && socket.handshake.query.phone;
-    const __rc_User = socket.handshake.query && (socket.handshake.query.username || socket.handshake.query.userKey || socket.handshake.query.userId);
-    const __rc_TargetUser = (__rc_Phone || __rc_User || '').trim();
-
-    if (__rc_TargetUser) {
-        socket.username = __rc_TargetUser;
-        if (typeof userSockets !== 'undefined') {
-            userSockets[socket.id] = __rc_TargetUser;
-        }
-
-        if (typeof disconnectTimers !== 'undefined') {
-            Object.keys(disconnectTimers).forEach(timerKey => {
-                if (timerKey.includes(__rc_TargetUser) || __rc_TargetUser.includes(timerKey)) {
-                    clearTimeout(disconnectTimers[timerKey]);
-                    delete disconnectTimers[timerKey];
-                    if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[timerKey];
-                    if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[timerKey];
-                    console.log(`⏱️ [재접속 복귀] 새 소켓(${socket.id})으로 유저(${timerKey}) 재접속 확인 -> 1분 미접속 대기열 삭제 타이머 해제 완료!`);
-                }
-            });
-        }
-    }
-
     // 📶 접속자의 구장 Wi-Fi 여부 판별 후 개별 전달
     const initialIsGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, clientClubId) : true;
     const initialClientIp = (typeof getClientIp === 'function') ? getClientIp(socket) : '';
@@ -3300,7 +3276,6 @@ socket.on('startDisconnectTimer', (userData) => {
             socket.inGym = false;
             socket.isGymWifi = false;
             socket.verifiedWifi = false;
-            gymSessionManager.handleDisconnect(socket, cleanUsername, targetClubId);
         }
     });
 
