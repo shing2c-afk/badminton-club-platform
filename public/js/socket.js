@@ -319,7 +319,9 @@ window.registerUserSocket = function() {
     }
 };
 
-// 💡 서버와 웹소켓 연결 성공
+// ==========================================
+// 💡 [완벽 통합] 서버와 웹소켓 연결 성공 시 단 한 번 실행되는 라이프사이클
+// ==========================================
 if (!socket.hasListeners('connect')) {
     socket.on('connect', () => {
         console.log("🟢 서버와 웹소켓 연결 성공 (ID:", socket.id, ")");
@@ -329,10 +331,8 @@ if (!socket.hasListeners('connect')) {
         if (savedUser) {
             try {
                 const parsedUser = JSON.parse(savedUser);
-                // 💡 phone, id, username 중 존재하는 키에서 유저 식별값 추출
                 const userKey = parsedUser.phone || parsedUser.id || parsedUser.username;
                 if (userKey) {
-                    // isAutoRestore: true 를 함께 보내 '자동 복귀 시도'임을 서버에 알림
                     socket.emit('registerUserSession', { username: userKey, isAutoRestore: true });
                     console.log(`👤 [자동 등록 요청] 세션 만료 여부 검증: ${userKey}`);
                 }
@@ -342,7 +342,44 @@ if (!socket.hasListeners('connect')) {
         }
 
         // 2. 🔔 개인 알림 전용 소켓 룸 자동 등록
-        window.registerUserSocket();
+        if (typeof window.registerUserSocket === 'function') {
+            window.registerUserSocket();
+        }
+
+        // 3. 🌐 [핵심 추가] 네트워크 연결 직후 내 진짜 신분증과 Wi-Fi 상태를 서버에 완벽 주입
+        setTimeout(() => {
+            let myName = '';
+            let myPhone = '';
+            const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
+
+            const rawUserStorage = localStorage.getItem('currentUser') || localStorage.getItem('user');
+            if (rawUserStorage) {
+                try {
+                    const parsed = JSON.parse(rawUserStorage);
+                    if (parsed && typeof parsed === 'object') {
+                        myPhone = parsed.phone || '';
+                        myName = parsed.name || parsed.username || '';
+                    }
+                } catch(e) {}
+            }
+            
+            if (!myName && !myPhone) {
+                myName = localStorage.getItem("userName") || localStorage.getItem("username") || "";
+                myPhone = localStorage.getItem("userPhone") || localStorage.getItem("phone") || "";
+            }
+
+            if (myName || myPhone) {
+                console.log('🌐 [네트워크 감지] 서버에 내 신분증 제출 및 타이머 제어 요청');
+                socket.emit('registerUser', { phone: myPhone, name: myName, clubId: clubId });
+                socket.emit('requestWifiStatus', { username: myName, phone: myPhone, clubId: clubId });
+                
+                // 만약 외부망(LTE) 상태라면 즉시 유예 타이머 가동 신호 발송
+                if (window.isGymWifiConnected === false) {
+                    console.log('🔒 [망 전환 감지] 외부망 접속이므로 유예 타이머 시작 신호 발송');
+                    socket.emit('startDisconnectTimer', { phone: myPhone, username: myName, clubId: clubId });
+                }
+            }
+        }, 300);
     });
 }
 
@@ -907,39 +944,3 @@ if (typeof socket !== 'undefined' && socket) {
     }
     setupSessionExpireListener();
     })();
-
-// =================================================================
-// 💡 [최종 조립본] 망 변경 시 디바운스 재연결 및 신분증 자동 제출
-// =================================================================
-let syncTimeout = null;
-
-const forceSocketSync = () => {
-    if (syncTimeout) clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(() => {
-        if (typeof socket !== 'undefined') {
-            if (socket.connected) socket.disconnect();
-            setTimeout(() => { socket.connect(); }, 300);
-        }
-    }, 500); // 0.5초 안에 여러 번 신호가 와도 한 번만 껐다 켬 (2명 버그 방지)
-};
-
-window.addEventListener('online', forceSocketSync);
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') forceSocketSync();
-});
-
-if (typeof socket !== 'undefined') {
-    socket.on('connect', () => {
-        // 소켓이 연결되고 0.5초 뒤에 내 진짜 신분증을 서버로 쏨
-        setTimeout(() => {
-            const myName = localStorage.getItem("username") || sessionStorage.getItem("username") || "";
-            const myPhone = localStorage.getItem("phone") || sessionStorage.getItem("phone") || "";
-            const clubId = localStorage.getItem("clubId") || sessionStorage.getItem("clubId") || "";
-            
-            if(myName || myPhone) {
-                console.log('🌐 [네트워크 감지] 서버에 내 신분증 제출 및 타이머 제어 요청');
-                socket.emit('requestWifiStatus', { username: myName, phone: myPhone, clubId: clubId });
-            }
-        }, 500); 
-    });
-}
