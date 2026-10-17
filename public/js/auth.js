@@ -404,7 +404,14 @@ document.addEventListener("DOMContentLoaded", () => {
             mainApp.classList.remove("hidden");
           }
         } else {
-          if (authMsg) authMsg.textContent = response.message || '등록된 정회원 정보를 찾을 수 없습니다.';
+          // 💡 [수정] 등록되지 않은 정회원 정보일 때 authMsg 및 토스트 팝업으로 확실하게 메시지 출력
+          const errorMsg = response.message || '등록된 정회원 정보를 찾을 수 없습니다.';
+          if (authMsg) {
+            authMsg.textContent = errorMsg;
+          }
+          if (typeof showToast === 'function') {
+            showToast(errorMsg, false);
+          }
         }
       });
     });
