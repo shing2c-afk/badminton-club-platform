@@ -929,7 +929,7 @@ if (typeof socket !== 'undefined' && socket) {
         }
     }, 3000);
 
-    // ==========================================
+// ==========================================
 // 💡 [완성본] 소켓이 준비되었을 때 forceSessionExpire 리스너 장착 (본인 검증 및 4초 카운트다운)
 // ==========================================
 (function() {
@@ -938,8 +938,6 @@ if (typeof socket !== 'undefined' && socket) {
         if (activeSocket) {
             // 중복 바인딩 방지
             activeSocket.off('forceSessionExpire');
-
-            activeSocket.ons('forceSessionExpire', () => {}); // 안전 방어
 
             activeSocket.on('forceSessionExpire', (data) => {
                 // 이미 만료 안내 모달이 떠 있다면 중복 실행 방지
