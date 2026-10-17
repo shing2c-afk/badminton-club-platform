@@ -1731,28 +1731,32 @@ setInterval(() => {
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                if (elapsed === 10 && !slot.announced) {
-                    slot.announced = true;
-                    const validPlayers = getValidPlayers(slot.players);
-                    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-                    
-                    const emptyGameCourts = cCourtsData.filter(c => c.type === 'game' && c.isEmpty);
-                    const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
-                    const courtNum = targetCourt ? targetCourt.id : '';
+                // 공통 사용할 참가자 이름 및 배정 코트 번호 계산
+                const validPlayers = getValidPlayers(slot.players);
+                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                const emptyGameCourts = cCourtsData.filter(c => c.type === 'game' && c.isEmpty);
+                const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
+                const courtNum = targetCourt ? targetCourt.id : '';
 
-                    // 💡 수정 후: 구장별 독립 큐로 전송
+                // 📱 [1단계: 타이머 작동 즉시(0초)] 스마트폰 팝업 및 진동 즉시 발송
+                if (!slot.mobileNotified) {
+                    slot.mobileNotified = true;
+                    io.to(`club_${cId}`).emit('entryPopupAlert', {
+                        clubId: cId,
+                        matchType: '게임',
+                        courtNumber: courtNum,
+                        targetPlayers: memberNames
+                    });
+                }
+
+                // 📺 [2단계: 10초 경과 시점] 아직 코트 입장을 안 눌렀다면 TV 팝업 및 음성 방송 송출
+                if (elapsed >= 10 && !slot.announced) {
+                    slot.announced = true;
                     pushVoiceAnnouncement(cId, {
                         clubId: cId,
                         courtNumber: courtNum,
                         names: memberNames,
                         matchType: '게임'
-                    });
-
-                    io.to(`club_${cId}`).emit('entryPopupAlert', {
-                        clubId: cId, // 💡 [추가] 클럽 ID 명시
-                        matchType: '게임',
-                        courtNumber: courtNum,
-                        targetPlayers: memberNames
                     });
                 }
 
@@ -1760,18 +1764,18 @@ setInterval(() => {
                     const targetIdx = cGameQueue.findIndex(s => s.id === slot.id);
                     if (targetIdx !== -1) {
                         const expiredTeam = cGameQueue.splice(targetIdx, 1)[0];
-                        const validPlayers = getValidPlayers(expiredTeam.players);
-                        const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                        const expiredValidPlayers = getValidPlayers(expiredTeam.players);
+                        const expiredMemberNames = expiredValidPlayers.map(p => p.split('/')[0].trim());
 
                         io.to(`club_${cId}`).emit('tvPopupAlert', {
-                            clubId: cId, // 💡 [추가] 클럽 ID 명시
+                            clubId: cId,
                             matchType: '게임',
-                            names: memberNames,
+                            names: expiredMemberNames,
                             message: '입장 시간 초과로 게임 대기방이 삭제되었습니다.<br>게임 대기를 원하시면 다시 등록해 주세요.'
                         });
 
                         const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 게임 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
-                        validPlayers.forEach(playerStr => {
+                        expiredValidPlayers.forEach(playerStr => {
                             const parts = playerStr.split('/');
                             const userIdentifier = (parts[1] || parts[0]).trim();
                             sendPersonalNotification(userIdentifier, cancelPersonalMsg);
@@ -1786,6 +1790,7 @@ setInterval(() => {
                 slot.fullAt = null;
                 slot.remainingSeconds = null;
                 slot.announced = false;
+                slot.mobileNotified = false; // 💡 타이머 해제 시 스마트폰 알림 상태도 초기화
             }
         });
 
@@ -1816,38 +1821,42 @@ setInterval(() => {
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                if (elapsed === 10 && !slot.announced) {
-                    slot.announced = true;
-                    const validPlayers = getValidPlayers(slot.players);
-                    const memberNames = validPlayers.map(p => p.split('/')[0].trim());
-                    
-                    let availableSides = [];
-                    for (let court of cCourtsData) {
-                        if (court.type === 'nanta') {
-                            if (court.sideA && court.sideA.isEmpty) {
-                                availableSides.push({ courtId: court.id, side: 'sideA' });
-                            }
-                            if (court.sideB && court.sideB.isEmpty) {
-                                availableSides.push({ courtId: court.id, side: 'sideB' });
-                            }
+                // 공통 사용할 참가자 이름 및 배정 코트 번호 계산
+                const validPlayers = getValidPlayers(slot.players);
+                const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                let availableSides = [];
+                for (let court of cCourtsData) {
+                    if (court.type === 'nanta') {
+                        if (court.sideA && court.sideA.isEmpty) {
+                            availableSides.push({ courtId: court.id, side: 'sideA' });
+                        }
+                        if (court.sideB && court.sideB.isEmpty) {
+                            availableSides.push({ courtId: court.id, side: 'sideB' });
                         }
                     }
-                    
-                    const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
-                    const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
+                }
+                const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
+                const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
 
-                    pushVoiceAnnouncement(cId,  {
+                // 📱 [1단계: 타이머 작동 즉시(0초)] 스마트폰 팝업 및 진동 즉시 발송
+                if (!slot.mobileNotified) {
+                    slot.mobileNotified = true;
+                    io.to(`club_${cId}`).emit('entryPopupAlert', {
+                        clubId: cId,
+                        matchType: '난타',
+                        courtNumber: targetCourtNum,
+                        targetPlayers: memberNames
+                    });
+                }
+
+                // 📺 [2단계: 10초 경과 시점] 아직 코트 입장을 안 눌렀다면 TV 팝업 및 음성 방송 송출
+                if (elapsed >= 10 && !slot.announced) {
+                    slot.announced = true;
+                    pushVoiceAnnouncement(cId, {
                         clubId: cId,
                         courtNumber: targetCourtNum,
                         names: memberNames,
                         matchType: '난타'
-                    });
-
-                    io.to(`club_${cId}`).emit('entryPopupAlert', {
-                        clubId: cId, // 💡 [추가] 클럽 ID 명시
-                        matchType: '난타',
-                        courtNumber: targetCourtNum,
-                        targetPlayers: memberNames
                     });
                 }
 
@@ -1855,18 +1864,18 @@ setInterval(() => {
                     const index = cNantaQueue.findIndex(s => s.id === slot.id);
                     if (index !== -1) {
                         const expiredTeam = cNantaQueue.splice(index, 1)[0];
-                        const validPlayers = getValidPlayers(expiredTeam.players);
-                        const memberNames = validPlayers.map(p => p.split('/')[0].trim());
+                        const expiredValidPlayers = getValidPlayers(expiredTeam.players);
+                        const expiredMemberNames = expiredValidPlayers.map(p => p.split('/')[0].trim());
 
                         io.to(`club_${cId}`).emit('tvPopupAlert', {
-                            clubId: cId, // 💡 [추가] 클럽 ID 명시
+                            clubId: cId,
                             matchType: '난타',
-                            names: memberNames,
+                            names: expiredMemberNames,
                             message: '입장 시간 초과로 난타 대기방이 삭제되었습니다.<br>난타 대기를 원하시면 다시 등록해 주세요.'
                         });
 
                         const cancelPersonalMsg = '코트 입장 제한 시간(초과)으로 인해 난타 대기방이 취소되었습니다. 다시 대기 등록을 해주세요.';
-                        validPlayers.forEach(playerStr => {
+                        expiredValidPlayers.forEach(playerStr => {
                             const parts = playerStr.split('/');
                             const userIdentifier = (parts[1] || parts[0]).trim();
                             sendPersonalNotification(userIdentifier, cancelPersonalMsg);
@@ -1881,6 +1890,7 @@ setInterval(() => {
                 slot.fullAt = null;
                 slot.remainingSeconds = null;
                 slot.announced = false;
+                slot.mobileNotified = false; // 💡 타이머 해제 시 스마트폰 알림 상태도 초기화
             }
         });
 

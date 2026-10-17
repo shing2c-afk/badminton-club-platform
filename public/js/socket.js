@@ -601,7 +601,7 @@ socket.off('stateUpdated').on('stateUpdated', (data) => {
     }
     
     // 2. 브라우저 탭 상단 타이틀 갱신
-    document.title = `${clubDisplayName} - 코트 관리 시스템`;
+    document.title = `${clubDisplayName}  코트 관리 시스템`;
 
     // 전체 공지 알림이 있을 경우만 유지하거나, 기존 목록이 비어있을 때만 로컬 저장소에서 복원
     if (data.notifications && data.notifications.length > 0) {
@@ -655,25 +655,39 @@ document.addEventListener('click', () => {
     }
 }, { once: true });
 
-// 3. 💡 입장 30초 경과 시 알림
+// 3. 💡 코트 입장 타이머 시작 즉시 스마트폰 알림 수신
 socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
     let myName = '';
-    const savedUser = localStorage.getItem("currentUser");
+    
+    // 🔑 현재 구장 전용 스토리지 키(currentUser_구장ID)에서 내 정보 추출
+    const targetClub = (data && data.clubId) 
+        || (typeof currentClubId !== 'undefined' && currentClubId) 
+        || new URLSearchParams(window.location.search).get('club') 
+        || localStorage.getItem('preferredClubId') 
+        || 'unjeong';
+
+    const savedUser = localStorage.getItem(`currentUser_${targetClub}`) || localStorage.getItem("currentUser");
     
     if (savedUser) {
         try {
             const parsed = JSON.parse(savedUser);
-            myName = (parsed.name || parsed.username || '').split('/')[0].trim();
+            myName = String(parsed.name || parsed.username || '').replace(/님$/, '').split('/')[0].trim();
         } catch (e) {
-            myName = savedUser.split('/')[0].trim();
+            myName = String(savedUser).replace(/님$/, '').split('/')[0].trim();
         }
     }
     
     if (!myName) {
-        myName = (localStorage.getItem("userName") || localStorage.getItem("username") || '').split('/')[0].trim();
+        myName = String(localStorage.getItem("userName") || localStorage.getItem("username") || '').replace(/님$/, '').split('/')[0].trim();
     }
 
-    if (myName && data.targetPlayers && data.targetPlayers.includes(myName)) {
+    // 🛡️ 서버에서 보낸 targetPlayers 명단과 내 순수 이름 대조
+    const isMyTurn = myName && Array.isArray(data.targetPlayers) && data.targetPlayers.some(player => {
+        const cleanTarget = String(player || '').replace(/님$/, '').split('/')[0].trim();
+        return cleanTarget === myName;
+    });
+
+    if (isMyTurn) {
         if ('vibrate' in navigator) {
             navigator.vibrate([1000, 300, 1000, 300, 1000]);
         }
@@ -681,7 +695,7 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
         if ('Notification' in window && Notification.permission === 'granted') {
             const title = `🏟️ [${data.courtNumber}번 ${data.matchType} 코트]`;
             const options = {
-                body: '지금 코트로 입장해 주세요! (10초 제한)',
+                body: '지금 코트로 입장해 주세요!',
                 icon: '/favicon.ico',
                 badge: '/favicon.ico',
                 tag: 'court-entry-alert',
