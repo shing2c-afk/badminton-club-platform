@@ -1,14 +1,15 @@
 /**
  * gymSessionManager.js
- * 멀티 테넌트 기반 체육관 이탈/유예/만료/복귀 라이프사이클 전담 매니저
+ * 멀티 테넌트 기반 체육관 이탈/유예/만료/복귀 라이프사이클 전담 매니저 (5단계 마스터 로직 완결판)
  */
 
 class GymSessionManager {
     constructor() {
         // 멀티 테넌트 격리 키 형식: `${clubId}:${cleanUsername}`
-        this.graceTimers = new Map();   // 1단계: 대기열 보존 유예 타이머
-        this.expireTimers = new Map();  // 2단계: 세션 만료 타이머
-        this.evictedUsers = new Set();  // 1단계 경과로 대기열에서 퇴출된 유저 추적 (복귀 시 운동중 +1 복원용)
+        this.graceTimers = new Map();   // 1단계: 대기방 보존 유예 타이머 (운동중 및 대기방 유지)
+        this.expireTimers = new Map();  // 2단계: 세션 자동 만료 타이머 (접속자 유지 후 만료 시 강제 로그아웃)
+        this.evictedUsers = new Set();  // 1단계 경과로 대기열/운동중에서 제외된 유저 추적
+        this.expiredUsers = new Set();  // 2단계 경과로 완전 만료된 유저 추적
         
         // server.js 주입 객체
         this.io = null;
@@ -19,9 +20,6 @@ class GymSessionManager {
         this.broadcastOnlineCount = null;
     }
 
-    /**
-     * 의존성 초기 주입 (server.js 시작 시 1회 호출)
-     */
     init({ io, clubs, getClub, cleanupUser, broadcastState, broadcastOnlineCount }) {
         this.io = io;
         this.clubs = clubs;
@@ -29,273 +27,304 @@ class GymSessionManager {
         this.cleanupUser = cleanupUser;
         this.broadcastState = broadcastState;
         this.broadcastOnlineCount = broadcastOnlineCount;
-        console.log('🏸 [GymSessionManager] 멀티 테넌트 세션 매니저 초기화 완료');
+        console.log('🏸 [GymSessionManager] 5단계 마스터 로직 세션 매니저 초기화 완료');
+    }
+
+    _normalizeName(raw) {
+        if (!raw) return '';
+        return String(raw).replace(/님$/, '').split('/')[0].split('|')[0].trim();
     }
 
     _getKey(clubId, cleanUsername) {
-        return `${clubId || 'unjeong'}:${cleanUsername}`;
+        return `${clubId || 'unjeong'}:${this._normalizeName(cleanUsername)}`;
     }
 
+    /**
+     * ⚙️ 관리자 모드에서 설정한 유예시간 / 만료시간 실시간 로드
+     */
     _getClubConfig(clubId) {
         const club = (typeof this.getClub === 'function') 
             ? this.getClub(clubId) 
             : (this.clubs ? this.clubs[clubId] : null);
         
         const config = (club && club.config) ? club.config : {};
-        let graceMinutes = Number(config.queueGraceMinutes) || 10;
-        let expireMinutes = Number(config.sessionExpireMinutes) || 30;
+        
+        // 관리자 설정값 우선 적용 (기본값: 유예 30분, 만료 60분)
+        let graceMinutes = Number(config.queueGraceMinutes);
+        if (isNaN(graceMinutes) || graceMinutes <= 0) graceMinutes = 30;
 
-        // 예외 방어: 만료시간이 유예시간보다 짧게 역전된 경우 동기화
+        let expireMinutes = Number(config.sessionExpireMinutes);
+        if (isNaN(expireMinutes) || expireMinutes <= 0) expireMinutes = 60;
+
+        // 만료시간이 유예시간보다 짧게 설정된 경우 안전 동기화
         if (expireMinutes < graceMinutes) {
             expireMinutes = graceMinutes;
         }
 
-        return { club, graceMinutes, expireMinutes };
+        const useWifiRestriction = config.useWifiRestriction !== false;
+
+        return { club, graceMinutes, expireMinutes, useWifiRestriction };
     }
 
     /**
-     * 🔍 [무적 판독기] 유저가 대기열(Queue)이나 현재 플레이 중인 코트(Court)에 있는지 완벽 검사
+     * 특정 유저의 현재 클럽 내 모든 활성 소켓 상태 일괄 업데이트
      */
-    _isUserInQueue(club, cleanUsername, socket) {
-        if (!club) return false;
-        
-        // 1. 유저가 가질 수 있는 모든 식별자(이름, 번호) 영혼까지 끌어모으기
-        const searchKeys = [cleanUsername];
-        const cleanPhone = String(cleanUsername).replace(/[^0-9]/g, '');
-        if (cleanPhone) searchKeys.push(cleanPhone);
-        
-        if (socket) {
-            if (socket.name) searchKeys.push(socket.name);
-            if (socket.username) searchKeys.push(socket.username);
-            if (socket.userIdentifier) searchKeys.push(socket.userIdentifier);
-            if (socket.phone) searchKeys.push(String(socket.phone).replace(/[^0-9]/g, ''));
+    _updateUserSocketsState(clubId, cleanUsername, stateUpdater) {
+        if (!this.io || !this.io.sockets || !this.io.sockets.sockets) return;
+        const targetName = this._normalizeName(cleanUsername);
+        const cleanPhone = targetName.replace(/[^0-9]/g, '');
+
+        for (const [, s] of this.io.sockets.sockets) {
+            if ((s.clubId || 'unjeong') !== clubId) continue;
+            const sName = this._normalizeName(s.finalName || s.username || '');
+            const sPhone = String(s.userIdentifier || s.phone || '').replace(/[^0-9]/g, '');
+
+            if (sName === targetName || (cleanPhone.length >= 7 && sPhone === cleanPhone)) {
+                stateUpdater(s);
+            }
         }
-
-        const uniqueKeys = [...new Set(searchKeys.filter(Boolean))];
-
-        // 2. 대기열(Queue) 검사
-        const inGameQueue = club.gameQueue && club.gameQueue.some(slot => 
-            slot.players && slot.players.some(p => uniqueKeys.some(key => p && p.includes(key)))
-        );
-        const inNantaQueue = club.nantaQueue && club.nantaQueue.some(slot => 
-            slot.players && slot.players.some(p => uniqueKeys.some(key => p && p.includes(key)))
-        );
-
-        // 3. 💡 코트(Court)에서 실제로 플레이 중인지도 추가로 검사! (매우 중요)
-        const inGameCourt = club.courtsData && club.courtsData.some(c => 
-            c.type === 'game' && !c.isEmpty && c.players && uniqueKeys.some(key => c.players.includes(key))
-        );
-        const inNantaCourt = club.courtsData && club.courtsData.some(c => 
-            c.type === 'nanta' && (
-                (c.sideA && !c.sideA.isEmpty && c.sideA.players && uniqueKeys.some(key => c.sideA.players.includes(key))) ||
-                (c.sideB && !c.sideB.isEmpty && c.sideB.players && uniqueKeys.some(key => c.sideB.players.includes(key)))
-            )
-        );
-
-        const result = inGameQueue || inNantaQueue || inGameCourt || inNantaCourt;
-        console.log(`🔍 [상태 판독] 검색키: [${uniqueKeys.join(', ')}] -> 참여중 여부: ${result}`);
-        
-        return result;
     }
 
     /**
-     * 🚪 [이탈 처리] Wi-Fi 불일치(단절) 시 세션/유예 타이머 동시 시작
+     * 🔴 [2단계 마스터 로직] Wi-Fi 불일치(단절) 감지 즉시 1단계(유예) & 2단계(만료) 타이머 동시 가동
      */
-    handleDisconnect(socket, cleanUsername, clubId) {
-        if (!cleanUsername) return;
-        const targetClubId = clubId || socket.clubId || 'unjeong';
+    handleDisconnect(socket, rawUsername, clubId) {
+        const cleanUsername = this._normalizeName(rawUsername || (socket && (socket.finalName || socket.username)));
+        if (!cleanUsername || cleanUsername === '0100') return;
+
+        const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
-        const { club, graceMinutes, expireMinutes } = this._getClubConfig(targetClubId);
+        const { graceMinutes, expireMinutes, useWifiRestriction } = this._getClubConfig(targetClubId);
 
-        // 이전 잔존 타이머 정리 (흔들림 방지 - 강력한 버전 호출)
-        this._clearTimers(targetClubId, cleanUsername);
-
-        // 💡 돋보기 함수에 socket을 통째로 넘겨서 진짜 이름을 찾게 돕습니다.
-        const inQueue = this._isUserInQueue(club, cleanUsername, socket);
-
-        // ==========================================
-        // 1단계: 대기열 보존 유예 타이머 가동
-        // ==========================================
-        if (inQueue) {
-            console.log(`⏱️ [대기열 유예 시작] [${targetClubId}] 유저: ${cleanUsername} -> ${graceMinutes}분 타이머 가동`);
-            const graceTimer = setTimeout(async () => {
-                console.log(`⏰ [유예시간 경과] [${targetClubId}] 유저: ${cleanUsername} 대기열 자동 퇴출 실행`);
-                
-                // 🚨 [중요 진단용 경고 추가] server.js와 청소 함수가 잘 연결되었는지 확인
-                if (typeof this.cleanupUser === 'function') {
-                    await this.cleanupUser(cleanUsername, targetClubId);
-                } else {
-                    console.log(`⚠️ [경고] cleanupUser 함수가 매니저에 연결되지 않아 대기방 삭제가 스킵되었습니다! server.js를 확인하세요.`);
-                }
-                
-                this.evictedUsers.add(userKey);
-                this.graceTimers.delete(userKey);
-
-                if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
-                if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
-            }, graceMinutes * 60 * 1000);
-
-            this.graceTimers.set(userKey, graceTimer);
-        } else {
-            console.log(`📡 [단순 이탈] [${targetClubId}] 유저: ${cleanUsername} (대기열 없음) -> 세션 타이머만 단독 가동`);
+        // 관리자 모드에서 Wi-Fi 제한 스위치를 OFF로 끈 경우 타이머를 돌리지 않음
+        if (!useWifiRestriction) {
+            if (socket) {
+                socket.inGym = true;
+                socket.inGracePeriod = false;
+            }
+            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+            return;
         }
 
-        // ==========================================
-        // 2단계: 세션 자동 만료 타이머 가동
-        // ==========================================
-        if (this.expireTimers.has(userKey)) {
-            clearTimeout(this.expireTimers.get(userKey));
-            this.expireTimers.delete(userKey);
+        // 💡 [중복 가동 방지] 이미 해당 유저의 타이머가 돌고 있다면 리셋하지 않고 기존 카운트다운 유지!
+        if (this.graceTimers.has(userKey) || this.expireTimers.has(userKey)) {
+            const isStillInGrace = this.graceTimers.has(userKey);
+            if (socket) {
+                socket.inGym = false;
+                socket.inGracePeriod = isStillInGrace;
+            }
+            console.log(`⏳ [타이머 유지] [${targetClubId}] 유저(${cleanUsername}) 이미 타이머 작동 중 (1단계 유예중: ${isStillInGrace})`);
+            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+            return;
         }
 
-        console.log(`⏳ [세션 타이머 시작] [${targetClubId}] 유저: ${cleanUsername} -> ${expireMinutes}분 후 만료 예정`);
-        
-        // 💡 [원상 복구] async 제거, 순수하게 스마트폰 강제 로그아웃 신호만 전송 (청소는 1분 유예 타이머의 역할)
-        const expireTimer = setTimeout(() => {
-            console.log(`🔒 [세션 완전 만료] [${targetClubId}] 유저: ${cleanUsername} 강제 로그아웃 신호 전송`);
-            const expireMsg = `체육관 이탈 후 ${expireMinutes}분이 경과하여 안전을 위해 자동 로그아웃되었습니다.`;
+        this.evictedUsers.delete(userKey);
+        this.expiredUsers.delete(userKey);
+
+        // 유예기간 동안 모든 소켓에 inGracePeriod = true 부여하여 '운동중' 카운트 완벽 보존
+        if (socket) {
+            socket.inGym = false;
+            socket.inGracePeriod = true;
+        }
+        this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+            s.inGym = false;
+            s.inGracePeriod = true;
+        });
+
+        console.log(`⏱️ [타이머 동시 시작] [${targetClubId}] 유저: ${cleanUsername} -> 1단계 유예(${graceMinutes}분) & 2단계 만료(${expireMinutes}분) 동시 가동!`);
+
+        // =================================================================
+        // [4단계 마스터 로직] 1차 만료: 대기방 보존 유예시간 경과 시점
+        // -> 대기방 삭제 + 운동중(-1) + 게임/난타(-1) 동시 차감 (접속자는 유지)
+        // =================================================================
+        const graceTimer = setTimeout(async () => {
+            console.log(`⏰ [1단계 유예시간 경과] [${targetClubId}] 유저: ${cleanUsername} -> 대기열 삭제 및 운동중/게임/난타 카운트 차감`);
             
-            if (this.io) {
-                const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
-                
-                // 1. 기존 룸 방식 유지
-                this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', { message: expireMsg });
-                this.io.to(`user_${cleanUsername}`).emit('forceSessionExpire', { message: expireMsg });
+            this.graceTimers.delete(userKey);
+            this.evictedUsers.add(userKey);
 
-                // 2. [핵심 유지] LTE 전환으로 생성된 '새 소켓'을 찾아내어 정확히 조준 타격
-                const targetSockets = new Set();
-                if (socket && socket.id) targetSockets.add(socket.id);
-                
-                if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
-                    const s1 = activeUserSockets.get(`${targetClubId}_${cleanUsername}`);
-                    const s2 = activeUserSockets.get(cleanUsername);
-                    if (s1) targetSockets.add(s1);
-                    if (s2) targetSockets.add(s2);
-                }
-                if (typeof userSockets !== 'undefined') {
-                    for (const [sId, uInfo] of Object.entries(userSockets)) {
-                        const rawName = typeof uInfo === 'object' ? (uInfo.name || uInfo.id || '') : String(uInfo);
-                        const pureName = rawName.replace(/님$/, '').split('/')[0].split('|')[0].trim();
-                        if (pureName === cleanUsername || pureName === cleanPhone) {
-                            targetSockets.add(sId);
-                        }
-                    }
-                }
+            // 소켓에서 유예 꼬리표 제거 (운동중 카운트 즉시 차감)
+            this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+                s.inGym = false;
+                s.inGracePeriod = false;
+            });
 
-                targetSockets.forEach(sId => {
-                    this.io.to(sId).emit('forceSessionExpire', { message: expireMsg });
-                });
-                
-                console.log(`🎯 [신호 명중] 발송 대상 소켓들:`, Array.from(targetSockets));
-
-                // ====================================================================
-                // 💡 3. [추가] 광역 수배 타격 (LTE 닌자 소켓 완벽 퇴출)
-                // 구장 룸 전체에 방송하여, 타겟 폰이 자신의 이름을 확인하고 스스로 자폭하도록 만듦
-                // ====================================================================
-                console.log(`📢 [광역 타격] 구장(club_${targetClubId}) 전체에 유저(${cleanUsername}) 강제 로그아웃 수배 전송`);
-                this.io.to(`club_${targetClubId}`).emit('forceSessionExpire', { 
-                    targetUser: cleanUsername, 
-                    targetPhone: cleanPhone, 
-                    message: expireMsg 
-                });
+            // 대기열(게임/난타)에서 유저 삭제 및 빈 방 폭파
+            if (typeof this.cleanupUser === 'function') {
+                await this.cleanupUser(cleanUsername, targetClubId);
             }
 
-            // 💡 [원상 복구] 서버 내부의 cleanupUser는 여기서 하지 않음
+            if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
+            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+        }, graceMinutes * 60 * 1000);
+
+        this.graceTimers.set(userKey, graceTimer);
+
+        // =================================================================
+        // [5단계 마스터 로직] 2차 만료: 세션 자동 만료시간 경과 시점
+        // -> 강제 로그아웃 신호 발송 + 접속자(-1) 최종 차감
+        // =================================================================
+        const expireTimer = setTimeout(async () => {
+            console.log(`🔒 [2단계 세션 완전 만료] [${targetClubId}] 유저: ${cleanUsername} -> 강제 로그아웃 및 접속자 카운트 차감`);
+            const expireMsg = `체육관 Wi-Fi 이탈 후 ${expireMinutes}분이 경과하여 자동 로그아웃되었습니다.`;
+
+            // 혹시 남아있을지 모를 대기열 안전 청소
+            if (typeof this.cleanupUser === 'function') {
+                await this.cleanupUser(cleanUsername, targetClubId);
+            }
+
+            // 타이머 정리 및 만료 상태 기록
             this._clearTimers(targetClubId, cleanUsername);
             this.evictedUsers.delete(userKey);
+            this.expiredUsers.add(userKey);
 
-            if (typeof this.broadcastOnlineCount === 'function') {
-                this.broadcastOnlineCount(targetClubId);
+            if (this.io) {
+                const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
+                const payload = {
+                    targetUser: cleanUsername,
+                    targetPhone: cleanPhone,
+                    clubId: targetClubId,
+                    message: expireMsg
+                };
+
+                // 해당 클럽 룸으로 타겟 지정 만료 신호 전송
+                this.io.to(`club_${targetClubId}`).emit('forceSessionExpire', payload);
+                this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', payload);
+
+                // 💡 [핵심] 백그라운드/LTE로 남아있는 해당 유저의 소켓에서 신분증을 즉시 회수하여 전광판 '접속자' 카운트를 즉시 0으로 차감!
+                this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+                    s.emit('forceSessionExpire', payload);
+                    s.inGym = false;
+                    s.inGracePeriod = false;
+                    s.username = null;
+                    s.finalName = null;
+                    s.userIdentifier = null;
+                    s.userId = null;
+                    s.clubUserKey = null;
+                });
             }
+
+            if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
+            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
         }, expireMinutes * 60 * 1000);
 
         this.expireTimers.set(userKey, expireTimer);
-    }
 
-    /**
-     * 🟢 [접속/복귀 처리] Wi-Fi 일치 시 호출 (이름을 handleConnect로 맞춤)
-     */
-    handleConnect(socket, cleanUsername, clubId) {
-        if (!cleanUsername) return;
-        const targetClubId = clubId || socket.clubId || 'unjeong';
-        const userKey = this._getKey(targetClubId, cleanUsername);
-
-        const hadGraceTimer = this.graceTimers.has(userKey);
-        const hadExpireTimer = this.expireTimers.has(userKey);
-        const wasEvictedFromQueue = this.evictedUsers.has(userKey);
-
-        // 💡 복귀 시점 타이머 즉시 전면 해제 (강력한 청소 함수 호출)
-        this._clearTimers(targetClubId, cleanUsername);
-
-        // [시나리오 1] 유예 시간 경과 전 조기 복귀: 대기열 완벽 보존
-        if (hadGraceTimer) {
-            console.log(`🎉 [유예 복귀 성공] [${targetClubId}] 유저: ${cleanUsername} 대기열 상태 그대로 유지 (타이머 취소됨)`);
-        } 
-        // [시나리오 2] 유예 시간은 경과하여 대기열은 삭제되었으나, 세션 만료 전 복귀
-        else if (hadExpireTimer && wasEvictedFromQueue) {
-            console.log(`🔄 [세션 복귀 - 운동중 복원] [${targetClubId}] 유저: ${cleanUsername} 체육관 재입장 확인 -> 운동중 카운트 복원 대기`);
-            this.evictedUsers.delete(userKey);
-
-            // 해당 클럽 상태 최신화 브로드캐스트
-            if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
-        }
-
+        // 타이머 가동 직후 전광판 카운트 동기화 (유예중이므로 접속자 1, 운동중 1 그대로 유지됨)
         if (typeof this.broadcastOnlineCount === 'function') {
             this.broadcastOnlineCount(targetClubId);
         }
     }
 
     /**
-     * 🧹 [타이머 무적 청소기] 식별자 꼬임 방지를 위해 관련된 모든 키를 찾아내어 박살 냄
+     * 🟢 [1단계 & 3단계 마스터 로직] 구장 Wi-Fi 접속/복귀 시 모든 타이머 즉시 초기화 및 상태 복원
      */
+    handleConnect(socket, rawUsername, clubId) {
+        const cleanUsername = this._normalizeName(rawUsername || (socket && (socket.finalName || socket.username)));
+        if (!cleanUsername || cleanUsername === '0100') return;
+
+        const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
+        const userKey = this._getKey(targetClubId, cleanUsername);
+
+        const hadGraceTimer = this.graceTimers.has(userKey);
+        const hadExpireTimer = this.expireTimers.has(userKey);
+        const wasEvicted = this.evictedUsers.has(userKey);
+
+        // 💡 가동 중이던 1단계 유예 타이머 & 2단계 세션 타이머 모두 즉시 취소(초기화)!
+        this._clearTimers(targetClubId, cleanUsername);
+        this.evictedUsers.delete(userKey);
+        this.expiredUsers.delete(userKey);
+
+        // 소켓 상태를 구장 내 접속(inGym = true)으로 즉시 확정
+        if (socket) {
+            socket.inGym = true;
+            socket.isGymWifi = true;
+            socket.inGracePeriod = false;
+        }
+        this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+            s.inGym = true;
+            s.isGymWifi = true;
+            s.inGracePeriod = false;
+        });
+
+        if (hadGraceTimer) {
+            console.log(`🎉 [3단계 유예시간 내 복귀] [${targetClubId}] 유저(${cleanUsername}) -> 모든 타이머 초기화 및 대기방/카운트 완벽 유지!`);
+        } else if (hadExpireTimer || wasEvicted) {
+            console.log(`🔄 [세션 만료 전 복귀] [${targetClubId}] 유저(${cleanUsername}) -> 세션 타이머 초기화 및 운동중 카운트(+1) 복원!`);
+        }
+
+        if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
+        if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+    }
+
+    /**
+     * 🚪 명시적 로그아웃 시 잔존 타이머 및 카운트 즉시 완전 제거
+     */
+    clearUserImmediately(rawUsername, clubId) {
+        const cleanUsername = this._normalizeName(rawUsername);
+        if (!cleanUsername) return;
+        const targetClubId = clubId || 'unjeong';
+        const userKey = this._getKey(targetClubId, cleanUsername);
+
+        this._clearTimers(targetClubId, cleanUsername);
+        this.evictedUsers.delete(userKey);
+        this.expiredUsers.delete(userKey);
+
+        this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+            s.inGym = false;
+            s.inGracePeriod = false;
+            s.username = null;
+            s.finalName = null;
+            s.userIdentifier = null;
+            s.userId = null;
+            s.clubUserKey = null;
+        });
+    }
+
     _clearTimers(targetClubId, cleanUsername) {
         if (!cleanUsername) return;
+        const normName = this._normalizeName(cleanUsername);
         const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
         
-        // 발생할 수 있는 모든 이름/전화번호 조합의 식별키 생성
         const keysToClear = [
-            this._getKey(targetClubId, cleanUsername),
+            this._getKey(targetClubId, normName),
             this._getKey(targetClubId, cleanPhone),
-            `${targetClubId}_${cleanUsername}`,
+            `${targetClubId}_${normName}`,
             `${targetClubId}_${cleanPhone}`,
-            cleanUsername,
+            normName,
             cleanPhone
         ];
 
-        // 싹쓸이 검색 후 타이머 강제 종료
         keysToClear.forEach(key => {
-            if (this.graceTimers && this.graceTimers.has(key)) {
+            if (this.graceTimers.has(key)) {
                 clearTimeout(this.graceTimers.get(key));
                 this.graceTimers.delete(key);
-                console.log(`🗑️ [타이머 해제] ${key} 의 유예 타이머 해제`);
+                console.log(`🗑️ [타이머 초기화] ${key} -> 1단계 대기방 유예 타이머 취소 완료`);
             }
-            if (this.expireTimers && this.expireTimers.has(key)) {
+            if (this.expireTimers.has(key)) {
                 clearTimeout(this.expireTimers.get(key));
                 this.expireTimers.delete(key);
-                console.log(`🗑️ [타이머 해제] ${key} 의 세션 타이머 해제`);
+                console.log(`🗑️ [타이머 초기화] ${key} -> 2단계 세션 만료 타이머 취소 완료`);
             }
         });
     }
 
     /**
-     * 📊 [현황 집계 헬퍼] 특정 클럽의 유예 및 잔여 세션 유저 목록 조회
-     * broadcastOnlineCount에서 카운트를 정확하게 유지하기 위해 사용
+     * 📊 [전광판 카운트 집계용] 현재 1단계 유예 중(운동중+접속자 유지)인 유저와 2단계 세션 대기 중(접속자만 유지)인 유저 반환
      */
     getPendingUsers(clubId) {
         const targetClubId = clubId || 'unjeong';
         const prefix = `${targetClubId}:`;
         
-        const graceUsers = [];   // 1단계 유예 중 (대기방 보존 & 운동중 유지)
-        const sessionUsers = []; // 2단계 세션 유지 중 (접속자 수만 유지)
+        const graceUsers = [];   // 1단계 유예 중 (접속자 +1, 운동중 +1 유지)
+        const sessionUsers = []; // 1단계 만료 후 2단계 세션 유지 중 (접속자 +1만 유지, 운동중은 제외)
 
-        // 1. 유예 타이머 가동 중인 유저
         for (const [key] of this.graceTimers) {
             if (key.startsWith(prefix)) {
                 graceUsers.push(key.replace(prefix, ''));
             }
         }
 
-        // 2. 세션 만료 타이머 가동 중인 유저 (유예가 끝난 2단계 유저)
         for (const [key] of this.expireTimers) {
             if (key.startsWith(prefix) && !this.graceTimers.has(key)) {
                 sessionUsers.push(key.replace(prefix, ''));
