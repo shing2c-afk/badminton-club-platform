@@ -741,8 +741,8 @@ socket.on('tvPopupAlert', (data) => {
         const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
         const readableCourtNum = getReadableCourtName(courtNumber);
 
-        // 💡 [수정] 팝업 자막과 동일하게 "지금" 멘트 포함하여 음성 안내 송출
-        const announcementText = `${namesString} 회원님은, 지금, ${readableCourtNum}, ${matchType || '게임'} 코트로, 입장해 주세요.`;
+        // 💡 [수정] 쉼표를 제거하고 팝업 메시지와 완벽히 동일한 어조로 구성
+        const announcementText = `${namesString} 회원님! 지금 ${readableCourtNum} ${matchType || '게임'} 코트로 입장해 주세요!`;
         
         playVoiceAnnouncement(announcementText, 0, courtNumber);
     });
