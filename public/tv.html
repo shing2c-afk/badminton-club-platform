@@ -440,6 +440,9 @@ socket.on('tvPopupAlert', (data) => {
 });
 
     socket.off('entryPopupAlert').on('entryPopupAlert', (data) => {
+        // 💡 0초에 발송되는 스마트폰 전용 알림(target: 'mobile')은 TV에서 무시
+        if (data && data.target === 'mobile') return;
+
         const targetNames = (data.targetPlayers && Array.isArray(data.targetPlayers)) ? data.targetPlayers.join(', ') : '';
         
         enqueueTvPopup({
@@ -738,7 +741,8 @@ socket.on('tvPopupAlert', (data) => {
         const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
         const readableCourtNum = getReadableCourtName(courtNumber);
 
-        const announcementText = `${namesString} 회원님은, ${readableCourtNum}, ${matchType || '게임'} 코트로, 입장해 주세요.`;
+        // 💡 [수정] 팝업 자막과 동일하게 "지금" 멘트 포함하여 음성 안내 송출
+        const announcementText = `${namesString} 회원님은, 지금, ${readableCourtNum}, ${matchType || '게임'} 코트로, 입장해 주세요.`;
         
         playVoiceAnnouncement(announcementText, 0, courtNumber);
     });

@@ -1731,32 +1731,41 @@ setInterval(() => {
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                // 공통 사용할 참가자 이름 및 배정 코트 번호 계산
                 const validPlayers = getValidPlayers(slot.players);
                 const memberNames = validPlayers.map(p => p.split('/')[0].trim());
                 const emptyGameCourts = cCourtsData.filter(c => c.type === 'game' && c.isEmpty);
                 const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
                 const courtNum = targetCourt ? targetCourt.id : '';
 
-                // 📱 [1단계: 타이머 작동 즉시(0초)] 스마트폰 팝업 및 진동 즉시 발송
+                // 📱 [1단계: 0초 즉시] 스마트폰에만 팝업 및 진동 발송 (target: 'mobile')
                 if (!slot.mobileNotified) {
                     slot.mobileNotified = true;
                     io.to(`club_${cId}`).emit('entryPopupAlert', {
                         clubId: cId,
+                        target: 'mobile',
                         matchType: '게임',
                         courtNumber: courtNum,
                         targetPlayers: memberNames
                     });
                 }
 
-                // 📺 [2단계: 10초 경과 시점] 아직 코트 입장을 안 눌렀다면 TV 팝업 및 음성 방송 송출
-                if (elapsed >= 10 && !slot.announced) {
+                // 📺 [2단계: 15초 경과 시점] 미입장 시 TV 화면 팝업과 음성 방송 동시 송출 (target: 'tv')
+                if (elapsed >= 15 && !slot.announced) {
                     slot.announced = true;
+
                     pushVoiceAnnouncement(cId, {
                         clubId: cId,
                         courtNumber: courtNum,
                         names: memberNames,
                         matchType: '게임'
+                    });
+
+                    io.to(`club_${cId}`).emit('entryPopupAlert', {
+                        clubId: cId,
+                        target: 'tv',
+                        matchType: '게임',
+                        courtNumber: courtNum,
+                        targetPlayers: memberNames
                     });
                 }
 
@@ -1790,7 +1799,7 @@ setInterval(() => {
                 slot.fullAt = null;
                 slot.remainingSeconds = null;
                 slot.announced = false;
-                slot.mobileNotified = false; // 💡 타이머 해제 시 스마트폰 알림 상태도 초기화
+                slot.mobileNotified = false;
             }
         });
 
@@ -1821,7 +1830,6 @@ setInterval(() => {
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
 
-                // 공통 사용할 참가자 이름 및 배정 코트 번호 계산
                 const validPlayers = getValidPlayers(slot.players);
                 const memberNames = validPlayers.map(p => p.split('/')[0].trim());
                 let availableSides = [];
@@ -1838,25 +1846,35 @@ setInterval(() => {
                 const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
                 const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
 
-                // 📱 [1단계: 타이머 작동 즉시(0초)] 스마트폰 팝업 및 진동 즉시 발송
+                // 📱 [1단계: 0초 즉시] 스마트폰에만 팝업 및 진동 발송 (target: 'mobile')
                 if (!slot.mobileNotified) {
                     slot.mobileNotified = true;
                     io.to(`club_${cId}`).emit('entryPopupAlert', {
                         clubId: cId,
+                        target: 'mobile',
                         matchType: '난타',
                         courtNumber: targetCourtNum,
                         targetPlayers: memberNames
                     });
                 }
 
-                // 📺 [2단계: 10초 경과 시점] 아직 코트 입장을 안 눌렀다면 TV 팝업 및 음성 방송 송출
-                if (elapsed >= 10 && !slot.announced) {
+                // 📺 [2단계: 15초 경과 시점] 미입장 시 TV 화면 팝업과 음성 방송 동시 송출 (target: 'tv')
+                if (elapsed >= 15 && !slot.announced) {
                     slot.announced = true;
+
                     pushVoiceAnnouncement(cId, {
                         clubId: cId,
                         courtNumber: targetCourtNum,
                         names: memberNames,
                         matchType: '난타'
+                    });
+
+                    io.to(`club_${cId}`).emit('entryPopupAlert', {
+                        clubId: cId,
+                        target: 'tv',
+                        matchType: '난타',
+                        courtNumber: targetCourtNum,
+                        targetPlayers: memberNames
                     });
                 }
 
@@ -1890,7 +1908,7 @@ setInterval(() => {
                 slot.fullAt = null;
                 slot.remainingSeconds = null;
                 slot.announced = false;
-                slot.mobileNotified = false; // 💡 타이머 해제 시 스마트폰 알림 상태도 초기화
+                slot.mobileNotified = false;
             }
         });
 
