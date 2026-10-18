@@ -655,9 +655,11 @@ document.addEventListener('click', () => {
     }
 }, { once: true });
 
-// 3. 💡 코트 입장 타이머 시작 즉시(0초) 스마트폰 전용 알림 수신
-socket.off('entryPopupAlert'); // 기존 리스너 완전 해제
-socket.off('mobileEntryAlert').on('mobileEntryAlert', async (data) => {
+// 3. 💡 코트 입장 타이머 시작 즉시 스마트폰 알림 수신
+socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
+    // 💡 15초 시점에 나가는 TV 전용 알림(target: 'tv')은 스마트폰에서 무시
+    if (data && data.target === 'tv') return;
+
     let myName = '';
     
     // 🔑 현재 구장 전용 스토리지 키(currentUser_구장ID)에서 내 정보 추출
@@ -690,7 +692,7 @@ socket.off('mobileEntryAlert').on('mobileEntryAlert', async (data) => {
 
     if (isMyTurn) {
         if ('vibrate' in navigator) {
-            navigator.vibrate([1000, 300, 1000, 300, 1000]);
+            navigator.vibrate([2000, 200, 2000, 200, 3000]);
         }
 
         if ('Notification' in window && Notification.permission === 'granted') {
