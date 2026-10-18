@@ -655,14 +655,11 @@ document.addEventListener('click', () => {
     }
 }, { once: true });
 
-// 3. 💡 코트 입장 타이머 시작 즉시 스마트폰 알림 수신
-socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
-    // 💡 15초 시점에 나가는 TV 전용 알림(target: 'tv')은 스마트폰에서 무시
-    if (data && data.target === 'tv') return;
-
+// 3. 💡 코트 입장 타이머 시작 즉시(0초) 스마트폰 전용 알림 수신
+socket.off('entryPopupAlert'); // TV용 신호는 스마트폰에서 완전히 차단
+socket.off('mobileEntryAlert').on('mobileEntryAlert', async (data) => {
     let myName = '';
     
-    // 🔑 현재 구장 전용 스토리지 키(currentUser_구장ID)에서 내 정보 추출
     const targetClub = (data && data.clubId) 
         || (typeof currentClubId !== 'undefined' && currentClubId) 
         || new URLSearchParams(window.location.search).get('club') 
@@ -684,7 +681,6 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
         myName = String(localStorage.getItem("userName") || localStorage.getItem("username") || '').replace(/님$/, '').split('/')[0].trim();
     }
 
-    // 🛡️ 서버에서 보낸 targetPlayers 명단과 내 순수 이름 대조
     const isMyTurn = myName && Array.isArray(data.targetPlayers) && data.targetPlayers.some(player => {
         const cleanTarget = String(player || '').replace(/님$/, '').split('/')[0].trim();
         return cleanTarget === myName;
@@ -692,7 +688,8 @@ socket.off('entryPopupAlert').on('entryPopupAlert', async (data) => {
 
     if (isMyTurn) {
         if ('vibrate' in navigator) {
-            navigator.vibrate([2000, 200, 2000, 200, 3000]);
+            // 아까 수정한 더 강력한 진동 패턴 적용
+            navigator.vibrate([2500, 200, 2500, 200, 3000]); 
         }
 
         if ('Notification' in window && Notification.permission === 'granted') {
