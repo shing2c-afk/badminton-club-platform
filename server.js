@@ -186,7 +186,6 @@ function loadClubsData() {
                 };
             }
 
-            // 환경설정 복원 (스크린샷 5가지 보안/제한시간 설정 + 와이파이 설정 영구 복원)
             const savedCfg = savedData[cId].config || {};
             clubs[cId].config = {
                 ...(clubs[cId].config || {}),
@@ -199,6 +198,8 @@ function loadClubsData() {
                 queueGraceMinutes: savedCfg.queueGraceMinutes !== undefined ? Number(savedCfg.queueGraceMinutes) : 30,
                 // ⏱️ 4. 세션 자동 만료시간 (분 단위)
                 sessionExpireMinutes: savedCfg.sessionExpireMinutes !== undefined ? Number(savedCfg.sessionExpireMinutes) : 60,
+                // ⏱️ 4-1. 연속 게임 제한 시간 (분 단위, 기본값 5분)
+                continuousGameLimitMinutes: savedCfg.continuousGameLimitMinutes !== undefined ? Number(savedCfg.continuousGameLimitMinutes) : 5,
                 // 🔒 5. 관리자 접속 비밀번호
                 ADMIN_PASSWORD: savedCfg.ADMIN_PASSWORD || (clubs[cId].config?.ADMIN_PASSWORD || '1234'),
 
@@ -2547,6 +2548,11 @@ io.on('connection', (socket) => {
                     targetConfig.sessionExpireMinutes = Number(newConfig.sessionExpireMinutes);
                 }
 
+                // 💡 [추가] 연속 게임 제한 시간 (분 단위) 관리자 설정 갱신
+                if (newConfig.continuousGameLimitMinutes !== undefined) {
+                    targetConfig.continuousGameLimitMinutes = Number(newConfig.continuousGameLimitMinutes);
+                }
+
                 // 🏟️ 코트 설정(개수, 코트 목록) 갱신
                 if (newConfig.courts !== undefined) {
                     clubs[clubId].courts = newConfig.courts;
@@ -2808,10 +2814,41 @@ io.on('connection', (socket) => {
 
         // 2. 해당 클럽의 대기열에서 슬롯 탐색
         const queue = type === 'game' ? club.gameQueue : club.nantaQueue;
-        const slot = queue ? queue.find(s => s.id === slotId) : null;
+        const slotIdx = queue ? queue.findIndex(s => s.id === slotId) : -1;
+        const slot = slotIdx !== -1 ? queue[slotIdx] : null;
         
         if (slot && index >= 0 && index < slot.players.length) {
             slot.players[index] = name;
+            if (!slot.penaltyApplied) slot.penaltyApplied = [false, false, false, false];
+
+            // 💡 [추가] 게임 대기방 참여 시 '연속 게임 제한 시간' 이내인지 검사하여 1순위 뒤로 이동
+            if (type === 'game' && cleanName && club.lastFinishedTimes && club.lastFinishedTimes[cleanName]) {
+                const limitMinutes = (club.config && club.config.continuousGameLimitMinutes !== undefined)
+                    ? Number(club.config.continuousGameLimitMinutes)
+                    : 5;
+                const limitMs = limitMinutes * 60 * 1000;
+                const elapsedMs = Date.now() - club.lastFinishedTimes[cleanName];
+
+                if (limitMs > 0 && elapsedMs < limitMs) {
+                    // 이 자리(index)의 회원으로 인해 페널티가 적용되었음을 기록
+                    slot.penaltyApplied[index] = true;
+
+                    // 현재 순위가 맨 마지막이 아니라면 1순위 뒤로 이동
+                    if (slotIdx < queue.length - 1) {
+                        const [movedSlot] = queue.splice(slotIdx, 1);
+                        queue.splice(slotIdx + 1, 0, movedSlot);
+                    }
+
+                    if (typeof addNotification === 'function') {
+                        addNotification(`⏳ [순위 조정] ${cleanName} 님이 연속 게임 제한 시간(${limitMinutes}분) 내 참여하여 대기방이 1순위 뒤로 이동했습니다.`, currentClubId);
+                    }
+                } else {
+                    slot.penaltyApplied[index] = false;
+                }
+            } else {
+                slot.penaltyApplied[index] = false;
+            }
+
             if (typeof addNotification === 'function') {
                 addNotification(`👤 [참가] ${name} 님이 대기 방에 입장하셨습니다.`, currentClubId);
             }
@@ -2830,6 +2867,7 @@ io.on('connection', (socket) => {
 
         const newSlot = {
             id: 'slot_' + (slotIdCounter++),
+            penaltyApplied: [false, false, false, false], // 💡 자리별 페널티 꼬리표 초기화
             type: type,
             players: type === 'game' ? [user, '', '', ''] : [user, '', ''],
             userIds: [userId], 
@@ -2856,12 +2894,22 @@ io.on('connection', (socket) => {
 
     socket.on('exitPlayer', ({ type, slotId, index }) => {
         // 🏢 [멀티 테넌트] 현재 소켓이 속한 클럽의 데이터 가져오기
-        const club = getClub(socket.clubId);
+        const currentClubId = socket.clubId || 'unjeong';
+        const club = getClub(currentClubId);
         const queue = type === 'game' ? club.gameQueue : club.nantaQueue;
         const slotIdx = queue.findIndex(s => s.id === slotId);
 
         if (slotIdx !== -1) {
             const slot = queue[slotIdx];
+            const exitingPlayer = slot.players[index] || '';
+            const cleanName = exitingPlayer.split('/')[0].trim();
+
+            // 💡 퇴장하는 자리(index)에 페널티 표시가 있었는지 확인 후 초기화
+            const hadPenalty = Boolean(slot.penaltyApplied && slot.penaltyApplied[index]);
+            if (slot.penaltyApplied) {
+                slot.penaltyApplied[index] = false;
+            }
+
             slot.players[index] = '';
             
             // 해당 자리의 userId도 함께 정리 (대기열 중복 방지 해제)
@@ -2871,9 +2919,18 @@ io.on('connection', (socket) => {
             
             if (getValidPlayers(slot.players).length === 0) {
                 queue.splice(slotIdx, 1);
+            } else if (type === 'game' && hadPenalty && slotIdx > 0) {
+                // 💡 [추가] 페널티로 순위가 밀리게 했던 회원이 퇴장하면 대기방을 다시 1순위 앞으로 복구
+                const [restoredSlot] = queue.splice(slotIdx, 1);
+                queue.splice(slotIdx - 1, 0, restoredSlot);
+
+                if (typeof addNotification === 'function') {
+                    addNotification(`↩️ [순위 복구] ${cleanName} 님의 퇴장으로 대기방 순위가 1순위 앞으로 복구되었습니다.`, currentClubId);
+                }
             }
+
             // ✅ 해당 클럽에만 상태 갱신 전송
-            broadcastState(socket.clubId);
+            broadcastState(currentClubId);
         }
     });
 
@@ -3025,6 +3082,16 @@ io.on('connection', (socket) => {
 
             const court = clubCourts.find(c => c.id === courtId && c.type === 'game');
             if (court) {
+                // 💡 [추가] 방금 게임을 마친 선수들의 종료 시각 기록
+                if (court.players) {
+                    if (!club.lastFinishedTimes) club.lastFinishedTimes = {};
+                    const now = Date.now();
+                    court.players.split(',').forEach(p => {
+                        const cleanName = p.split('/')[0].trim();
+                        if (cleanName) club.lastFinishedTimes[cleanName] = now;
+                    });
+                }
+
                 court.isEmpty = true;
                 court.players = '';
                 court.startTime = null;
@@ -3055,6 +3122,14 @@ io.on('connection', (socket) => {
             const playersArr = court.players.split(',').map(p => p.trim()).filter(Boolean);
             if (playersArr.length === 0) return;
 
+            // 💡 [추가] 한게임 더 클릭 시에도 방금 게임을 마친 선수들의 종료 시각 기록
+            if (!club.lastFinishedTimes) club.lastFinishedTimes = {};
+            const now = Date.now();
+            playersArr.forEach(p => {
+                const cleanName = p.split('/')[0].trim();
+                if (cleanName) club.lastFinishedTimes[cleanName] = now;
+            });
+
             const newSlot = {
                 id: 'slot_' + (slotIdCounter++),
                 type: 'game',
@@ -3065,6 +3140,7 @@ io.on('connection', (socket) => {
                     playersArr[3] || ''
                 ],
                 userIds: [], 
+                penaltyApplied: [false, false, false, false], // 💡 자리별 페널티 꼬리표 초기화
                 createdAt: Date.now(),
                 fullAt: null,
                 remainingSeconds: null

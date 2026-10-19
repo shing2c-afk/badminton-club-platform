@@ -274,7 +274,7 @@
     }
     .btn-link:hover { background: #1a2234; }
 
-    .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); ... }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
     
     .btn-top-link { 
         background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); 
@@ -422,6 +422,11 @@ input:checked + .slider:before {
             <div class="form-group">
                 <label>세션 자동 만료시간 (분):</label>
                 <input type="number" id="session-expire-timeout" step="1" min="1" style="width: 110px; text-align: right;" placeholder="기본 60">
+            </div>
+            <!-- 💡 [추가] 연속 게임 제한 시간 입력 칸 -->
+            <div class="form-group">
+                <label>연속 게임 제한 시간 (분):</label>
+                <input type="number" id="continuous-game-limit" step="1" min="0" style="width: 110px; text-align: right;" placeholder="기본 5">
             </div>
             <div class="form-group">
                 <label>관리자 접속 비밀번호:</label>
@@ -935,6 +940,10 @@ if (document.readyState === 'loading') {
                 if (document.getElementById('session-expire-timeout')) {
                     document.getElementById('session-expire-timeout').value = data.config.sessionExpireMinutes !== undefined ? data.config.sessionExpireMinutes : 60;
                 }
+                // 💡 [추가] 연속 게임 제한 시간 표시 (기본값: 5분)
+                if (document.getElementById('continuous-game-limit')) {
+                    document.getElementById('continuous-game-limit').value = data.config.continuousGameLimitMinutes !== undefined ? data.config.continuousGameLimitMinutes : 5;
+                }
                 document.getElementById('admin-password').value = data.config.ADMIN_PASSWORD || '1234';
 
                 if (typeof initTimeSelectOptions === 'function') {
@@ -1109,6 +1118,13 @@ if (document.readyState === 'loading') {
                 }
                 if (typeof configData.soundScheduleNotice !== 'undefined' && soundScheduleToggle) {
                     soundScheduleToggle.checked = configData.soundScheduleNotice;
+                }
+                // 💡 [추가] 연속 게임 제한 시간 실시간 동기화
+                if (typeof configData.continuousGameLimitMinutes !== 'undefined') {
+                    const limitInput = document.getElementById('continuous-game-limit');
+                    if (limitInput) {
+                        limitInput.value = configData.continuousGameLimitMinutes;
+                    }
                 }
             }
         });
@@ -1474,20 +1490,22 @@ if (document.readyState === 'loading') {
     function addCourtRow() { localCourts.push({ type: 'game', label: '게임 코트', note: '' }); renderCourtConfig(); }
     function deleteCourtRow(idx) { localCourts.splice(idx, 1); renderCourtConfig(); }
 
-    async function saveConfig() {
+   async function saveConfig() {
         const entryMin = parseFloat(document.getElementById('entry-timeout').value);
         const nantaMin = parseFloat(document.getElementById('nanta-timeout').value);
         const queueGrace = parseInt(document.getElementById('queue-grace-timeout').value, 10);
         const sessionExpire = parseInt(document.getElementById('session-expire-timeout').value, 10);
+        const continuousLimit = parseInt(document.getElementById('continuous-game-limit').value, 10);
         const password = document.getElementById('admin-password').value.trim();
 
-        // 💡 clubId 및 유예 시간 설정 동봉
+        // 💡 clubId 및 유예 시간, 연속 게임 제한 시간 설정 동봉
         socket.emit('updateConfig', {
             clubId: currentClubId,
             ENTRY_TIMEOUT_SEC: Math.round((isNaN(entryMin) ? 3 : entryMin) * 60),
             NANTA_COURT_LIMIT_SEC: Math.round((isNaN(nantaMin) ? 15 : nantaMin) * 60),
             queueGraceMinutes: isNaN(queueGrace) ? 30 : queueGrace,
             sessionExpireMinutes: isNaN(sessionExpire) ? 60 : sessionExpire,
+            continuousGameLimitMinutes: isNaN(continuousLimit) ? 5 : continuousLimit,
             ADMIN_PASSWORD: password || '1234'
         });
         await alert('설정이 성공적으로 저장되었습니다.');
