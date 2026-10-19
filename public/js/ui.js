@@ -566,17 +566,29 @@ function renderGameQueue() {
                     || p.trim().endsWith('/일일');
                 const guestClass = isGuestUser ? 'guest-text' : '';
 
+                // 💡 [수정] 연속 게임 제한(페널티) 적용 회원은 '이름'만 선명한 주황색(#fb923c)으로 강조
+                // (뒤쪽의 '/ 성별 / 나이 / 급수'는 정회원·일일회원 고유 색상을 그대로 유지)
+                const isPenaltyUser = Boolean(slot.penaltyApplied && slot.penaltyApplied[i]);
+                let displayPlayerHtml = escapeHtml(formattedPlayer);
+
+                if (isPenaltyUser) {
+                    const parts = formattedPlayer.split('/');
+                    const playerName = escapeHtml(parts[0] || '');
+                    const playerRest = parts.length > 1 ? '/' + escapeHtml(parts.slice(1).join('/')) : '';
+                    displayPlayerHtml = `<span style="color: #fb923c !important; font-weight: 800;" title="연속 게임 제한 시간 내 참여 (순위 조정됨)">${playerName}</span>${playerRest}`;
+                }
+
                 // [퇴장 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
                 if (isMe) {
                     playerCellsHtml += `
                         <div class="player-cell">
-                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
+                            <span class="player-info ${guestClass}">${displayPlayerHtml}</span>
                             <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button>
                         </div>`;
                 } else {
                     playerCellsHtml += `
                         <div class="player-cell">
-                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
+                            <span class="player-info ${guestClass}">${displayPlayerHtml}</span>
                             <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button>
                         </div>`;
                 }
@@ -592,7 +604,7 @@ function renderGameQueue() {
                         <div class="player-cell empty-slot" onclick="joinGameCell('${slot.id}', ${i})">
                             <span class="empty-cell">게임참여</span>
                         </div>`;
-                        }
+                }
             }
         }
 
