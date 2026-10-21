@@ -265,6 +265,26 @@ class GymSessionManager {
         const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
 
+        // 🚨 [핵심 추가: 수면 모드 깨어남 방어] 이미 2단계 세션 만료된 유저가 자동 복귀한 경우 부활시키지 않고 즉시 강제 로그아웃!
+        // (단, 신규 직접 로그인 시에는 server.js의 registerUserSession에서 먼저 expiredUsers를 지워주므로 여기 걸리지 않음)
+        if (this.expiredUsers.has(userKey)) {
+            if (socket) {
+                socket.inGym = false;
+                socket.inGracePeriod = false;
+                socket.emit('forceSessionExpire', {
+                    targetUser: cleanUsername,
+                    clubId: targetClubId,
+                    message: '장시간 체육관 Wi-Fi 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.'
+                });
+                socket.username = null;
+                socket.finalName = null;
+                socket.clubUserKey = null;
+            }
+            setTimeout(() => this.expiredUsers.delete(userKey), 3000);
+            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+            return;
+        }
+
         const hadGraceTimer = this.graceTimers.has(userKey);
         const hadExpireTimer = this.expireTimers.has(userKey);
         const wasEvicted = this.evictedUsers.has(userKey);

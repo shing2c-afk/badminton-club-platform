@@ -324,6 +324,22 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             window.startWifiDetector();
+
+            // 💡 [핵심 추가] 스마트폰이 수면 모드에서 깨어나는 즉시 서버에 세션 만료 여부 확인 요청
+            const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
+            const { myName, myPhone } = getLoggedUserInfo(clubId);
+            const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
+
+            if (activeSocket && (myName || myPhone)) {
+                if (!activeSocket.connected) {
+                    activeSocket.connect();
+                }
+                activeSocket.emit('registerUserSession', {
+                    name: myName || myPhone,
+                    clubId: clubId,
+                    isAutoRestore: true
+                });
+            }
         } else {
             window.stopWifiDetector();
         }
