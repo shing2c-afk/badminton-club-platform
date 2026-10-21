@@ -280,18 +280,22 @@ if (socket.connected) {
     `).join('');
 }
 
-// 📡 서버로부터 전체 클럽 접속자 현황 수신
+// 📡 서버로부터 전체 클럽 접속자 및 4대 현황 수신
 if (typeof socket !== 'undefined') {
     socket.on('updateSuperAdminCounts', (countsByClub) => {
-        // countsByClub 형태: { unjeong: { club: 1, total: 2 }, daewon: { club: 0, total: 1 } }
+        // countsByClub 형태: { unjeong: { connected: 7, inGym: 6, game: 3, nanta: 1, club: 6, total: 7 }, ... }
         if (!countsByClub) return;
 
         Object.keys(countsByClub).forEach(clubId => {
             const clubElem = document.getElementById(`club-online-${clubId}`);
             const totalElem = document.getElementById(`total-online-${clubId}`);
+            const gameElem = document.getElementById(`game-online-${clubId}`);     // 🏸 게임 인원 요소 추가
+            const nantaElem = document.getElementById(`nanta-online-${clubId}`);   // ⏱️ 난타 인원 요소 추가
 
-            if (clubElem) clubElem.innerText = countsByClub[clubId].club || 0;
-            if (totalElem) totalElem.innerText = countsByClub[clubId].total || 0;
+            if (totalElem) totalElem.innerText = countsByClub[clubId].total ?? countsByClub[clubId].connected ?? 0;
+            if (clubElem) clubElem.innerText = countsByClub[clubId].club ?? countsByClub[clubId].inGym ?? 0;
+            if (gameElem) gameElem.innerText = countsByClub[clubId].game ?? 0;       // 게임 숫자 반영
+            if (nantaElem) nantaElem.innerText = countsByClub[clubId].nanta ?? 0;   // 난타 숫자 반영
         });
     });
 }
