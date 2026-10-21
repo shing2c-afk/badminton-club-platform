@@ -355,7 +355,13 @@ function isGymWifiUser(socket, clubId) {
         return true; 
     }
 
-    // 💡 2. IP 추출 및 정규화
+    // 💡 [핵심 추가] 프론트엔드 실시간 네트워크 검증(checkCurrentNetwork)을 통과하여 
+    // socket.inGym 또는 socket.isGymWifi가 true로 인증된 상태라면 박제된 IP와 무관하게 즉시 통과!
+    if (socket && (socket.inGym === true || socket.isGymWifi === true)) {
+        return true;
+    }
+
+    // 💡 2. IP 추출 및 정규화 (기존 로직)
     let rawIp = typeof getClientIp === 'function' ? getClientIp(socket) : (socket && socket.handshake && (socket.handshake.headers['x-forwarded-for'] || socket.handshake.address)) || '';
     if (rawIp.includes(',')) {
         rawIp = rawIp.split(',')[0].trim();
