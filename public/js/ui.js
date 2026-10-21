@@ -1543,10 +1543,16 @@ function applyUserProfile() {
             
             // 🔒 [무한 루프 방지]: 이미 등록된 소켓 세션이면 반복해서 emit하지 않음
             const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
-            const sessionIdentifier = user.username || user.phone || cleanName;
+            // 💡 [수정] guest_ 임시 ID 대신 실명(cleanName)을 최우선 사용하여 접속자 중복 집계 방지
+            const sessionIdentifier = cleanName || user.phone || user.username;
             if (activeSocket && sessionIdentifier && window.__registeredSessionKey !== sessionIdentifier) {
                 window.__registeredSessionKey = sessionIdentifier;
-                activeSocket.emit('registerUserSession', sessionIdentifier);
+                activeSocket.emit('registerUserSession', {
+                    name: cleanName,
+                    username: sessionIdentifier,
+                    clubId: clubId,
+                    isAutoRestore: true
+                });
             }
         } catch (e) {
             console.error("사용자 정보 파싱 오류:", e);

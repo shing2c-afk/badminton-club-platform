@@ -8,6 +8,7 @@ class GymSessionManager {
         // 멀티 테넌트 격리 키 형식: `${clubId}:${cleanUsername}`
         this.graceTimers = new Map();   // 1단계: 대기방 보존 유예 타이머 (운동중 및 대기방 유지)
         this.expireTimers = new Map();  // 2단계: 세션 자동 만료 타이머 (접속자 유지 후 만료 시 강제 로그아웃)
+        this.inGymUsers = new Set();    // 💡 실제 구장 Wi-Fi 접속이 확인된 유저 추적
         this.evictedUsers = new Set();  // 1단계 경과로 대기열/운동중에서 제외된 유저 추적
         this.expiredUsers = new Set();  // 2단계 경과로 완전 만료된 유저 추적
         
@@ -86,7 +87,7 @@ class GymSessionManager {
     }
 
     /**
-     * 🔴 [2단계 마스터 로직] Wi-Fi 불일치(단절) 감지 즉시 1단계(유예) & 2단계(만료) 타이머 동시 가동
+     * 🔴 [2단계 마스터 로직] Wi-Fi 불일치(단절) 감지 시 타이머 제어
      */
     handleDisconnect(socket, rawUsername, clubId) {
         const cleanUsername = this._normalizeName(rawUsername || (socket && (socket.finalName || socket.username)));
@@ -95,6 +96,25 @@ class GymSessionManager {
         const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
         const { graceMinutes, expireMinutes, useWifiRestriction } = this._getClubConfig(targetClubId);
+
+        // 🚨 [수면 모드 깨어남 방어] 이미 2단계 세션 만료된 유저가 자동 재접속한 경우 즉시 강제 로그아웃
+        if (this.expiredUsers.has(userKey)) {
+            if (socket) {
+                socket.inGym = false;
+                socket.inGracePeriod = false;
+                socket.emit('forceSessionExpire', {
+                    targetUser: cleanUsername,
+                    clubId: targetClubId,
+                    message: '장시간 체육관 Wi-Fi 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.'
+                });
+                socket.username = null;
+                socket.finalName = null;
+                socket.clubUserKey = null;
+            }
+            setTimeout(() => this.expiredUsers.delete(userKey), 3000);
+            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+            return;
+        }
 
         // 관리자 모드에서 Wi-Fi 제한 스위치를 OFF로 끈 경우 타이머를 돌리지 않음
         if (!useWifiRestriction) {
@@ -113,52 +133,67 @@ class GymSessionManager {
                 socket.inGym = false;
                 socket.inGracePeriod = isStillInGrace;
             }
+            this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+                s.inGym = false;
+                s.inGracePeriod = isStillInGrace;
+            });
             console.log(`⏳ [타이머 유지] [${targetClubId}] 유저(${cleanUsername}) 이미 타이머 작동 중 (1단계 유예중: ${isStillInGrace})`);
             if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
             return;
         }
 
+        // 💡 직전에 구장 Wi-Fi에 실제로 접속해 있었던 회원인지 확인
+        const wasInGym = this.inGymUsers.has(userKey);
+        this.inGymUsers.delete(userKey);
         this.evictedUsers.delete(userKey);
-        this.expiredUsers.delete(userKey);
 
-        // 유예기간 동안 모든 소켓에 inGracePeriod = true 부여하여 '운동중' 카운트 완벽 보존
-        if (socket) {
-            socket.inGym = false;
-            socket.inGracePeriod = true;
-        }
-        this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
-            s.inGym = false;
-            s.inGracePeriod = true;
-        });
+        if (wasInGym) {
+            // ✅ 구장 Wi-Fi에 있다가 밖으로 나간 경우: 1단계(유예: 운동중 유지) + 2단계(만료) 동시 가동
+            if (socket) {
+                socket.inGym = false;
+                socket.inGracePeriod = true;
+            }
+            this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+                s.inGym = false;
+                s.inGracePeriod = true;
+            });
 
-        console.log(`⏱️ [타이머 동시 시작] [${targetClubId}] 유저: ${cleanUsername} -> 1단계 유예(${graceMinutes}분) & 2단계 만료(${expireMinutes}분) 동시 가동!`);
+            console.log(`⏱️ [타이머 동시 시작] [${targetClubId}] 유저: ${cleanUsername} -> 1단계 유예(${graceMinutes}분) & 2단계 만료(${expireMinutes}분) 동시 가동!`);
 
-        // =================================================================
-        // [4단계 마스터 로직] 1차 만료: 대기방 보존 유예시간 경과 시점
-        // -> 대기방 삭제 + 운동중(-1) + 게임/난타(-1) 동시 차감 (접속자는 유지)
-        // =================================================================
-        const graceTimer = setTimeout(async () => {
-            console.log(`⏰ [1단계 유예시간 경과] [${targetClubId}] 유저: ${cleanUsername} -> 대기열 삭제 및 운동중/게임/난타 카운트 차감`);
-            
-            this.graceTimers.delete(userKey);
-            this.evictedUsers.add(userKey);
+            const graceTimer = setTimeout(async () => {
+                console.log(`⏰ [1단계 유예시간 경과] [${targetClubId}] 유저: ${cleanUsername} -> 대기열 삭제 및 운동중/게임/난타 카운트 차감`);
+                
+                this.graceTimers.delete(userKey);
+                this.evictedUsers.add(userKey);
 
-            // 소켓에서 유예 꼬리표 제거 (운동중 카운트 즉시 차감)
+                // 소켓에서 유예 꼬리표 제거 (운동중 카운트 즉시 차감)
+                this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+                    s.inGym = false;
+                    s.inGracePeriod = false;
+                });
+
+                // 대기열(게임/난타)에서 유저 삭제 및 빈 방 폭파
+                if (typeof this.cleanupUser === 'function') {
+                    await this.cleanupUser(cleanUsername, targetClubId);
+                }
+
+                if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
+                if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
+            }, graceMinutes * 60 * 1000);
+
+            this.graceTimers.set(userKey, graceTimer);
+        } else {
+            // 🚫 처음부터 구장 밖(외부망)에서 접속한 경우: 1단계 유예(운동중) 없이 2단계(접속자 세션 만료)만 가동!
+            if (socket) {
+                socket.inGym = false;
+                socket.inGracePeriod = false;
+            }
             this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
                 s.inGym = false;
                 s.inGracePeriod = false;
             });
-
-            // 대기열(게임/난타)에서 유저 삭제 및 빈 방 폭파
-            if (typeof this.cleanupUser === 'function') {
-                await this.cleanupUser(cleanUsername, targetClubId);
-            }
-
-            if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
-            if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
-        }, graceMinutes * 60 * 1000);
-
-        this.graceTimers.set(userKey, graceTimer);
+            console.log(`🌐 [외부망 접속] [${targetClubId}] 유저: ${cleanUsername} -> 구장 미접속 상태이므로 운동중 제외(0) & 2단계 세션 만료(${expireMinutes}분)만 가동!`);
+        }
 
         // =================================================================
         // [5단계 마스터 로직] 2차 만료: 세션 자동 만료시간 경과 시점
@@ -168,15 +203,16 @@ class GymSessionManager {
             console.log(`🔒 [2단계 세션 완전 만료] [${targetClubId}] 유저: ${cleanUsername} -> 강제 로그아웃 및 접속자 카운트 차감`);
             const expireMsg = `체육관 Wi-Fi 이탈 후 ${expireMinutes}분이 경과하여 자동 로그아웃되었습니다.`;
 
-            // 혹시 남아있을지 모를 대기열 안전 청소
             if (typeof this.cleanupUser === 'function') {
                 await this.cleanupUser(cleanUsername, targetClubId);
             }
 
-            // 타이머 정리 및 만료 상태 기록
             this._clearTimers(targetClubId, cleanUsername);
+            this.inGymUsers.delete(userKey);
             this.evictedUsers.delete(userKey);
             this.expiredUsers.add(userKey);
+
+            let notifiedActiveSocket = false;
 
             if (this.io) {
                 const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
@@ -187,12 +223,11 @@ class GymSessionManager {
                     message: expireMsg
                 };
 
-                // 해당 클럽 룸으로 타겟 지정 만료 신호 전송
                 this.io.to(`club_${targetClubId}`).emit('forceSessionExpire', payload);
                 this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', payload);
 
-                // 💡 [핵심] 백그라운드/LTE로 남아있는 해당 유저의 소켓에서 신분증을 즉시 회수하여 전광판 '접속자' 카운트를 즉시 0으로 차감!
                 this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
+                    notifiedActiveSocket = true;
                     s.emit('forceSessionExpire', payload);
                     s.inGym = false;
                     s.inGracePeriod = false;
@@ -204,13 +239,17 @@ class GymSessionManager {
                 });
             }
 
+            // 현재 화면이 켜져 있어 즉시 로그아웃 신호를 받은 경우 5초 후 만료 기록 정리 (수면 모드인 경우 깨어날 때까지 유지)
+            if (notifiedActiveSocket) {
+                setTimeout(() => this.expiredUsers.delete(userKey), 5000);
+            }
+
             if (typeof this.broadcastState === 'function') this.broadcastState(targetClubId);
             if (typeof this.broadcastOnlineCount === 'function') this.broadcastOnlineCount(targetClubId);
         }, expireMinutes * 60 * 1000);
 
         this.expireTimers.set(userKey, expireTimer);
 
-        // 타이머 가동 직후 전광판 카운트 동기화 (유예중이므로 접속자 1, 운동중 1 그대로 유지됨)
         if (typeof this.broadcastOnlineCount === 'function') {
             this.broadcastOnlineCount(targetClubId);
         }
@@ -230,12 +269,11 @@ class GymSessionManager {
         const hadExpireTimer = this.expireTimers.has(userKey);
         const wasEvicted = this.evictedUsers.has(userKey);
 
-        // 💡 가동 중이던 1단계 유예 타이머 & 2단계 세션 타이머 모두 즉시 취소(초기화)!
         this._clearTimers(targetClubId, cleanUsername);
+        this.inGymUsers.add(userKey); // 💡 구장 Wi-Fi 정상 접속 기록
         this.evictedUsers.delete(userKey);
         this.expiredUsers.delete(userKey);
 
-        // 소켓 상태를 구장 내 접속(inGym = true)으로 즉시 확정
         if (socket) {
             socket.inGym = true;
             socket.isGymWifi = true;
@@ -267,6 +305,7 @@ class GymSessionManager {
         const userKey = this._getKey(targetClubId, cleanUsername);
 
         this._clearTimers(targetClubId, cleanUsername);
+        this.inGymUsers.delete(userKey);
         this.evictedUsers.delete(userKey);
         this.expiredUsers.delete(userKey);
 
