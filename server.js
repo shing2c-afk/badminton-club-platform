@@ -3507,12 +3507,13 @@ io.on('connection', (socket) => {
                 }
             }
 
-            if (hasActiveGymWifiSocket) {
+           if (hasActiveGymWifiSocket) {
                 console.log(`🛡️ [바통 터치 성공] 유저(${finalName}) 구장 Wi-Fi 연결이 유지되고 있습니다. 카운트 정상 유지!`);
             } else {
-                console.log(`⏱️ [Wi-Fi 이탈 확정] 유저(${finalName}) 구장 Wi-Fi 연결 없음 -> 1단계(유예) & 2단계(만료) 타이머 가동!`);
+                console.log(`🌙 [수면 모드/통신 단절] 유저(${finalName}) 소켓 끊김 -> 1단계 유예 생략(대기방 보존) & 2단계 세션 만료 타이머 가동!`);
                 if (typeof gymSessionManager !== 'undefined') {
-                    gymSessionManager.handleDisconnect(socket, finalName, currentClubId);
+                    // 💡 마지막에 true를 전달하여 수면 모드임을 알림
+                    gymSessionManager.handleDisconnect(socket, finalName, currentClubId, true);
                 }
             }
 
