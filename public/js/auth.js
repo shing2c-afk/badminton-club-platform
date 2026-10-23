@@ -518,7 +518,7 @@ function showToast(message, isSuccess = true) {
 // [통합 완료] 정회원 가입 신청 폼 제출 처리 함수
 // ==========================================
 async function handleRegisterSubmit(event) {
-    event.preventDefault(); // 폼 제출로 인한 새로고침 방지
+    if (event) event.preventDefault(); // 폼 제출로 인한 새로고침 방지
 
     // 💡 1. 현재 구장 식별자 추출 (기본값 unjeong)
     const urlParams = new URLSearchParams(window.location.search);
@@ -526,6 +526,7 @@ async function handleRegisterSubmit(event) {
                    (typeof currentClubId !== 'undefined' && currentClubId) || 
                    urlParams.get('club') || 
                    urlParams.get('clubId') || 
+                   localStorage.getItem('selectedClubId') || 
                    'unjeong';
 
     // 💡 2. 입력 데이터 수집 (clubId 포함)
@@ -549,24 +550,32 @@ async function handleRegisterSubmit(event) {
         const result = await response.json();
 
         if (result.success) {
-            // 📌 성공 토스트 팝업 출력
-            showToast(result.message || '가입 신청이 완료되었습니다.', true);
+            // 📌 1) 가입 신청 완료 및 승인 대기 안내 팝업 출력 (확인을 누를 때까지 대기)
+            alert(result.message || '정회원 가입 신청이 완료되었습니다.\n관리자 승인 대기중입니다.');
             
-            // 1.5초 후 모달 닫기 및 폼 초기화
-            setTimeout(() => {
-                if (typeof closeRegisterModal === 'function') closeRegisterModal();
-                const form = document.getElementById('registerForm');
-                if (form) form.reset();
-            }, 1500);
+            // 📌 2) 확인을 누르면 모달 닫기 및 폼 초기화 (로그인 페이지로 전환)
+            if (typeof closeRegisterModal === 'function') {
+                closeRegisterModal();
+            } else {
+                const modal = document.getElementById('register-modal');
+                if (modal) modal.style.display = 'none';
+            }
+
+            const form = document.getElementById('registerForm');
+            if (form) form.reset();
         } else {
-            // 📌 실패 에러 토스트 출력
-            showToast(result.message || '가입 신청에 실패했습니다.', false);
+            // 📌 실패 에러 안내 출력
+            alert(result.message || '가입 신청에 실패했습니다.');
         }
     } catch (error) {
         console.error('가입 신청 통신 오류:', error);
-        showToast('서버와의 통신 중 오류가 발생했습니다.', false);
+        alert('서버와의 통신 중 오류가 발생했습니다.');
     }
 }
+
+// Global 등록 보장
+window.handleRegisterSubmit = handleRegisterSubmit;
+
 document.addEventListener('DOMContentLoaded', () => {
     // 1. 전화번호 실시간 자동 하이픈 (010-XXXX-XXXX)
     const phoneInput = document.getElementById('regPhone');
@@ -607,5 +616,4 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.value = formatted;
         });
     }
-});
 });
