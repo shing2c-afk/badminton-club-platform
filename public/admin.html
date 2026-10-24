@@ -684,8 +684,8 @@ input:checked + .slider:before {
 <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
     <div style="font-size: 13px; font-weight: 700; color: #818cf8; margin-bottom: 6px;">회원 통합 관리 모듈</div>
     <p class="form-desc" style="margin-bottom: 8px;">회원 명부 업로드, 다운로드, 전체 회원 목록 조회 및 탈퇴 처리를 전용 모듈에서 관리합니다.</p>
-    <!-- 💡 클릭 시 현재 구장(currentClubId) 파라미터를 붙여 이동하도록 변경 -->
-    <a href="javascript:void(0);" onclick="location.href='/admin-member.html?club=' + encodeURIComponent(currentClubId);" style="display: block; text-decoration: none;">
+    <!-- 💡 클릭 시 현재 구장(currentClubId) 및 한글 클럽명(clubName) 파라미터를 함께 붙여 이동 -->
+    <a href="javascript:void(0);" onclick="const cName = window.currentClubName || localStorage.getItem('admin_club_name_' + currentClubId) || ''; location.href='/admin-member.html?club=' + encodeURIComponent(currentClubId) + (cName ? '&clubName=' + encodeURIComponent(cName) : '');" style="display: block; text-decoration: none;">
         <button type="button" class="btn-success" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); box-shadow: 0 3px 10px rgba(99, 102, 241, 0.3); margin-top:0;">회원 관리 페이지로 이동 &rarr;</button>
     </a>
 </div>

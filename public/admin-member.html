@@ -161,11 +161,39 @@
             backBtn.href = `/admin.html?club=${encodeURIComponent(currentClubId)}`;
         }
 
-        // 💡 3. 상단 헤더에 현재 관리 중인 클럽 표시
+        // 💡 3. 상단 헤더에 현재 관리 중인 클럽 동적 표시 (멀티테넌트 완벽 대응)
         const headerTitle = document.querySelector('h2 span');
         if (headerTitle) {
-            const clubName = currentClubId === 'daewon' ? '대원클럽' : '운정클럽';
-            headerTitle.innerText = `👥 [${clubName}] 회원 통합 관리 모듈`;
+            const defaultNames = { unjeong: '운정클럽', daewon: '대원클럽', paju: '파주클럽' };
+            const urlClubName = urlParams.get('clubName');
+            if (urlClubName) {
+                localStorage.setItem(`admin_club_name_${currentClubId}`, urlClubName);
+            }
+            const savedClubName = urlClubName || 
+                                  localStorage.getItem(`admin_club_name_${currentClubId}`) || 
+                                  localStorage.getItem('selectedClubName') || 
+                                  defaultNames[currentClubId] || 
+                                  currentClubId;
+
+            headerTitle.innerText = `👥 [${savedClubName}] 회원 통합 관리 모듈`;
+            document.title = `[${savedClubName}] 회원 통합 관리 모듈`;
+
+            // 💡 만약 캐시에 한글 클럽명이 없어 영문 ID로 표시된 경우 서버에서 클럽 목록을 조회해 한글명으로 자동 갱신
+            if (savedClubName === currentClubId) {
+                fetch('/api/clubs')
+                    .then(res => res.json())
+                    .then(data => {
+                        const list = Array.isArray(data) ? data : (data.clubs || data.data || []);
+                        const found = list.find(c => (c.id || c.club_id || c.clubId) === currentClubId);
+                        if (found && (found.name || found.club_name || found.clubName)) {
+                            const realName = found.name || found.club_name || found.clubName;
+                            localStorage.setItem(`admin_club_name_${currentClubId}`, realName);
+                            headerTitle.innerText = `👥 [${realName}] 회원 통합 관리 모듈`;
+                            document.title = `[${realName}] 회원 통합 관리 모듈`;
+                        }
+                    })
+                    .catch(() => {});
+            }
         }
 
         loadMemberList();

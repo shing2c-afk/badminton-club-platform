@@ -520,6 +520,35 @@ function showToast(message, isSuccess = true) {
 async function handleRegisterSubmit(event) {
     if (event) event.preventDefault(); // 폼 제출로 인한 새로고침 방지
 
+    // 💡 커스텀 알림창이 가입 신청 모달 뒤에 가려지지 않도록 최상단 노출 및 대기 보장 헬퍼
+    const showTopAlert = async (msg) => {
+        const customModal = document.getElementById('custom-modal');
+        if (customModal) {
+            // body 맨 마지막 자식으로 이동시켜 DOM 순서상으로도 무조건 최상위에 오도록 처리
+            if (customModal.parentNode !== document.body) {
+                document.body.appendChild(customModal);
+            } else {
+                document.body.appendChild(customModal);
+            }
+            customModal.style.setProperty('z-index', '2147483647', 'important');
+        }
+        if (typeof window.showAlert === 'function') {
+            await window.showAlert(msg);
+        } else {
+            alert(msg);
+        }
+    };
+
+    // 💡 가입 신청 모달 닫기 헬퍼
+    const hideRegisterModal = () => {
+        if (typeof closeRegisterModal === 'function') {
+            closeRegisterModal();
+        } else {
+            const modal = document.getElementById('register-modal') || document.getElementById('registerModal');
+            if (modal) modal.style.display = 'none';
+        }
+    };
+
     // 💡 1. 현재 구장 식별자 추출 (기본값 unjeong)
     const urlParams = new URLSearchParams(window.location.search);
     const clubId = (typeof currentClub !== 'undefined' && currentClub) || 
@@ -537,7 +566,7 @@ async function handleRegisterSubmit(event) {
         birthDate: document.getElementById('regBirthDate').value.trim(),
         grade: document.getElementById('regGrade').value,
         address: document.getElementById('regAddress') ? document.getElementById('regAddress').value.trim() : '',
-        clubId: clubId // 📌 현재 구장(daewon / unjeong) 전송
+        clubId: clubId // 📌 현재 구장 전송
     };
 
     try {
@@ -550,26 +579,28 @@ async function handleRegisterSubmit(event) {
         const result = await response.json();
 
         if (result.success) {
-            // 📌 1) 가입 신청 완료 및 승인 대기 안내 팝업 출력 (확인을 누를 때까지 대기)
-            alert(result.message || '정회원 가입 신청이 완료되었습니다.\n관리자 승인 대기중입니다.');
-            
-            // 📌 2) 확인을 누르면 모달 닫기 및 폼 초기화 (로그인 페이지로 전환)
-            if (typeof closeRegisterModal === 'function') {
-                closeRegisterModal();
-            } else {
-                const modal = document.getElementById('register-modal');
-                if (modal) modal.style.display = 'none';
-            }
-
+            // 📌 1) 가입 신청 모달을 먼저 닫고 폼 초기화
+            hideRegisterModal();
             const form = document.getElementById('registerForm');
             if (form) form.reset();
+
+            // 📌 2) 최상단 안내 팝업 출력 (확인을 누르면 로그인 화면 유지)
+            await showTopAlert(result.message || '정회원 가입 신청이 완료되었습니다.\n관리자 승인 대기중입니다.');
         } else {
-            // 📌 실패 에러 안내 출력
-            alert(result.message || '가입 신청에 실패했습니다.');
+            const errMsg = result.message || '가입 신청에 실패했습니다.';
+
+            // 📌 이미 등록된 정회원이거나 가입 대기 중인 연락처인 경우 가입 모달을 닫고 안내 팝업 표시 후 로그인 화면으로 전환
+            if (errMsg.includes('이미')) {
+                hideRegisterModal();
+                const form = document.getElementById('registerForm');
+                if (form) form.reset();
+            }
+
+            await showTopAlert(errMsg);
         }
     } catch (error) {
         console.error('가입 신청 통신 오류:', error);
-        alert('서버와의 통신 중 오류가 발생했습니다.');
+        await showTopAlert('서버와의 통신 중 오류가 발생했습니다.');
     }
 }
 
