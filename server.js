@@ -424,43 +424,85 @@ function calculateAgeGroup(birthDateStr) {
 // 정회원 가입 및 관리자 승인 관련 API
 // ==========================================
 
-// 1. 정회원 가입 신청 접수 API (구장별 격리 적용)
+// 1. 정회원 가입 신청 접수 API (구장별 격리 및 하이픈/띄어쓰기 완벽 호환 적용)
 // 💡 수정 후: 두 경로 모두 수신 가능하도록 지정
 app.post(['/api/register', '/api/register-request'], async (req, res) => {
     try {
-        const { name, phone, gender, birthDate, grade, address, clubId: reqClubId, club } = req.body;
-        // 💡 신청한 구장 식별자 추출 (기본값 unjeong)
-        const clubId = reqClubId || club || 'unjeong';
+        const { name: rawName, phone: rawPhone, gender, birthDate: rawBirthDate, grade, address: rawAddress, clubId: reqClubId, club } = req.body;
+        
+        // 💡 신청한 구장 식별자 추출 및 공백 제거 (기본값 unjeong)
+        const clubId = String(reqClubId || club || 'unjeong').trim();
 
-        if (!name || !phone || !gender || !birthDate || !grade) {
+        // 💡 이름, 주소, 생년월일 공백 제거 정리
+        const name = String(rawName || '').trim();
+        const address = String(rawAddress || '').trim();
+        const birthDigits = String(rawBirthDate || '').replace(/[^0-9]/g, '');
+        const birthDate = birthDigits.length === 8 
+            ? `${birthDigits.slice(0, 4)}-${birthDigits.slice(4, 6)}-${birthDigits.slice(6, 8)}` 
+            : String(rawBirthDate || '').trim();
+
+        // 💡 전화번호 정규화: 숫자만 추출(digits) 및 표준 하이픈 포맷(formattedPhone) 동시 생성
+        const phoneDigits = String(rawPhone || '').replace(/[^0-9]/g, '');
+        let formattedPhone = String(rawPhone || '').trim();
+        if (phoneDigits.length === 11) {
+            formattedPhone = `${phoneDigits.slice(0, 3)}-${phoneDigits.slice(3, 7)}-${phoneDigits.slice(7, 11)}`;
+        } else if (phoneDigits.length === 10) {
+            formattedPhone = `${phoneDigits.slice(0, 3)}-${phoneDigits.slice(3, 6)}-${phoneDigits.slice(6, 10)}`;
+        }
+
+        if (!name || !phoneDigits || !gender || !birthDate || !grade) {
             return res.status(400).json({ success: false, message: '필수 항목을 모두 입력해주세요.' });
         }
 
-        // 1단계: 해당 구장(club_id)에 이미 정회원으로 등록되어 있는지 확인
-        db.get(`SELECT * FROM regular_members WHERE phone = ? AND club_id = ?`, [phone, clubId], (err, existingMember) => {
+        // 💡 1단계: 해당 구장(club_id)에 이미 정회원으로 등록되어 있는지 확인
+        // - DB에 하이픈이 있든 없든, 띄어쓰기가 섞여 있든 숫자 기준(REPLACE)으로 완벽하게 비교
+        // - 멀티 테넌트 구장별 격리를 유지하되, 기본 구장(unjeong)은 기존 회원의 club_id가 비어있는(NULL/'') 경우도 함께 체크
+        const checkMemberSql = `
+            SELECT * FROM regular_members 
+            WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ? OR phone = ?)
+              AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+        `;
+
+        db.get(checkMemberSql, [phoneDigits, formattedPhone, phoneDigits, clubId, clubId], (err, existingMember) => {
+            if (err) {
+                console.error('정회원 중복 확인 DB 오류:', err.message);
+                return res.status(500).json({ success: false, message: '회원 확인 중 서버 오류가 발생했습니다.' });
+            }
+
             if (existingMember) {
                 return res.status(400).json({ success: false, message: '이미 해당 클럽에 정회원으로 등록되어 있는 연락처입니다.' });
             }
 
-            // 2단계: 해당 구장(club_id) 대기 목록에 이미 신청되어 있는지 확인
-            db.get(`SELECT * FROM pending_registrations WHERE phone = ? AND club_id = ?`, [phone, clubId], (err, existingPending) => {
+            // 💡 2단계: 해당 구장(club_id) 대기 목록에 이미 신청되어 있는지 확인 (하이픈/띄어쓰기 무관하게 체크)
+            const checkPendingSql = `
+                SELECT * FROM pending_registrations 
+                WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ? OR phone = ?)
+                  AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+            `;
+
+            db.get(checkPendingSql, [phoneDigits, formattedPhone, phoneDigits, clubId, clubId], (err2, existingPending) => {
+                if (err2) {
+                    console.error('대기 목록 중복 확인 DB 오류:', err2.message);
+                    return res.status(500).json({ success: false, message: '신청 내역 확인 중 서버 오류가 발생했습니다.' });
+                }
+
                 if (existingPending) {
                     return res.status(400).json({ success: false, message: '이미 해당 클럽에 가입 대기 중인 연락처입니다. 관리자 승인을 기다려주세요.' });
                 }
 
-                // 3단계: club_id를 포함하여 대기 테이블에 INSERT
+                // 💡 3단계: 표준 하이픈 전화번호(formattedPhone)와 club_id를 포함하여 대기 테이블에 INSERT
                 const createdAt = new Date().toISOString();
-                const query = `
+                const insertSql = `
                     INSERT INTO pending_registrations (name, phone, gender, birthDate, grade, address, status, createdAt, club_id) 
                     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                 `;
                 
-                db.run(query, [name, phone, gender, birthDate, grade, address || '', createdAt, clubId], function(err) {
-                    if (err) {
-                        console.error('가입 신청 DB 저장 오류:', err.message);
+                db.run(insertSql, [name, formattedPhone, gender, birthDate, grade, address, createdAt, clubId], function(insertErr) {
+                    if (insertErr) {
+                        console.error('가입 신청 DB 저장 오류:', insertErr.message);
                         return res.status(500).json({ success: false, message: '데이터베이스 저장 중 오류가 발생했습니다.' });
                     }
-                    console.log(`📝 [신규 가입 신청 접수 - ${clubId}] ${name} (${phone})`);
+                    console.log(`📝 [신규 가입 신청 접수 - ${clubId}] ${name} (${formattedPhone})`);
                     res.json({ success: true, message: '정회원 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.' });
                 });
             });
@@ -493,75 +535,97 @@ app.get('/api/admin/pending-members', async (req, res) => {
     }
 });
 
-// 3. 관리자용: 가입 신청 승인 처리 API (구장별 격리 적용)
+// 3. 관리자용: 가입 신청 승인 처리 API (구장별 격리 및 타 클럽 중복가입 완벽 지원)
 app.post('/api/admin/approve-member', async (req, res) => {
     try {
-        const { phone, action, clubId: reqClubId } = req.body;
+        const { phone: rawPhone, action, clubId: reqClubId, club } = req.body;
+        const targetClubId = String(reqClubId || club || 'unjeong').trim();
 
-        if (!phone || !action) {
+        if (!rawPhone || !action) {
             return res.status(400).json({ success: false, message: '잘못된 요청입니다.' });
         }
 
+        const phoneDigits = String(rawPhone).replace(/[^0-9]/g, '');
+        const formattedPhone = phoneDigits.length === 11
+            ? `${phoneDigits.slice(0, 3)}-${phoneDigits.slice(3, 7)}-${phoneDigits.slice(7, 11)}`
+            : String(rawPhone).trim();
+
+        // 💡 해당 구장(club_id)의 대기 내역만 정확히 조회 (타 클럽 신청 내역과 섞이지 않도록 격리)
+        const findPendingSql = `
+            SELECT * FROM pending_registrations 
+            WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ? OR phone = ?)
+              AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+        `;
+
         if (action === 'approve') {
-            db.get(`SELECT * FROM pending_registrations WHERE phone = ?`, [phone], (err, user) => {
+            db.get(findPendingSql, [phoneDigits, formattedPhone, phoneDigits, targetClubId, targetClubId], (err, user) => {
                 if (err || !user) {
                     return res.status(404).json({ success: false, message: '신청 내역을 찾을 수 없습니다.' });
                 }
 
-                // 💡 승인 시 적용할 클럽 식별자 결정 (요청값 우선, 없으면 대기정보의 club_id, 기본값 unjeong)
-                const clubId = reqClubId || user.club_id || 'unjeong';
+                // 💡 승인 시 적용할 클럽 식별자 결정
+                const clubId = String(reqClubId || user.club_id || 'unjeong').trim();
+                const cleanName = String(user.name || '').trim(); // 게임방/타이머 오류 방지를 위해 이름 공백 완벽 제거
 
                 // 생년월일로부터 연령대 자동 계산
                 const ageGroup = typeof calculateAgeGroup === 'function' ? calculateAgeGroup(user.birthDate) : '';
-                const memberId = 'reg_' + Date.now();
+                // 💡 타 클럽 동시 가입 시에도 고유 ID가 겹치지 않도록 구성
+                const memberId = `reg_${clubId}_${Date.now()}`;
                 const joinedAt = new Date().toISOString().split('T')[0];
                 
-                // 💡 club_id 컬럼 추가 (총 13개 컬럼)
+                // 💡 club_id 컬럼 포함 (총 13개 컬럼)
                 const insertQuery = `
                     INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt, club_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `;
 
-                // 💡 물음표 13개에 대응하는 파라미터 13개 매칭
                 const params = [
-                    memberId,           // 1. id
-                    'regular',          // 2. type
-                    user.phone,         // 3. username
-                    '1234',             // 4. password
-                    user.name,          // 5. name
-                    user.gender,        // 6. gender
-                    user.birthDate,     // 7. birthDate
-                    ageGroup,           // 8. ageGroup
-                    user.grade,         // 9. grade
-                    user.phone,         // 10. phone
-                    user.address || '', // 11. address
-                    joinedAt,           // 12. joinedAt
-                    clubId              // 13. club_id
+                    memberId,                 // 1. id
+                    'regular',                // 2. type
+                    formattedPhone,           // 3. username
+                    '1234',                   // 4. password
+                    cleanName,                // 5. name (공백 제거된 깨끗한 이름)
+                    user.gender,              // 6. gender
+                    user.birthDate,           // 7. birthDate
+                    ageGroup,                 // 8. ageGroup
+                    user.grade,               // 9. grade
+                    formattedPhone,           // 10. phone
+                    String(user.address || '').trim(), // 11. address
+                    joinedAt,                 // 12. joinedAt
+                    clubId                    // 13. club_id
                 ];
 
                 db.run(insertQuery, params, (insertErr) => {
                     if (insertErr) {
                         console.error('정회원 테이블 등록 오류:', insertErr.message);
                         if (insertErr.message.includes('UNIQUE constraint failed')) {
-                            return res.status(400).json({ success: false, message: '이미 동일한 연락처로 등록된 정회원이 존재합니다.' });
+                            return res.status(400).json({ success: false, message: '이미 해당 클럽에 동일한 연락처로 등록된 정회원이 존재합니다.' });
                         }
                         return res.status(500).json({ success: false, message: '정회원 등록 중 오류가 발생했습니다.' });
                     }
 
-                    // 💡 해당 구장의 승인 대기 내역에서 삭제
-                    db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], () => {
-                        res.json({ success: true, message: '정회원 가입이 승인되었습니다.' });
-                    });
+                    // 💡 해당 구장(club_id)의 승인 대기 내역만 정확히 삭제
+                    db.run(
+                        `DELETE FROM pending_registrations WHERE id = ? OR ((REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ?) AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))))`,
+                        [user.id, phoneDigits, rawPhone, clubId, clubId],
+                        () => {
+                            res.json({ success: true, message: '정회원 가입이 승인되었습니다.' });
+                        }
+                    );
                 });
             });
         } else {
-            // 반려 처리
-            db.run(`DELETE FROM pending_registrations WHERE phone = ?`, [phone], (err) => {
-                if (err) {
-                    return res.status(500).json({ success: false, message: '반려 처리 중 오류가 발생했습니다.' });
+            // 💡 반려 처리 시에도 해당 구장(club_id)의 신청 건만 삭제
+            db.run(
+                `DELETE FROM pending_registrations WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ? OR phone = ?) AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))`,
+                [phoneDigits, formattedPhone, rawPhone, targetClubId, targetClubId],
+                (err) => {
+                    if (err) {
+                        return res.status(500).json({ success: false, message: '반려 처리 중 오류가 발생했습니다.' });
+                    }
+                    res.json({ success: true, message: '가입 신청이 반려되었습니다.' });
                 }
-                res.json({ success: true, message: '가입 신청이 반려되었습니다.' });
-            });
+            );
         }
     } catch (error) {
         console.error('가입 승인 처리 오류:', error);
@@ -1039,11 +1103,59 @@ function calculateAgeGroup(birthDate) {
     return `${decade}대`; // 📌 반드시 뒤에 '대'가 붙어 있어야 합니다!
 }
 
-// 2. 로그인 처리 API
+// 2. 로그인 처리 API (하이픈/공백 완벽 호환 및 멀티 테넌트 구장 우선 매칭)
 app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
+    const { username: rawUsername, password, clubId: reqClubId, club } = req.body;
+    const targetClubId = String(reqClubId || club || 'unjeong').trim();
+    const cleanInput = String(rawUsername || '').trim();
 
-    db.get(`SELECT * FROM regular_members WHERE username = ? OR id = ?`, [username, username], (err, user) => {
+    if (!cleanInput) {
+        return res.json({ success: false, message: '아이디(전화번호)를 입력해주세요.' });
+    }
+
+    // 💡 숫자만 추출 및 하이픈 포맷 생성 (어떻게 입력하든 모두 매칭되도록 처리)
+    const digits = cleanInput.replace(/[^0-9]/g, '');
+    const formattedPhone = digits.length === 11
+        ? `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`
+        : cleanInput;
+
+    // 💡 1) 입력값 그대로, 2) 하이픈 제거 비교, 3) 일괄등록 아이디(user_/reg_)까지 모두 호환 조회
+    // 💡 타 클럽 중복 가입 회원의 경우 현재 접속한 구장(targetClubId) 데이터를 최우선으로 정렬하여 선택
+    const sql = `
+        SELECT * FROM regular_members 
+        WHERE username = ? 
+           OR id = ? 
+           OR phone = ? 
+           OR phone = ?
+           OR (? != '' AND (
+               REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? 
+               OR REPLACE(REPLACE(username, '-', ''), ' ', '') = ?
+               OR username = ?
+               OR id = ?
+           ))
+        ORDER BY CASE 
+            WHEN club_id = ? THEN 0 
+            WHEN (? = 'unjeong' AND (club_id IS NULL OR club_id = '')) THEN 1 
+            ELSE 2 
+        END ASC
+        LIMIT 1
+    `;
+
+    const params = [
+        cleanInput, 
+        cleanInput, 
+        cleanInput, 
+        formattedPhone,
+        digits,
+        digits,
+        digits,
+        `user_${digits}`,
+        `reg_${digits}`,
+        targetClubId,
+        targetClubId
+    ];
+
+    db.get(sql, params, (err, user) => {
         if (err) {
             console.error('❌ 로그인 DB 조회 에러:', err.message);
             return res.status(500).json({ success: false, message: '서버 에러가 발생했습니다.' });
@@ -1053,8 +1165,11 @@ app.post('/api/login', (req, res) => {
             return res.json({ success: false, message: '존재하지 않는 회원 아이디입니다.' });
         }
 
-        if (user.password === password) {
+        if (String(user.password).trim() === String(password || '').trim()) {
             const { password: _, ...userInfo } = user;
+            // 💡 게임방 개설/참여 및 타이머 카운트 오류 방지를 위해 이름과 전화번호 앞뒤 공백 완벽 제거 보장
+            if (userInfo.name) userInfo.name = String(userInfo.name).trim();
+            if (userInfo.phone) userInfo.phone = String(userInfo.phone).trim();
             res.json({ success: true, user: userInfo });
         } else {
             res.json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
@@ -1062,6 +1177,7 @@ app.post('/api/login', (req, res) => {
     });
 });
 
+/* 💡 [비활성화] 구장별 분리(멀티 테넌트)가 적용된 상단 통합 API(['/api/register', '/api/register-request'])로 일원화됨
 // 📌 [추가] 정회원 가입 신청 API
 app.post('/api/register-request', (req, res) => {
     const { name, phone, gender, birthDate, grade } = req.body;
@@ -1107,15 +1223,53 @@ app.post('/api/register-request', (req, res) => {
         });
     });
 });
+*/
 
-// 회원 정보 수정 API
+// 회원 정보 수정 API (파라미터 누락 버그 수정 및 전화번호 정규화/멀티테넌트 적용)
 app.post('/api/member/update', (req, res) => {
-    const { id, phone, grade, address } = req.body;
+    const { id, phone: rawPhone, grade, address: rawAddress, clubId: reqClubId, club } = req.body;
 
-    const query = `UPDATE regular_members SET phone = ?, grade = ?, address = ? WHERE id = ?`;
-    db.run(query, [phone, grade, address], function(err) {
+    if (!id) {
+        return res.status(400).json({ success: false, message: '회원 고유 ID가 누락되었습니다.' });
+    }
+
+    // 💡 전화번호 정규화 (하이픈 표준 포맷 유지) 및 주소 공백 제거
+    const phoneDigits = String(rawPhone || '').replace(/[^0-9]/g, '');
+    let formattedPhone = String(rawPhone || '').trim();
+    if (phoneDigits.length === 11) {
+        formattedPhone = `${phoneDigits.slice(0, 3)}-${phoneDigits.slice(3, 7)}-${phoneDigits.slice(7, 11)}`;
+    } else if (phoneDigits.length === 10) {
+        formattedPhone = `${phoneDigits.slice(0, 3)}-${phoneDigits.slice(3, 6)}-${phoneDigits.slice(6, 10)}`;
+    }
+    const cleanAddress = String(rawAddress || '').trim();
+    const targetClubId = String(reqClubId || club || '').trim();
+
+    // 💡 username이 기존 전화번호 형태였던 경우 함께 갱신하되, user_ 로 시작하는 일괄등록 계정은 유지
+    // 💡 누락되었던 4번째 파라미터(id)를 정확히 매칭하고, clubId가 전달된 경우 해당 구장 회원만 안전하게 수정
+    const query = targetClubId
+        ? `UPDATE regular_members 
+           SET phone = ?, 
+               username = CASE WHEN username LIKE 'user_%' THEN username ELSE ? END, 
+               grade = ?, 
+               address = ? 
+           WHERE id = ? AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))`
+        : `UPDATE regular_members 
+           SET phone = ?, 
+               username = CASE WHEN username LIKE 'user_%' THEN username ELSE ? END, 
+               grade = ?, 
+               address = ? 
+           WHERE id = ?`;
+
+    const params = targetClubId
+        ? [formattedPhone, formattedPhone, grade, cleanAddress, id, targetClubId, targetClubId]
+        : [formattedPhone, formattedPhone, grade, cleanAddress, id];
+
+    db.run(query, params, function(err) {
         if (err) {
             console.error('❌ 회원 정보 수정 실패:', err.message);
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(400).json({ success: false, message: '이미 해당 클럽에 등록된 전화번호입니다.' });
+            }
             return res.status(500).json({ success: false, message: '수정 중 오류가 발생했습니다.' });
         }
         res.json({ success: true, message: '회원 정보가 수정되었습니다.' });
