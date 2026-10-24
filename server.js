@@ -1786,7 +1786,13 @@ setInterval(() => {
 
         const schedules = clubConfig.cleaningSchedules || [];
         // 💡 빈 스케줄("")은 제외하고 현재 시각에 해당하는 스케줄의 인덱스(0~3)를 탐색
-        const activeIdx = schedules.findIndex(s => s && s.start && s.end && currentHHMM >= s.start && currentHHMM < s.end);
+        // 💡 일반 시간대(10:00~10:05)와 자정을 넘기는 휴장 시간대(22:00~09:00) 모두 정확히 감지
+const activeIdx = schedules.findIndex(s => {
+    if (!s || !s.start || !s.end || s.start === s.end) return false;
+    return s.start < s.end
+        ? (currentHHMM >= s.start && currentHHMM < s.end)
+        : (currentHHMM >= s.start || currentHHMM < s.end);
+});
         const activeSchedule = activeIdx !== -1 ? schedules[activeIdx] : null;
 
         // 1) 해당 클럽의 청소 시작 시점 감지
