@@ -103,7 +103,7 @@ setInterval(() => {
 
         // 💡 해당 구장 전용 TV 룸으로만 신호 발송 (타 구장 방송 간섭 차단)
         const targetRoom = `tv-room-${clubId}`;
-        io.to(targetRoom).emit('requestVoiceAnnouncement', nextAnnouncement);
+        io.to(`tv-room-${clubId}`).to(`tv-room_${clubId}`).emit('requestVoiceAnnouncement', nextAnnouncement);
         console.log(`🎙️ [${targetRoom} 전송] TV 음성 송출 시작`);
 
         // 해당 구장의 음성 재생 시간(10초) 동안만 해당 구장의 다음 방송을 차단
@@ -1785,15 +1785,23 @@ setInterval(() => {
         const cCourtsData = club.courtsData || (cId === 'unjeong' ? courtsData : []);
 
         const schedules = clubConfig.cleaningSchedules || [];
-        const activeSchedule = schedules.find(s => currentHHMM >= s.start && currentHHMM < s.end);
+        // 💡 빈 스케줄("")은 제외하고 현재 시각에 해당하는 스케줄의 인덱스(0~3)를 탐색
+        const activeIdx = schedules.findIndex(s => s && s.start && s.end && currentHHMM >= s.start && currentHHMM < s.end);
+        const activeSchedule = activeIdx !== -1 ? schedules[activeIdx] : null;
 
         // 1) 해당 클럽의 청소 시작 시점 감지
         if (activeSchedule && !club.isCleaningTime) {
             club.isCleaningTime = true;
+            const slotNum = activeSchedule.slot || (activeIdx + 1); // 1 ~ 4번 슬롯 번호
+            club.activeCleaningSlot = slotNum; // 💡 종료 시점에도 동일한 슬롯 번호의 멘트를 쓰기 위해 기억
 
-            const startMsg = clubConfig.cleaningStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
+            // 💡 슬롯별 저장된 커스텀 시작 멘트를 최우선으로 조회
+            const customStartMsg = (clubConfig[`cleaningStartMsg_${slotNum}`] && clubConfig[`cleaningStartMsg_${slotNum}`].trim()) ||
+                                   (activeSchedule.startMsg && activeSchedule.startMsg.trim()) ||
+                                   (clubConfig.cleaningStartMsg && clubConfig.cleaningStartMsg.trim());
+            const startMsg = customStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
            
-            // 💡 수정 후: 구장별 독립 큐로 전송
+            // 💡 구장별 독립 음성 큐로 전송
             pushVoiceAnnouncement(cId, {
                 clubId: cId,
                 matchType: '공지',
@@ -1801,16 +1809,18 @@ setInterval(() => {
                 message: startMsg
             });
 
-            // 해당 클럽 룸에만 전송
+            // 해당 클럽 룸에 토스트 팝업 전송
             io.to(`club_${cId}`).emit('toastAlert', `🧹 ${startMsg}`);
 
-            io.to(`tv-room_${cId}`).emit('tvCleaningAlert', {
-                clubId: cId, // 💡 클럽 ID 명시
+            // 💡 TV 룸 이름 하이픈(-) / 언더바(_) 모두 호환되도록 동시 전송
+            const startAlertPayload = {
+                clubId: cId,
                 type: 'start',
-                title: '🧹 구장 청소 및 코트 정비 시간',
+                title: slotNum === 4 ? '🌙 구장 운영 마감 및 휴장 안내' : '🧹 구장 청소 및 코트 정비 시간',
                 message: startMsg,
                 duration: 10000
-            });
+            };
+            io.to(`tv-room_${cId}`).to(`tv-room-${cId}`).emit('tvCleaningAlert', startAlertPayload);
 
             if (typeof addNotification === 'function') {
                 addNotification(`🧹 [구장 청소 시작] ${startMsg}`, cId);
@@ -1820,10 +1830,17 @@ setInterval(() => {
         // 2) 해당 클럽의 청소 종료 시점 감지
         if (!activeSchedule && club.isCleaningTime) {
             club.isCleaningTime = false;
+            const endedSlotNum = club.activeCleaningSlot || 1;
+            club.activeCleaningSlot = null;
 
-            const endMsg = clubConfig.cleaningEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
+            const endedScheduleObj = schedules[endedSlotNum - 1] || {};
+            // 💡 방금 끝난 슬롯(1~4)의 커스텀 종료 멘트를 최우선으로 조회
+            const customEndMsg = (clubConfig[`cleaningEndMsg_${endedSlotNum}`] && clubConfig[`cleaningEndMsg_${endedSlotNum}`].trim()) ||
+                                 (endedScheduleObj.endMsg && endedScheduleObj.endMsg.trim()) ||
+                                 (clubConfig.cleaningEndMsg && clubConfig.cleaningEndMsg.trim());
+            const endMsg = customEndMsg || '구장 청소가 완료되었습니다. 코트 이용을 재개해 주시기 바랍니다.';
 
-            pushVoiceAnnouncement(cId,  {
+            pushVoiceAnnouncement(cId, {
                 clubId: cId,
                 matchType: '공지',
                 names: [],
@@ -1832,13 +1849,14 @@ setInterval(() => {
 
             io.to(`club_${cId}`).emit('toastAlert', `🏸 ${endMsg}`);
 
-            io.to(`tv-room_${cId}`).emit('tvCleaningAlert', {
-                clubId: cId, // 💡 클럽 ID 명시
+            const endAlertPayload = {
+                clubId: cId,
                 type: 'end',
                 title: '🏸 구장 청소 완료 안내',
                 message: endMsg,
                 duration: 8000
-            });
+            };
+            io.to(`tv-room_${cId}`).to(`tv-room-${cId}`).emit('tvCleaningAlert', endAlertPayload);
 
             if (typeof addNotification === 'function') {
                 addNotification(`✅ [구장 청소 종료] ${endMsg}`, cId);
@@ -2764,7 +2782,7 @@ io.on('connection', (socket) => {
 
                 // 📡 2. 클라이언트 실시간 동기화 (전체 룸에 새 설정 전송)
                 if (typeof io !== 'undefined') {
-                    io.to(`club_${clubId}`).emit('syncConfig', targetConfig);
+                    io.to(`club_${clubId}`).to(`tv-room_${clubId}`).to(`tv-room-${clubId}`).emit('syncConfig', targetConfig);
                 }
                 if (typeof broadcastState === 'function') {
                     broadcastState(clubId);
