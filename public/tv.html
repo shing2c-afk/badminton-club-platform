@@ -525,15 +525,15 @@ socket.on('tvPopupAlert', (data) => {
                                       refinedMessage.includes('휴장') || 
                                       refinedMessage.includes('정비');
 
-            if (!isNoticeBroadcast && refinedMessage.includes('회원님은')) {
-                let parts = refinedMessage.split('회원님은');
+            if (!isNoticeBroadcast && (refinedMessage.includes('회원님은') || refinedMessage.includes('회원님!'))) {
+                const delimiter = refinedMessage.includes('회원님은') ? '회원님은' : '회원님!';
+                let parts = refinedMessage.split(delimiter);
                 let rawNames = parts[0].trim();
-                // 앞부분이 짧은 이름 목록(30자 이내, 마침표 없음)일 때만 처리
                 if (rawNames.length <= 30 && !rawNames.includes('.')) {
                     let spacedNames = rawNames.split(',').map(nameGroup => {
                         return nameGroup.trim().split('').join(' '); 
                     }).join(', ');
-                    refinedMessage = `${spacedNames} 회원님은${parts[1]}`;
+                    refinedMessage = `${spacedNames} ${delimiter}${parts[1]}`;
                 }
             }
 
@@ -762,7 +762,7 @@ socket.on('tvPopupAlert', (data) => {
             return; 
         }
 
-        // B. 1. 코트 입장 안내 토글 검사
+       // B. 1. 코트 입장 안내 토글 검사
         if (config.soundEntryNotice === false) {
             console.log('[TV Audio Block] 🚫 입장 안내 토글 꺼짐으로 코트 입장 방송 차단됨');
             return;
@@ -772,8 +772,8 @@ socket.on('tvPopupAlert', (data) => {
         const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
         const readableCourtNum = getReadableCourtName(courtNumber);
 
-        // 💡 [수정] 쉼표를 제거하고 팝업 메시지와 완벽히 동일한 어조로 구성
-        const announcementText = `${namesString} 회원님! ${readableCourtNum} ${matchType || '게임'} 코트로 입장해 주세요!`;
+        // 💡 [수정] 팝업 메시지와 동일하게 '지금' 멘트 추가
+        const announcementText = `${namesString} 회원님! 지금 ${readableCourtNum} ${matchType || '게임'} 코트로 입장해 주세요!`;
         
         playVoiceAnnouncement(announcementText, 0, courtNumber);
     });
