@@ -3567,6 +3567,273 @@ io.on('connection', (socket) => {
         }
     });
 
+    // =========================================================================
+    // 📊 [3단계] 구장별 전적 통계 산출 및 커스텀 타이틀 관리 (saveMatchScore 바로 아래 추가)
+    // =========================================================================
+
+    // 1) 전적 통계 및 타이틀 랭킹 조회
+    socket.on('getMatchStats', (params, callback) => {
+        try {
+            const currentClubId = (params && params.clubId) || socket.clubId || 'unjeong';
+            const period = (params && params.period) || 'all'; // 'all', 'month'(이번달), 'YYYY-MM', 'quarter'(이번분기)
+            const minGamesDefault = parseInt((params && params.minGames) || 5, 10);
+
+            // 기간 필터 조건 생성 (한국 시간 기준)
+            const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const curYear = nowKr.getFullYear();
+            const curMonth = String(nowKr.getMonth() + 1).padStart(2, '0');
+
+            let dateFilterSql = '';
+            let queryParams = [currentClubId];
+
+            if (period === 'month') {
+                dateFilterSql = ` AND strftime('%Y-%m', played_at) = ?`;
+                queryParams.push(`${curYear}-${curMonth}`);
+            } else if (/^\d{4}-\d{2}$/.test(period)) {
+                dateFilterSql = ` AND strftime('%Y-%m', played_at) = ?`;
+                queryParams.push(period);
+            } else if (period === 'quarter') {
+                const qStartMonth = Math.floor(nowKr.getMonth() / 3) * 3 + 1;
+                const qEndMonth = qStartMonth + 2;
+                const startStr = `${curYear}-${String(qStartMonth).padStart(2, '0')}-01 00:00:00`;
+                const endStr = `${curYear}-${String(qEndMonth).padStart(2, '0')}-31 23:59:59`;
+                dateFilterSql = ` AND played_at BETWEEN ? AND ?`;
+                queryParams.push(startStr, endStr);
+            }
+
+            const sql = `SELECT * FROM match_records WHERE club_id = ?${dateFilterSql} ORDER BY played_at ASC`;
+
+            db.all(sql, queryParams, (err, rows) => {
+                if (err) {
+                    console.error('❌ 전적 조회 실패:', err.message);
+                    return callback && callback({ success: false, message: '전적 조회 실패' });
+                }
+
+                const playerMap = {};
+                const pairMap = {};
+
+                const initPlayer = (name) => {
+                    if (!name) return null;
+                    if (!playerMap[name]) {
+                        playerMap[name] = {
+                            name,
+                            games: 0,
+                            wins: 0,
+                            losses: 0,
+                            draws: 0,
+                            pointsFor: 0,
+                            pointsAgainst: 0,
+                            clutchWins: 0, // 2점 차 이내 접전 승리
+                            currentStreak: 0,
+                            maxStreak: 0,
+                            byType: {} // 종목별 세부 기록
+                        };
+                    }
+                    return playerMap[name];
+                };
+
+                const updatePlayerRecord = (name, isWin, isLoss, isDraw, myScore, oppScore, matchType) => {
+                    const p = initPlayer(name);
+                    if (!p) return;
+
+                    p.games += 1;
+                    p.pointsFor += myScore;
+                    p.pointsAgainst += oppScore;
+
+                    if (!p.byType[matchType]) {
+                        p.byType[matchType] = { games: 0, wins: 0, losses: 0 };
+                    }
+                    p.byType[matchType].games += 1;
+
+                    if (isWin) {
+                        p.wins += 1;
+                        p.byType[matchType].wins += 1;
+                        p.currentStreak += 1;
+                        if (p.currentStreak > p.maxStreak) p.maxStreak = p.currentStreak;
+                        if (Math.abs(myScore - oppScore) <= 2) p.clutchWins += 1;
+                    } else if (isLoss) {
+                        p.losses += 1;
+                        p.byType[matchType].losses += 1;
+                        p.currentStreak = 0;
+                    } else if (isDraw) {
+                        p.draws += 1;
+                    }
+                };
+
+                const updatePairRecord = (p1, p2, isWin) => {
+                    if (!p1 || !p2) return;
+                    const sortedPair = [p1, p2].sort();
+                    const pairKey = `${sortedPair[0]} & ${sortedPair[1]}`;
+                    if (!pairMap[pairKey]) {
+                        pairMap[pairKey] = { pairName: pairKey, players: sortedPair, games: 0, wins: 0 };
+                    }
+                    pairMap[pairKey].games += 1;
+                    if (isWin) pairMap[pairKey].wins += 1;
+                };
+
+                // 전체 경기 순회하며 통계 집계
+                (rows || []).forEach(r => {
+                    const mType = r.match_type || '자유복식';
+                    const sA = Number(r.score_a) || 0;
+                    const sB = Number(r.score_b) || 0;
+                    const aWin = r.winner_team === 'A';
+                    const bWin = r.winner_team === 'B';
+                    const isDraw = r.winner_team === 'DRAW';
+
+                    const teamA = [r.team_a_p1, r.team_a_p2].filter(Boolean);
+                    const teamB = [r.team_b_p1, r.team_b_p2].filter(Boolean);
+
+                    teamA.forEach(p => updatePlayerRecord(p, aWin, bWin, isDraw, sA, sB, mType));
+                    teamB.forEach(p => updatePlayerRecord(p, bWin, aWin, isDraw, sB, sA, mType));
+
+                    if (teamA.length === 2) updatePairRecord(teamA[0], teamA[1], aWin);
+                    if (teamB.length === 2) updatePairRecord(teamB[0], teamB[1], bWin);
+                });
+
+                // 개인별 승률 및 득실차 계산
+                const playersStats = Object.values(playerMap).map(p => {
+                    const winRate = p.games > 0 ? Math.round((p.wins / p.games) * 1000) / 10 : 0;
+                    const pointDiff = p.pointsFor - p.pointsAgainst;
+                    return { ...p, winRate, pointDiff };
+                });
+
+                // 기본 정렬: 다승 -> 승률 -> 득실차 순
+                playersStats.sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.pointDiff - a.pointDiff));
+
+                // 파트너 궁합(환상의 짝꿍) 계산
+                const pairStats = Object.values(pairMap).map(pair => {
+                    const winRate = pair.games > 0 ? Math.round((pair.wins / pair.games) * 1000) / 10 : 0;
+                    return { ...pair, winRate };
+                }).sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate));
+
+                // 🏅 기본 5대 타이틀 산출
+                const mostWinsLeader = [...playersStats].sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate))[0] || null;
+                const winRateLeader = [...playersStats]
+                    .filter(p => p.games >= minGamesDefault)
+                    .sort((a, b) => (b.winRate - a.winRate) || (b.wins - a.wins))[0] || null;
+                const ironManLeader = [...playersStats].sort((a, b) => (b.games - a.games) || (b.wins - a.wins))[0] || null;
+                const mostLossesLeader = [...playersStats].sort((a, b) => (b.losses - a.losses) || (b.games - a.games))[0] || null;
+                const bestDuoLeader = pairStats.filter(pr => pr.games >= 2)[0] || pairStats[0] || null;
+
+                const defaultTitles = [
+                    { id: 'def_1', titleName: '🏆 이달의 다승왕', metricLabel: '최다 승리', theme: 'gold', winner: mostWinsLeader ? `${mostWinsLeader.name} (${mostWinsLeader.wins}승)` : '집계 중' },
+                    { id: 'def_2', titleName: '🎯 이달의 승률왕', metricLabel: `${minGamesDefault}전 이상 최고 승률`, theme: 'prism', winner: winRateLeader ? `${winRateLeader.name} (${winRateLeader.winRate}%)` : '집계 중' },
+                    { id: 'def_3', titleName: '🔥 이달의 철인왕', metricLabel: '최다 게임 출전', theme: 'fire', winner: ironManLeader ? `${ironManLeader.name} (${ironManLeader.games}전)` : '집계 중' },
+                    { id: 'def_4', titleName: '😭 이달의 패가망신왕', metricLabel: '인간 승리 최다패', theme: 'fun', winner: (mostLossesLeader && mostLossesLeader.losses > 0) ? `${mostLossesLeader.name} (${mostLossesLeader.losses}패)` : '집계 중' },
+                    { id: 'def_5', titleName: '🤝 환상의 짝꿍', metricLabel: '최고 호흡 복식 파트너', theme: 'gold', winner: bestDuoLeader ? `${bestDuoLeader.pairName} (${bestDuoLeader.wins}승 / ${bestDuoLeader.winRate}%)` : '집계 중' }
+                ];
+
+                // ✨ 관리자가 생성한 커스텀 타이틀 조회 및 1위 계산
+                db.all(`SELECT * FROM custom_titles WHERE club_id = ? AND is_active = 1 ORDER BY id DESC`, [currentClubId], (tErr, customRows) => {
+                    const customTitlesEvaluated = (customRows || []).map(ct => {
+                        const minG = Number(ct.min_games) || 1;
+                        const targetType = ct.target_match_type || 'ALL';
+
+                        // 대상 종목 및 최소 게임수 필터링
+                        const candidates = playersStats.map(p => {
+                            if (targetType !== 'ALL') {
+                                const tStat = p.byType[targetType] || { games: 0, wins: 0, losses: 0 };
+                                const tWinRate = tStat.games > 0 ? Math.round((tStat.wins / tStat.games) * 1000) / 10 : 0;
+                                return { ...p, evalGames: tStat.games, evalWins: tStat.wins, evalLosses: tStat.losses, evalWinRate: tWinRate };
+                            }
+                            return { ...p, evalGames: p.games, evalWins: p.wins, evalLosses: p.losses, evalWinRate: p.winRate };
+                        }).filter(p => p.evalGames >= minG);
+
+                        let topPlayer = null;
+                        let valueText = '';
+
+                        if (ct.metric_type === 'most_wins') {
+                            topPlayer = candidates.sort((a, b) => b.evalWins - a.evalWins)[0];
+                            if (topPlayer) valueText = `${topPlayer.evalWins}승`;
+                        } else if (ct.metric_type === 'win_rate') {
+                            topPlayer = candidates.sort((a, b) => (b.evalWinRate - a.evalWinRate) || (b.evalWins - a.evalWins))[0];
+                            if (topPlayer) valueText = `${topPlayer.evalWinRate}%`;
+                        } else if (ct.metric_type === 'most_games') {
+                            topPlayer = candidates.sort((a, b) => b.evalGames - a.evalGames)[0];
+                            if (topPlayer) valueText = `${topPlayer.evalGames}경기`;
+                        } else if (ct.metric_type === 'most_losses') {
+                            topPlayer = candidates.sort((a, b) => b.evalLosses - a.evalLosses)[0];
+                            if (topPlayer) valueText = `${topPlayer.evalLosses}패`;
+                        } else if (ct.metric_type === 'clutch_wins') {
+                            topPlayer = candidates.sort((a, b) => b.clutchWins - a.clutchWins)[0];
+                            if (topPlayer && topPlayer.clutchWins > 0) valueText = `접전 ${topPlayer.clutchWins}승`;
+                            else topPlayer = null;
+                        } else if (ct.metric_type === 'max_streak') {
+                            topPlayer = candidates.sort((a, b) => b.maxStreak - a.maxStreak)[0];
+                            if (topPlayer && topPlayer.maxStreak > 0) valueText = `${topPlayer.maxStreak}연승`;
+                            else topPlayer = null;
+                        } else if (ct.metric_type === 'point_diff') {
+                            topPlayer = candidates.sort((a, b) => b.pointDiff - a.pointDiff)[0];
+                            if (topPlayer) valueText = `득실 ${topPlayer.pointDiff > 0 ? '+' + topPlayer.pointDiff : topPlayer.pointDiff}`;
+                        }
+
+                        return {
+                            id: ct.id,
+                            titleName: ct.title_name,
+                            metricType: ct.metric_type,
+                            targetMatchType: targetType,
+                            minGames: minG,
+                            theme: ct.badge_theme || 'gold',
+                            winner: topPlayer ? `${topPlayer.name} (${valueText})` : '대상자 없음'
+                        };
+                    });
+
+                    if (callback) {
+                        callback({
+                            success: true,
+                            totalMatches: (rows || []).length,
+                            playersStats,
+                            pairStats,
+                            defaultTitles,
+                            customTitles: customTitlesEvaluated,
+                            recentMatches: (rows || []).slice(-20).reverse()
+                        });
+                    }
+                });
+            });
+        } catch (err) {
+            console.error('getMatchStats 처리 에러:', err);
+            if (callback) callback({ success: false, message: '통계 계산 중 오류가 발생했습니다.' });
+        }
+    });
+
+    // 2) 관리자 커스텀 반짝이 타이틀 생성
+    socket.on('createCustomTitle', (data, callback) => {
+        const currentClubId = (data && data.clubId) || socket.clubId || 'unjeong';
+        const titleName = (data.titleName || '').trim();
+        const metricType = data.metricType || 'most_wins';
+        const targetMatchType = data.targetMatchType || 'ALL';
+        const minGames = parseInt(data.minGames, 10) || 3;
+        const badgeTheme = data.badgeTheme || 'gold';
+
+        if (!titleName) {
+            return callback && callback({ success: false, message: '타이틀 이름을 입력해 주세요.' });
+        }
+
+        const sql = `
+            INSERT INTO custom_titles (club_id, title_name, metric_type, target_match_type, min_games, badge_theme, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+        `;
+        db.run(sql, [currentClubId, titleName, metricType, targetMatchType, minGames, badgeTheme], function(err) {
+            if (err) {
+                console.error('❌ 커스텀 타이틀 생성 실패:', err.message);
+                return callback && callback({ success: false, message: '타이틀 생성 실패' });
+            }
+            if (callback) callback({ success: true, id: this.lastID });
+        });
+    });
+
+    // 3) 관리자 커스텀 타이틀 삭제
+    socket.on('deleteCustomTitle', ({ id, clubId }, callback) => {
+        const currentClubId = clubId || socket.clubId || 'unjeong';
+        db.run(`DELETE FROM custom_titles WHERE id = ? AND club_id = ?`, [id, currentClubId], function(err) {
+            if (err) {
+                return callback && callback({ success: false, message: '삭제 실패' });
+            }
+            if (callback) callback({ success: true });
+        });
+    });
+
     socket.on('adminForceExit', ({ targetType, targetId, index }) => {
         try {
             // 💡 현재 소켓이 속한 클럽 아이디 가져오기
