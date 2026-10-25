@@ -1085,3 +1085,10 @@ if (typeof socket !== 'undefined' && socket) {
     }
     setupSessionExpireListener();
 })();
+
+// 🏆 [스코어 입력 모달 수신] 서버에서 게임종료/한게임더 처리 직후 신호가 오면 팝업 실행
+socket.on('openScoreModal', (data) => {
+    if (typeof window.showScoreInputPopup === 'function') {
+        window.showScoreInputPopup(data);
+    }
+});

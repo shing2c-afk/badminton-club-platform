@@ -1728,3 +1728,151 @@ function updateWifiRestrictedButtons() {
         document.body.classList.remove('gym-wifi-active');
     }
 }
+
+// =========================================================================
+// 🏆 [게임 종료 / 한게임 더] 스코어 및 전적 입력 팝업 UI (ui.js 맨 아래 추가)
+// =========================================================================
+
+window.showScoreInputPopup = function(data) {
+    // 이미 열려있는 팝업이 있다면 제거 후 새로 생성
+    const existingModal = document.getElementById('match-score-modal');
+    if (existingModal) existingModal.remove();
+
+    const players = data.players || [];
+    if (players.length < 2) return;
+
+    // 기본 종목 세팅
+    let defaultMatchType = players.length >= 4 ? '자유복식' : '단식';
+
+    const modalHtml = `
+        <div id="match-score-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.78); display:flex; justify-content:center; align-items:center; z-index:99999; font-family:inherit;">
+            <div style="background:#1f2937; color:#fff; width:92%; max-width:420px; padding:22px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.6); border:1px solid #374151;">
+                <h3 style="margin-top:0; margin-bottom:14px; font-size:18px; color:#38bdf8; text-align:center;">
+                    🏆 [${data.courtId}번 코트] 경기 스코어 기록
+                </h3>
+                
+                <!-- 1. 경기 종목 선택 -->
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:12px; color:#9ca3af; display:block; margin-bottom:6px;">경기 종목 선택</label>
+                    <select id="modal-match-type" style="width:100%; padding:10px; background:#374151; color:#fff; border:1px solid #4b5563; border-radius:8px; font-size:14px; font-weight:bold;">
+                        <option value="남복" ${defaultMatchType==='남복'?'selected':''}>남성복식 (남복)</option>
+                        <option value="여복" ${defaultMatchType==='여복'?'selected':''}>여성복식 (여복)</option>
+                        <option value="혼복" ${defaultMatchType==='혼복'?'selected':''}>혼성복식 (혼복)</option>
+                        <option value="자유복식" ${defaultMatchType==='자유복식'?'selected':''}>자유복식 (자유)</option>
+                    </select>
+                </div>
+
+                <!-- 2. 선수 팀 배정 (A팀 체크 시 나머지 자동 B팀) -->
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:12px; color:#9ca3af; display:block; margin-bottom:6px;">
+                        👉 <strong style="color:#38bdf8;">A팀 선수(2명)</strong>를 체크하세요 (나머지는 자동 <strong style="color:#f43f5e;">B팀</strong>)
+                    </label>
+                    <div id="modal-player-checkboxes" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                        ${players.map((p, idx) => `
+                            <label class="player-select-label" style="display:flex; align-items:center; background:#374151; padding:10px; border-radius:8px; cursor:pointer; border:2px solid ${idx < 2 ? '#38bdf8' : '#f43f5e'}; transition:0.2s;">
+                                <input type="checkbox" name="teamA_player" value="${p}" ${idx < 2 ? 'checked' : ''} style="margin-right:8px; width:16px; height:16px; accent-color:#38bdf8;" onchange="window.updateTeamBDisplay()">
+                                <span style="font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                    <!-- 실시간 팀 매칭 미리보기 -->
+                    <div id="team-match-preview" style="margin-top:8px; padding:8px; background:#111827; border-radius:6px; font-size:12px; text-align:center; line-height:1.5;"></div>
+                </div>
+
+                <!-- 3. 점수 입력 -->
+                <div style="display:flex; gap:12px; margin-bottom:20px;">
+                    <div style="flex:1; text-align:center;">
+                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px; font-weight:bold;">🔵 A팀 점수</label>
+                        <input type="number" id="modal-score-a" value="25" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #38bdf8; border-radius:8px;">
+                    </div>
+                    <div style="flex:1; text-align:center;">
+                        <label style="font-size:12px; color:#f43f5e; display:block; margin-bottom:4px; font-weight:bold;">🔴 B팀 점수</label>
+                        <input type="number" id="modal-score-b" value="20" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #f43f5e; border-radius:8px;">
+                    </div>
+                </div>
+
+                <!-- 4. 저장 / 건너뛰기 버튼 -->
+                <div style="display:flex; gap:8px;">
+                    <button type="button" onclick="window.submitMatchScore('${data.courtId}')" style="flex:2; padding:12px; background:#0284c7; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer;">
+                        💾 점수 저장하기
+                    </button>
+                    <button type="button" onclick="window.closeScoreModal()" style="flex:1; padding:12px; background:#4b5563; color:#fff; border:none; border-radius:8px; font-size:13px; cursor:pointer;">
+                        기록 안함
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    window.updateTeamBDisplay();
+};
+
+// 💡 체크박스 터치 시 A팀(파란 테두리)과 B팀(빨간 테두리)을 즉시 시각적으로 구분해 주는 함수
+window.updateTeamBDisplay = function() {
+    const allLabels = document.querySelectorAll('#modal-player-checkboxes .player-select-label');
+    const teamA = [];
+    const teamB = [];
+
+    allLabels.forEach(label => {
+        const cb = label.querySelector('input[name="teamA_player"]');
+        if (cb && cb.checked) {
+            label.style.borderColor = '#38bdf8'; // A팀 파란색 테두리
+            teamA.push(cb.value);
+        } else if (cb) {
+            label.style.borderColor = '#f43f5e'; // B팀 빨간색 테두리
+            teamB.push(cb.value);
+        }
+    });
+
+    const previewEl = document.getElementById('team-match-preview');
+    if (previewEl) {
+        previewEl.innerHTML = `
+            <span style="color:#38bdf8; font-weight:bold;">🔵 A팀: ${teamA.join(', ') || '없음'}</span>
+            <span style="color:#9ca3af; margin:0 6px;">vs</span>
+            <span style="color:#f43f5e; font-weight:bold;">🔴 B팀: ${teamB.join(', ') || '없음'}</span>
+        `;
+    }
+};
+
+// 💡 팝업 닫기 함수
+window.closeScoreModal = function() {
+    const modal = document.getElementById('match-score-modal');
+    if (modal) modal.remove();
+};
+
+// 💡 점수 서버 전송 함수
+window.submitMatchScore = function(courtId) {
+    const matchType = document.getElementById('modal-match-type').value;
+    const scoreA = parseInt(document.getElementById('modal-score-a').value, 10) || 0;
+    const scoreB = parseInt(document.getElementById('modal-score-b').value, 10) || 0;
+
+    const allCheckboxes = document.querySelectorAll('input[name="teamA_player"]');
+    const teamA = Array.from(allCheckboxes).filter(cb => cb.checked).map(cb => cb.value);
+    const teamB = Array.from(allCheckboxes).filter(cb => !cb.checked).map(cb => cb.value);
+
+    if (teamA.length === 0 || teamB.length === 0) {
+        alert('A팀과 B팀에 최소 1명 이상의 선수가 배정되어야 합니다.');
+        return;
+    }
+
+    if (typeof socket !== 'undefined') {
+        socket.emit('saveMatchScore', {
+            courtId: courtId,
+            matchType: matchType,
+            teamA: teamA,
+            teamB: teamB,
+            scoreA: scoreA,
+            scoreB: scoreB
+        }, (res) => {
+            if (res && res.success) {
+                console.log('✅ 경기 전적 저장 완료');
+            } else {
+                alert((res && res.message) || '전적 저장 중 오류가 발생했습니다.');
+            }
+            window.closeScoreModal();
+        });
+    } else {
+        alert('서버 연결(socket)을 찾을 수 없습니다.');
+    }
+};

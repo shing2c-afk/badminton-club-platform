@@ -844,7 +844,7 @@ function initDatabase() {
         });
 
         // =========================================================================
-        // 3. 일일 게스트 테이블 (daily_guests) club_id 컬럼 추가
+        // 3. 일일 게스트 테이블 (daily_guests) club_id 및 성별/연령대/급수 보강
         // =========================================================================
         db.run(`
             CREATE TABLE IF NOT EXISTS daily_guests (
@@ -853,11 +853,17 @@ function initDatabase() {
                 type TEXT,
                 name TEXT,
                 phone TEXT,
+                gender TEXT DEFAULT '-',
+                ageGroup TEXT DEFAULT '-',
+                grade TEXT DEFAULT '일반',
                 address TEXT,
                 visitedAt TEXT
             )
         `, () => {
             db.run(`ALTER TABLE daily_guests ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {});
+            db.run(`ALTER TABLE daily_guests ADD COLUMN gender TEXT DEFAULT '-'`, () => {});
+            db.run(`ALTER TABLE daily_guests ADD COLUMN ageGroup TEXT DEFAULT '-'`, () => {});
+            db.run(`ALTER TABLE daily_guests ADD COLUMN grade TEXT DEFAULT '일반'`, () => {});
         });
 
         // =========================================================================
@@ -887,6 +893,61 @@ function initDatabase() {
                     }
                 });
             }
+        });
+
+        // =========================================================================
+        // 5. 🏆 [전적 & 랭킹 확장] 일일회원 누적, 게임 전적, 커스텀 타이틀 테이블
+        // =========================================================================
+        // 5-1) 일일회원 누적 관리 테이블 (동일 인물 재방문 시 전적 연동용)
+        db.run(`
+            CREATE TABLE IF NOT EXISTS guest_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                club_id TEXT DEFAULT 'unjeong',
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                gender TEXT DEFAULT '-',
+                age_group TEXT DEFAULT '-',
+                grade TEXT DEFAULT '일반',
+                visit_count INTEGER DEFAULT 1,
+                last_visit DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(club_id, name, phone)
+            )
+        `);
+
+        // 5-2) 게임 스코어 및 전적 기록 테이블
+        db.run(`
+            CREATE TABLE IF NOT EXISTS match_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                club_id TEXT DEFAULT 'unjeong',
+                court_number INTEGER,
+                match_type TEXT DEFAULT '자유',
+                team_a_p1 TEXT NOT NULL,
+                team_a_p2 TEXT,
+                team_b_p1 TEXT NOT NULL,
+                team_b_p2 TEXT,
+                score_a INTEGER DEFAULT 0,
+                score_b INTEGER DEFAULT 0,
+                winner_team TEXT,
+                played_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // 5-3) 관리자 커스텀 이벤트 타이틀(반짝이 뱃지) 설정 테이블
+        db.run(`
+            CREATE TABLE IF NOT EXISTS custom_titles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                club_id TEXT DEFAULT 'unjeong',
+                title_name TEXT NOT NULL,
+                metric_type TEXT NOT NULL,
+                target_match_type TEXT DEFAULT 'ALL',
+                min_games INTEGER DEFAULT 5,
+                badge_theme TEXT DEFAULT 'gold',
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `, () => {
+            console.log('✅ [DB 확장 완료] 일일회원, 경기전적, 커스텀타이틀 테이블 준비 완료');
         });
 
         checkAndInsertDefaultData();
@@ -2635,14 +2696,15 @@ io.on('connection', (socket) => {
         });
     });
 
-    // 🔑 일일회원 로그인 처리 소켓 이벤트
+    // 🔑 일일회원 로그인 처리 소켓 이벤트 (DB 자동 저장 및 재방문 연동)
     socket.on('loginGuest', ({ name, phone, payCode, gender, ageGroup, grade }, callback) => {
         if (!payCode || payCode.length !== 6) {
             return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
         }
 
         const currentClubId = socket.clubId || 'unjeong';
-        const guestId = `guest_${Date.now()}`;
+        const cleanName = (name || '').trim();
+        const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
 
         // 🎯 [급수 표기 정리] '(일)' 접미사 없이 순수 급수만 깔끔하게 생성
         let formattedGrade = '일반';
@@ -2654,22 +2716,58 @@ io.on('connection', (socket) => {
             }
         }
 
-        const user = {
-            id: guestId,
-            clubId: currentClubId,
-            username: guestId,
-            name: name,
-            rawName: name,
-            displayName: name,          // 👈 '(일일)' 제거하고 순수 이름으로 통일
-            gender: gender || '-',
-            ageGroup: ageGroup || '-',
-            grade: formattedGrade,       // 👈 C조, B조, 초심 등 순수 급수
-            level: formattedGrade,       // 호환성을 위해 level도 함께 세팅
-            isGuest: true,              // 👈 일일회원 판별 플래그 유지
-            phone: phone
-        };
+        // 1) 기존 daily_guests 테이블에도 오늘 방문 기록 추가 (관리자 호환용)
+        const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        db.run(
+            `INSERT OR REPLACE INTO daily_guests (id, club_id, type, name, phone, gender, ageGroup, grade, visitedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [`guest_${Date.now()}`, currentClubId, '일일회원', cleanName, cleanPhone, gender || '-', ageGroup || '-', formattedGrade, nowStr],
+            () => {}
+        );
 
-        callback({ success: true, user });
+        // 2) 누적 전적 관리용 guest_members 테이블에 저장 (재방문 시 방문횟수 +1 및 고정 ID 유지)
+        const upsertSql = `
+            INSERT INTO guest_members (club_id, name, phone, gender, age_group, grade, visit_count, last_visit)
+            VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(club_id, name, phone) DO UPDATE SET
+                gender = excluded.gender,
+                age_group = excluded.age_group,
+                grade = excluded.grade,
+                visit_count = guest_members.visit_count + 1,
+                last_visit = CURRENT_TIMESTAMP
+        `;
+
+        db.run(upsertSql, [currentClubId, cleanName, cleanPhone, gender || '-', ageGroup || '-', formattedGrade], function(err) {
+            if (err) {
+                console.error('⚠️ 일일회원 DB 저장 오류:', err.message);
+            }
+
+            db.get(
+                `SELECT id, visit_count FROM guest_members WHERE club_id = ? AND name = ? AND phone = ?`,
+                [currentClubId, cleanName, cleanPhone],
+                (selectErr, row) => {
+                    const guestId = (row && row.id) ? `guest_${row.id}` : `guest_${Date.now()}`;
+
+                    const user = {
+                        id: guestId,
+                        clubId: currentClubId,
+                        username: guestId,
+                        name: cleanName,
+                        rawName: cleanName,
+                        displayName: cleanName,
+                        gender: gender || '-',
+                        ageGroup: ageGroup || '-',
+                        grade: formattedGrade,
+                        level: formattedGrade,
+                        isGuest: true,
+                        phone: cleanPhone,
+                        visitCount: row ? row.visit_count : 1
+                    };
+
+                    console.log(`👤 [일일회원 입장/DB저장] 구장:${currentClubId}, 이름:${cleanName}, ID:${guestId}, 누적방문:${user.visitCount}회`);
+                    callback({ success: true, user });
+                }
+            );
+        });
     });
 
     // 🎛️ [관리자] Wi-Fi 제한 ON/OFF 토글 및 구장 IP 등록 이벤트 (클럽별 독립 분리)
@@ -3277,7 +3375,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🏁 [게임 코트 종료] (멀티 테넌트 반영)
+    // 🏁 [게임 코트 종료] (코트 즉시 비우기 + 스코어 입력 모달 호출)
     socket.on('endGameCourt', ({ courtId }) => {
         try {
             const currentClubId = socket.clubId || 'unjeong';
@@ -3286,16 +3384,23 @@ io.on('connection', (socket) => {
 
             const court = clubCourts.find(c => c.id === courtId && c.type === 'game');
             if (court) {
-                // 💡 [추가] 방금 게임을 마친 선수들의 종료 시각 기록
-                if (court.players) {
+                // 💡 코트를 비우기 전에 방금 게임한 선수 명단 백업 (스코어 입력창 전달용)
+                const finishedPlayersRaw = court.players || '';
+                const finishedPlayersList = finishedPlayersRaw
+                    .split(',')
+                    .map(p => p.split('/')[0].trim())
+                    .filter(Boolean);
+
+                // 방금 게임을 마친 선수들의 종료 시각 기록
+                if (finishedPlayersRaw) {
                     if (!club.lastFinishedTimes) club.lastFinishedTimes = {};
                     const now = Date.now();
-                    court.players.split(',').forEach(p => {
-                        const cleanName = p.split('/')[0].trim();
-                        if (cleanName) club.lastFinishedTimes[cleanName] = now;
+                    finishedPlayersList.forEach(cleanName => {
+                        club.lastFinishedTimes[cleanName] = now;
                     });
                 }
 
+                // ⚡ [최우선 처리] 코트 즉시 비우기 (다음 대기팀 즉시 배정 가능)
                 court.isEmpty = true;
                 court.players = '';
                 court.startTime = null;
@@ -3307,13 +3412,24 @@ io.on('connection', (socket) => {
                 if (typeof broadcastState === 'function') {
                     broadcastState(currentClubId);
                 }
+
+                // 🎯 버튼을 누른 기기 화면으로 스코어 입력창 오픈 신호 전송
+                if (finishedPlayersList.length >= 2) {
+                    socket.emit('openScoreModal', {
+                        clubId: currentClubId,
+                        courtId: court.id,
+                        actionType: 'end',
+                        players: finishedPlayersList,
+                        rawPlayers: finishedPlayersRaw.split(',').map(p => p.trim()).filter(Boolean)
+                    });
+                }
             }
         } catch (err) {
             console.error('게임 종료 처리 에러:', err);
         }
     });
 
-    // 🔄 [한게임 더 연장] (멀티 테넌트 반영)
+    // 🔄 [한게임 더 연장] (코트 즉시 비우기 + 대기열 재등록 + 스코어 입력 모달 호출)
     socket.on('extendGameCourt', ({ courtId }) => {
         try {
             const currentClubId = socket.clubId || 'unjeong';
@@ -3326,12 +3442,13 @@ io.on('connection', (socket) => {
             const playersArr = court.players.split(',').map(p => p.trim()).filter(Boolean);
             if (playersArr.length === 0) return;
 
-            // 💡 [추가] 한게임 더 클릭 시에도 방금 게임을 마친 선수들의 종료 시각 기록
+            const finishedPlayersList = playersArr.map(p => p.split('/')[0].trim()).filter(Boolean);
+
+            // 한게임 더 클릭 시에도 방금 게임을 마친 선수들의 종료 시각 기록
             if (!club.lastFinishedTimes) club.lastFinishedTimes = {};
             const now = Date.now();
-            playersArr.forEach(p => {
-                const cleanName = p.split('/')[0].trim();
-                if (cleanName) club.lastFinishedTimes[cleanName] = now;
+            finishedPlayersList.forEach(cleanName => {
+                club.lastFinishedTimes[cleanName] = now;
             });
 
             const newSlot = {
@@ -3344,7 +3461,7 @@ io.on('connection', (socket) => {
                     playersArr[3] || ''
                 ],
                 userIds: [], 
-                penaltyApplied: [false, false, false, false], // 💡 자리별 페널티 꼬리표 초기화
+                penaltyApplied: [false, false, false, false],
                 createdAt: Date.now(),
                 fullAt: null,
                 remainingSeconds: null
@@ -3353,6 +3470,7 @@ io.on('connection', (socket) => {
             if (!club.gameQueue) club.gameQueue = [];
             club.gameQueue.push(newSlot);
 
+            // ⚡ [최우선 처리] 코트 즉시 비우기
             court.isEmpty = true;
             court.players = '';
             court.startTime = null;
@@ -3364,8 +3482,88 @@ io.on('connection', (socket) => {
             if (typeof broadcastState === 'function') {
                 broadcastState(currentClubId);
             }
+
+            // 🎯 버튼을 누른 기기 화면으로 스코어 입력창 오픈 신호 전송
+            if (finishedPlayersList.length >= 2) {
+                socket.emit('openScoreModal', {
+                    clubId: currentClubId,
+                    courtId: court.id,
+                    actionType: 'extend',
+                    players: finishedPlayersList,
+                    rawPlayers: playersArr
+                });
+            }
         } catch (err) {
             console.error('한게임 더 처리 에러:', err);
+        }
+    });
+
+    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행
+    socket.on('saveMatchScore', (data, callback) => {
+        try {
+            const currentClubId = data.clubId || socket.clubId || 'unjeong';
+            const courtNumber = parseInt(data.courtId, 10) || 0;
+            const matchType = data.matchType || '자유';
+            const teamA = Array.isArray(data.teamA) ? data.teamA : [];
+            const teamB = Array.isArray(data.teamB) ? data.teamB : [];
+            const scoreA = parseInt(data.scoreA, 10) || 0;
+            const scoreB = parseInt(data.scoreB, 10) || 0;
+
+            if (teamA.length === 0 || teamB.length === 0) {
+                if (callback) callback({ success: false, message: 'A팀과 B팀 선수를 선택해 주세요.' });
+                return;
+            }
+
+            let winnerTeam = 'DRAW';
+            if (scoreA > scoreB) winnerTeam = 'A';
+            else if (scoreB > scoreA) winnerTeam = 'B';
+
+            // 한국 시간(KST) 기준 현재 일시 기록
+            const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const playedAtStr = nowKr.getFullYear() + '-' +
+                String(nowKr.getMonth() + 1).padStart(2, '0') + '-' +
+                String(nowKr.getDate()).padStart(2, '0') + ' ' +
+                String(nowKr.getHours()).padStart(2, '0') + ':' +
+                String(nowKr.getMinutes()).padStart(2, '0') + ':' +
+                String(nowKr.getSeconds()).padStart(2, '0');
+
+            const insertSql = `
+                INSERT INTO match_records 
+                (club_id, court_number, match_type, team_a_p1, team_a_p2, team_b_p1, team_b_p2, score_a, score_b, winner_team, played_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+
+            db.run(
+                insertSql,
+                [
+                    currentClubId,
+                    courtNumber,
+                    matchType,
+                    teamA[0] || '',
+                    teamA[1] || '',
+                    teamB[0] || '',
+                    teamB[1] || '',
+                    scoreA,
+                    scoreB,
+                    winnerTeam,
+                    playedAtStr
+                ],
+                function(err) {
+                    if (err) {
+                        console.error('❌ 경기 전적 저장 실패:', err.message);
+                        if (callback) callback({ success: false, message: '전적 저장 중 오류가 발생했습니다.' });
+                    } else {
+                        console.log(`🏆 [전적 저장 완료] 구장:${currentClubId}, 종목:${matchType}, ${teamA.join(',')} (${scoreA}) vs ${teamB.join(',')} (${scoreB})`);
+                        if (typeof addNotification === 'function') {
+                            addNotification(`🏆 [전적 기록] ${courtNumber}번 코트 (${matchType}) ${teamA.join('·')} [${scoreA} : ${scoreB}] ${teamB.join('·')}`, currentClubId);
+                        }
+                        if (callback) callback({ success: true, recordId: this.lastID });
+                    }
+                }
+            );
+        } catch (err) {
+            console.error('saveMatchScore 처리 에러:', err);
+            if (callback) callback({ success: false, message: '서버 오류가 발생했습니다.' });
         }
     });
 
