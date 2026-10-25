@@ -1785,19 +1785,33 @@ setInterval(() => {
         const cCourtsData = club.courtsData || (cId === 'unjeong' ? courtsData : []);
 
         const schedules = clubConfig.cleaningSchedules || [];
+        
+        // 💡 현재 시각 기준 10초 뒤의 'HH:MM' 계산 (청소 종료 10초 전 사전 알림용)
+        const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const after10SecKr = new Date(nowKr.getTime() + 10000);
+        const future10SecHHMM = String(after10SecKr.getHours()).padStart(2, '0') + ':' + String(after10SecKr.getMinutes()).padStart(2, '0');
+
         // 💡 빈 스케줄("")은 제외하고 현재 시각에 해당하는 스케줄의 인덱스(0~3)를 탐색
-        // 💡 일반 시간대(10:00~10:05)와 자정을 넘기는 휴장 시간대(22:00~09:00) 모두 정확히 감지
-const activeIdx = schedules.findIndex(s => {
-    if (!s || !s.start || !s.end || s.start === s.end) return false;
-    return s.start < s.end
-        ? (currentHHMM >= s.start && currentHHMM < s.end)
-        : (currentHHMM >= s.start || currentHHMM < s.end);
-});
+        const activeIdx = schedules.findIndex(s => {
+            if (!s || !s.start || !s.end || s.start === s.end) return false;
+            return s.start < s.end
+                ? (currentHHMM >= s.start && currentHHMM < s.end)
+                : (currentHHMM >= s.start || currentHHMM < s.end);
+        });
         const activeSchedule = activeIdx !== -1 ? schedules[activeIdx] : null;
+
+        // 💡 10초 뒤에도 여전히 청소 시간인지 확인 (종료 10초 전 감지용)
+        const activeAfter10SecIdx = schedules.findIndex(s => {
+            if (!s || !s.start || !s.end || s.start === s.end) return false;
+            return s.start < s.end
+                ? (future10SecHHMM >= s.start && future10SecHHMM < s.end)
+                : (future10SecHHMM >= s.start || future10SecHHMM < s.end);
+        });
 
         // 1) 해당 클럽의 청소 시작 시점 감지
         if (activeSchedule && !club.isCleaningTime) {
             club.isCleaningTime = true;
+            club.cleaningEndAlertSent = false; // 💡 종료 10초 전 알림 발송 여부 초기화
             const slotNum = activeSchedule.slot || (activeIdx + 1); // 1 ~ 4번 슬롯 번호
             club.activeCleaningSlot = slotNum; // 💡 종료 시점에도 동일한 슬롯 번호의 멘트를 쓰기 위해 기억
 
@@ -1818,13 +1832,13 @@ const activeIdx = schedules.findIndex(s => {
             // 해당 클럽 룸에 토스트 팝업 전송
             io.to(`club_${cId}`).emit('toastAlert', `🧹 ${startMsg}`);
 
-            // 💡 TV 룸 이름 하이픈(-) / 언더바(_) 모두 호환되도록 동시 전송
+            // 💡 TV 룸 이름 하이픈(-) / 언더바(_) 모두 호환되도록 동시 전송 (2분 = 120000ms 노출)
             const startAlertPayload = {
                 clubId: cId,
                 type: 'start',
                 title: slotNum === 4 ? '🌙 구장 운영 마감 및 휴장 안내' : '🧹 구장 청소 및 코트 정비 시간',
                 message: startMsg,
-                duration: 10000
+                duration: 120000
             };
             io.to(`tv-room_${cId}`).to(`tv-room-${cId}`).emit('tvCleaningAlert', startAlertPayload);
 
@@ -1833,14 +1847,12 @@ const activeIdx = schedules.findIndex(s => {
             }
         }
 
-        // 2) 해당 클럽의 청소 종료 시점 감지
-        if (!activeSchedule && club.isCleaningTime) {
-            club.isCleaningTime = false;
+        // 1-2) 💡 청소 종료 10초 전 시점 감지 (종료 타이머 10초 전에 미리 팝업 및 음성 안내 발송)
+        if (club.isCleaningTime && !club.cleaningEndAlertSent && activeAfter10SecIdx === -1) {
+            club.cleaningEndAlertSent = true;
             const endedSlotNum = club.activeCleaningSlot || 1;
-            club.activeCleaningSlot = null;
-
             const endedScheduleObj = schedules[endedSlotNum - 1] || {};
-            // 💡 방금 끝난 슬롯(1~4)의 커스텀 종료 멘트를 최우선으로 조회
+
             const customEndMsg = (clubConfig[`cleaningEndMsg_${endedSlotNum}`] && clubConfig[`cleaningEndMsg_${endedSlotNum}`].trim()) ||
                                  (endedScheduleObj.endMsg && endedScheduleObj.endMsg.trim()) ||
                                  (clubConfig.cleaningEndMsg && clubConfig.cleaningEndMsg.trim());
@@ -1860,13 +1872,20 @@ const activeIdx = schedules.findIndex(s => {
                 type: 'end',
                 title: '🏸 구장 청소 완료 안내',
                 message: endMsg,
-                duration: 8000
+                duration: 10000 // 종료 시점까지 10초 동안 노출
             };
             io.to(`tv-room_${cId}`).to(`tv-room-${cId}`).emit('tvCleaningAlert', endAlertPayload);
 
             if (typeof addNotification === 'function') {
-                addNotification(`✅ [구장 청소 종료] ${endMsg}`, cId);
+                addNotification(`✅ [구장 청소 종료 안내] ${endMsg}`, cId);
             }
+        }
+
+        // 2) 해당 클럽의 실제 청소 종료 시점 감지 (정각에 청소 상태 해제)
+        if (!activeSchedule && club.isCleaningTime) {
+            club.isCleaningTime = false;
+            club.activeCleaningSlot = null;
+            club.cleaningEndAlertSent = false;
         }
 
         // 3) 청소 진행 중인 경우 해당 클럽의 타이머 동결 처리
@@ -1933,8 +1952,8 @@ const activeIdx = schedules.findIndex(s => {
                     });
                 }
 
-                // 📺 [2단계: 15초 경과 시점] 미입장 시 TV 팝업('entryPopupAlert')과 음성 방송 동시 송출
-                if (elapsed >= 15 && !slot.announced) {
+                // 📺 [2단계: 10초 경과 시점] 미입장 시 TV 팝업('entryPopupAlert')과 음성 방송 동시 송출
+                if (elapsed >= 10 && !slot.announced) {
                     slot.announced = true;
 
                     pushVoiceAnnouncement(cId, {
@@ -2040,8 +2059,8 @@ const activeIdx = schedules.findIndex(s => {
                     });
                 }
 
-                // 📺 [2단계: 15초 경과 시점] 미입장 시 TV 팝업('entryPopupAlert')과 음성 방송 동시 송출
-                if (elapsed >= 15 && !slot.announced) {
+                // 📺 [2단계: 10초 경과 시점] 미입장 시 TV 팝업('entryPopupAlert')과 음성 방송 동시 송출
+                if (elapsed >= 10 && !slot.announced) {
                     slot.announced = true;
 
                     pushVoiceAnnouncement(cId, {
