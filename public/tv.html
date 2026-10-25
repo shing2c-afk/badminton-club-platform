@@ -460,7 +460,7 @@ socket.on('tvPopupAlert', (data) => {
         });
     });
 
-    // 💡 1~9번 및 10번 이후 코트 번호까지 '번' 누락 없이 완벽하게 읽어주는 변환 함수
+   // 💡 1~9번 및 10번 이후 코트 번호까지 '번' 누락 없이 완벽하게 읽어주는 변환 함수
     function getReadableCourtName(courtNum) {
         if (!courtNum) return '';
         const num = parseInt(courtNum, 10);
@@ -479,15 +479,11 @@ socket.on('tvPopupAlert', (data) => {
     }
 
     // 💡 [발음 교정 사전] TTS가 이상하게 발음하는 이름이나 단어를 여기에 추가하면 소리만 자연스럽게 교정됩니다.
-    // (화면 팝업에는 원래 이름 '김진희'가 그대로 나오고, 음성 읽을 때만 '김진히'로 읽습니다)
     const CUSTOM_PRONUNCIATION_DICT = {
         '김진희': '김진히',
         '진희': '진히',
         '박희수': '박히수',
         '이희진': '이히진',
-        // 💡 앞으로 발음이 이상한 단어/이름이 생기면 아래처럼 콤마(,) 찍고 한 줄씩만 추가하세요!
-        // '박희수': '박히수',
-        // '이희진': '이히진',
     };
 
     function playVoiceAnnouncement(text, delaySeconds = 0, announcementId = null) {
