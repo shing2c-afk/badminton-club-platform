@@ -2174,3 +2174,88 @@ window.removeCustomTitle = function(id) {
         }
     });
 };
+
+// =========================================================================
+// 👤 [마이페이지] 사용자 본인 전적 리포트 팝업 기능
+// =========================================================================
+
+window.openMyStats = function() {
+    // 현재 로그인된 사용자 이름 가져오기 (시스템 환경에 맞춰 연동)
+    const myName = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : prompt('조회할 회원 이름을 입력해 주세요:');
+    if (!myName) return;
+
+    const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
+    const period = 'month'; // 기본 이번 달 기준
+
+    socket.emit('getMatchStats', { clubId, period, minGames: 1 }, (res) => {
+        if (!res || !res.success) {
+            alert('전적 정보를 불러오지 못했습니다.');
+            return;
+        }
+
+        // 전체 회원 통계 중에서 내 이름과 일치하는 데이터 찾기
+        const myData = (res.playersStats || []).find(p => p.name === myName);
+        
+        // 내가 포함된 최근 경기 내역 필터링
+        const myMatches = (res.recentMatches || []).filter(r => 
+            r.team_a_p1 === myName || r.team_a_p2 === myName || r.team_b_p1 === myName || r.team_b_p2 === myName
+        );
+
+        // 마이페이지 팝업 생성
+        const existing = document.getElementById('my-stats-modal');
+        if (existing) existing.remove();
+
+        const modalHtml = `
+            <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index:99999; padding:15px; box-sizing:border-box;">
+                <div style="background:#1e293b; color:#fff; width:100%; max-width:420px; border-radius:14px; padding:20px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.6);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:10px; margin-bottom:14px;">
+                        <h3 style="margin:0; font-size:18px; color:#38bdf8;">👤 ${myName} 님의 전적 리포트</h3>
+                        <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#475569; color:#fff; border:none; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+                    </div>
+
+                    ${!myData ? `
+                        <div style="text-align:center; padding:30px; color:#94a3b8;">이번 달에 기록된 경기가 없습니다.</div>
+                    ` : `
+                        <!-- 요약 카드 -->
+                        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:16px; text-align:center;">
+                            <div style="background:#0f172a; padding:10px; border-radius:8px;">
+                                <div style="font-size:11px; color:#94a3b8;">총 출전</div>
+                                <div style="font-size:16px; font-weight:bold; color:#fff;">${myData.games}전</div>
+                            </div>
+                            <div style="background:#0f172a; padding:10px; border-radius:8px;">
+                                <div style="font-size:11px; color:#38bdf8;">승 / 패</div>
+                                <div style="font-size:16px; font-weight:bold; color:#38bdf8;">${myData.wins}승 ${myData.losses}패</div>
+                            </div>
+                            <div style="background:#0f172a; padding:10px; border-radius:8px;">
+                                <div style="font-size:11px; color:#fbbf24;">승률</div>
+                                <div style="font-size:16px; font-weight:bold; color:#fbbf24;">${myData.winRate}%</div>
+                            </div>
+                        </div>
+
+                        <div style="font-size:12px; color:#94a3b8; margin-bottom:6px; text-align:center;">
+                            최다 연승: <strong style="color:#34d399;">${myData.maxStreak}연승</strong> | 득실차: <strong style="color:${myData.pointDiff >= 0 ? '#34d399':'#f87171'};">${myData.pointDiff >= 0 ? '+'+myData.pointDiff : myData.pointDiff}</strong>
+                        </div>
+
+                        <!-- 최근 내 경기 기록 -->
+                        <div style="font-size:13px; font-weight:bold; color:#cbd5e1; margin:14px 0 6px 0;">📜 내 최근 경기 기록</div>
+                        <div style="max-height:180px; overflow-y:auto; background:#0f172a; border-radius:8px; padding:8px; font-size:12px;">
+                            ${myMatches.length === 0 ? '<div style="color:#64748b; text-align:center; padding:10px;">최근 경기 내역이 없습니다.</div>' : myMatches.map(m => {
+                                const isTeamA = m.team_a_p1 === myName || m.team_a_p2 === myName;
+                                const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
+                                const matchColor = myWin ? '#38bdf8' : '#f43f5e';
+                                const matchResTxt = myWin ? '승리' : (m.winner_team === 'DRAW' ? '무승부' : '패배');
+                                return `
+                                    <div style="padding:6px 8px; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="color:#cbd5e1;">${m.match_type} (${m.score_a}:${m.score_b})</span>
+                                        <span style="font-weight:bold; color:${matchColor};">${matchResTxt}</span>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    });
+};
