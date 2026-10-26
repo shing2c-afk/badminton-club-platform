@@ -1917,128 +1917,310 @@ window.submitMatchScore = function(courtId) {
 
 window.currentStatsAdminMode = false;
 
-// 2) 대시보드 모달 열기 (isAdmin이 true이면 타이틀 생성/삭제 노출, false이면 회원 공개용)
-window.openStatsDashboard = function(isAdmin = false) {
-    window.currentStatsAdminMode = !!isAdmin;
-    const existing = document.getElementById('stats-dashboard-modal');
-    if (existing) existing.remove();
+// =========================================================================
+// [랭킹 보드] 클럽 공식 기록실 및 통합 순위표 (메인 화면 디자인 톤앤매너 적용)
+// =========================================================================
+window.openStatsDashboard = function(isAdminMode = false) {
+    const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
+    const period = 'month';
 
-    const now = new Date();
-    const curYear = now.getFullYear();
-    const curMonth = String(now.getMonth() + 1).padStart(2, '0');
-    const currentYM = `${curYear}-${curMonth}`;
+    socket.emit('getMatchStats', { clubId, period, minGames: 1 }, (res) => {
+        if (!res || !res.success) {
+            alert('전적 데이터를 불러오지 못했습니다.');
+            return;
+        }
 
-    const modalHtml = `
-        <div id="stats-dashboard-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:flex; justify-content:center; align-items:flex-start; overflow-y:auto; z-index:99999; padding:20px 10px; box-sizing:border-box;">
-            <div style="background:#0f172a; color:#f8fafc; width:100%; max-width:900px; border-radius:16px; border:1px solid #334155; padding:20px; box-shadow:0 15px 40px rgba(0,0,0,0.7); margin-bottom:40px;">
-                
-                <!-- 상단 헤더 -->
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; padding-bottom:14px; margin-bottom:16px;">
-                    <div>
-                        <h2 style="margin:0; font-size:20px; color:#fbbf24; display:flex; align-items:center; gap:8px;">
-                            🏆 ${isAdmin ? '클럽 전적 통계 & 타이틀 관리 (관리자)' : '명예의 전당 & 실시간 랭킹 보드'}
-                        </h2>
-                        <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">게임 종료 시 기록된 스코어를 바탕으로 실시간 집계됩니다.</p>
-                    </div>
-                    <button onclick="document.getElementById('stats-dashboard-modal').remove()" style="background:#334155; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-weight:bold; cursor:pointer;">✕ 닫기</button>
-                </div>
+        const stats = res.playersStats || [];
+        const recentMatches = res.recentMatches || [];
+        const pairs = res.pairsStats || [];
 
-                <!-- 기간 선택 필터 바 -->
-                <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:#1e293b; padding:12px; border-radius:10px; margin-bottom:18px;">
-                    <span style="font-size:13px; font-weight:bold; color:#cbd5e1;">📅 조회 기간:</span>
-                    <select id="stats-period-select" onchange="window.loadStatsData()" style="padding:8px 12px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; font-size:13px; font-weight:bold;">
-                        <option value="month">이번 달 (${curMonth}월)</option>
-                        <option value="quarter">이번 분기</option>
-                        <option value="all">전체 누적</option>
-                        <option value="${currentYM}">직접 월 선택 (${currentYM})</option>
-                    </select>
-                    <input type="month" id="stats-custom-month" value="${currentYM}" onchange="document.getElementById('stats-period-select').value=this.value; window.loadStatsData();" style="padding:7px 10px; background:#0f172a; color:#38bdf8; border:1px solid #475569; border-radius:6px; font-size:13px;">
+        // 부문별 1위 산출
+        const topWins = [...stats].sort((a, b) => b.wins - a.wins || b.winRate - a.winRate)[0];
+        const qualifiedForRate = stats.filter(p => p.games >= 3);
+        const topRate = qualifiedForRate.length > 0 ? [...qualifiedForRate].sort((a, b) => b.winRate - a.winRate || b.wins - a.wins)[0] : stats[0];
+        const topActivity = [...stats].sort((a, b) => b.games - a.games || b.wins - a.wins)[0];
+
+        const existing = document.getElementById('stats-dashboard-modal');
+        if (existing) existing.remove();
+
+        const modalHtml = `
+            <div id="stats-dashboard-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(5, 8, 15, 0.88); display:flex; justify-content:center; align-items:center; z-index:99999; padding:8px; box-sizing:border-box;">
+                <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:640px; max-height:94vh; border-radius:14px; display:flex; flex-direction:column; border:1.5px solid #2563eb; box-shadow:0 15px 40px rgba(0,0,0,0.85); overflow:hidden;">
                     
-                    <span style="font-size:12px; color:#94a3b8; margin-left:auto;">승률왕 최소 경기수:</span>
-                    <input type="number" id="stats-min-games" value="5" min="1" max="50" onchange="window.loadStatsData()" style="width:55px; padding:6px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; text-align:center;">
-                    <button onclick="window.loadStatsData()" style="padding:8px 14px; background:#0284c7; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:bold; cursor:pointer;">🔄 새로고침</button>
-                </div>
-
-                <!-- [관리자 전용] 새 커스텀 반짝이 타이틀 생성기 -->
-                ${isAdmin ? `
-                <div style="background:#1e293b; border:1px solid #fbbf24; border-radius:12px; padding:14px; margin-bottom:20px;">
-                    <div style="font-size:14px; font-weight:bold; color:#fbbf24; margin-bottom:10px;">✨ 새 반짝이 이벤트 타이틀 만들기 (월별/분기별 특별 어워드)</div>
-                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:8px; margin-bottom:10px;">
-                        <input type="text" id="new-title-name" placeholder="예: 11월 불꽃 스매싱왕" style="padding:8px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; font-size:13px;">
-                        <select id="new-title-metric" style="padding:8px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; font-size:13px;">
-                            <option value="most_wins">🏆 최다 승 (다승)</option>
-                            <option value="win_rate">🎯 최고 승률 (%)</option>
-                            <option value="most_games">🔥 최다 출전 (철인)</option>
-                            <option value="clutch_wins">⚡ 접전 승부사 (2점차 승리)</option>
-                            <option value="max_streak">🚀 최다 연승 기록</option>
-                            <option value="point_diff">📈 최고 득실차</option>
-                            <option value="most_losses">😭 최다 패 (패가망신)</option>
-                        </select>
-                        <select id="new-title-matchtype" style="padding:8px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; font-size:13px;">
-                            <option value="ALL">전 종목 통합</option>
-                            <option value="남복">남성복식 한정</option>
-                            <option value="여복">여성복식 한정</option>
-                            <option value="혼복">혼성복식 한정</option>
-                            <option value="자유복식">자유복식 한정</option>
-                        </select>
-                        <select id="new-title-theme" style="padding:8px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; font-size:13px;">
-                            <option value="gold">🌟 골드 네온 (황금빛)</option>
-                            <option value="fire">🔥 플레임 오라 (불꽃)</option>
-                            <option value="prism">💎 다이아 프리즘 (홀로그램)</option>
-                            <option value="fun">😂 유머/위로 테마 (보라빛)</option>
-                        </select>
-                        <input type="number" id="new-title-mingames" value="3" min="1" placeholder="최소 경기수" title="최소 경기수 기준" style="padding:8px; background:#0f172a; color:#fff; border:1px solid #475569; border-radius:6px; font-size:13px;">
+                    <!-- 상단 헤더 (메인 화면 상단 바 느낌 적용) -->
+                    <div style="padding:15px 18px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h3 style="margin:0; font-size:16px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">클럽 공식 전적 기록실 · 랭킹 보드</h3>
+                            <div style="font-size:11.5px; color:#94a3b8; margin-top:3px;">동호인 급수(초심~S조)·연령·성별 연동 공식 통계 데이터</div>
+                        </div>
+                        <button onclick="document.getElementById('stats-dashboard-modal').remove()" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:7px 14px; font-weight:700; cursor:pointer; font-size:12px;">닫기</button>
                     </div>
-                    <button onclick="window.createNewCustomTitle()" style="width:100%; padding:10px; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:13px; cursor:pointer;">
-                        ➕ 반짝이는 타이틀 생성 및 랭킹보드에 즉시 등록
-                    </button>
-                </div>
-                ` : ''}
 
-                <!-- 1. 반짝이는 타이틀 배지 보드 (기본 5대 + 커스텀 타이틀) -->
-                <h3 style="font-size:15px; color:#38bdf8; margin:0 0 10px 0;">🌟 이달의 타이틀 홀더 (실시간 1위)</h3>
-                <div id="stats-titles-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; margin-bottom:24px;">
-                    <div style="color:#94a3b8; font-size:13px;">데이터를 불러오는 중...</div>
-                </div>
-
-                <!-- 2. 개인별 전적 순위표 & 환상의 짝꿍 -->
-                <div style="display:grid; grid-template-columns:1fr; gap:20px;">
-                    <div>
-                        <h3 style="font-size:15px; color:#38bdf8; margin:0 0 10px 0;">📊 회원별 종합 전적 순위표</h3>
-                        <div style="overflow-x:auto; background:#1e293b; border-radius:10px; border:1px solid #334155;">
-                            <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:center;">
-                                <thead>
-                                    <tr style="background:#0f172a; color:#94a3b8; border-bottom:1px solid #334155;">
-                                        <th style="padding:10px 6px;">순위</th>
-                                        <th style="padding:10px 6px;">회원명</th>
-                                        <th style="padding:10px 6px;">출전</th>
-                                        <th style="padding:10px 6px; color:#38bdf8;">승</th>
-                                        <th style="padding:10px 6px; color:#f43f5e;">패</th>
-                                        <th style="padding:10px 6px; color:#fbbf24;">승률</th>
-                                        <th style="padding:10px 6px;">득실차</th>
-                                        <th style="padding:10px 6px;">최다연승</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="stats-players-tbody">
-                                    <tr><td colspan="8" style="padding:20px; color:#94a3b8;">집계 중...</td></tr>
-                                </tbody>
-                            </table>
+                    <!-- 상단 메인 탭 버튼 (게임 대기 / 난타 대기 버튼 스타일 완벽 적용) -->
+                    <div style="padding:12px 14px 4px 14px; background:#0f1420;">
+                        <div style="display:flex; gap:8px;" id="stats-main-tabs">
+                            <button onclick="window.switchStatsMainTab('tab-ranking', this)" class="stats-tab-btn" style="flex:1; padding:10px 6px; background:linear-gradient(135deg, #ff7b00 0%, #ea580c 100%); color:#ffffff; border:1px solid #f97316; border-radius:8px; font-weight:800; cursor:pointer; font-size:12.5px;">종합 순위표</button>
+                            <button onclick="window.switchStatsMainTab('tab-pairs', this)" class="stats-tab-btn" style="flex:1; padding:10px 6px; background:#151c2c; color:#cbd5e1; border:1px solid #26334d; border-radius:8px; font-weight:700; cursor:pointer; font-size:12.5px;">환상의 짝꿍</button>
+                            <button onclick="window.switchStatsMainTab('tab-matches', this)" class="stats-tab-btn" style="flex:1; padding:10px 6px; background:#151c2c; color:#cbd5e1; border:1px solid #26334d; border-radius:8px; font-weight:700; cursor:pointer; font-size:12.5px;">최근 경기</button>
+                            ${isAdminMode ? `<button onclick="window.switchStatsMainTab('tab-admin', this)" class="stats-tab-btn" style="flex:1; padding:10px 6px; background:#151c2c; color:#f59e0b; border:1px solid #78350f; border-radius:8px; font-weight:700; cursor:pointer; font-size:12.5px;">타이틀 관리</button>` : ''}
                         </div>
                     </div>
 
-                    <!-- 3. 환상의 짝꿍 (복식 파트너 TOP 10) -->
-                    <div>
-                        <h3 style="font-size:15px; color:#34d399; margin:0 0 10px 0;">🤝 환상의 짝꿍 (복식 파트너 다승 TOP 10)</h3>
-                        <div id="stats-pairs-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;"></div>
+                    <!-- 본문 스크롤 영역 -->
+                    <div style="padding:12px 14px 16px 14px; overflow-y:auto; flex:1; font-size:13px;">
+                        
+                        <!-- [탭 1] 종합 순위표 및 급수별 필터 -->
+                        <div id="tab-ranking" style="display:flex; flex-direction:column; gap:12px;">
+                            
+                            <!-- 이달의 부문별 1위 요약 카드 (상단 컬러 포인트 보더 적용) -->
+                            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+                                <div style="background:#151c2c; padding:11px 8px; border-radius:10px; border:1px solid #1e293b; border-top:3px solid #38bdf8; text-align:center;">
+                                    <div style="font-size:11px; color:#38bdf8; font-weight:700; margin-bottom:4px;">최다 승리 1위</div>
+                                    <div style="font-size:13.5px; font-weight:800; color:#ffffff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${topWins ? topWins.name : '집계 전'}</div>
+                                    <div style="font-size:11.5px; color:#94a3b8; margin-top:3px; font-weight:600;">${topWins ? `<span style="color:#ffffff;">${topWins.wins}승</span> (${topWins.games}전)` : '0승'}</div>
+                                </div>
+                                <div style="background:#151c2c; padding:11px 8px; border-radius:10px; border:1px solid #1e293b; border-top:3px solid #f59e0b; text-align:center;">
+                                    <div style="font-size:11px; color:#f59e0b; font-weight:700; margin-bottom:4px;">최고 승률 1위</div>
+                                    <div style="font-size:13.5px; font-weight:800; color:#ffffff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${topRate ? topRate.name : '집계 전'}</div>
+                                    <div style="font-size:11.5px; color:#94a3b8; margin-top:3px; font-weight:600;">${topRate ? `<span style="color:#f59e0b;">${topRate.winRate}%</span> (${topRate.wins}승)` : '0%'}</div>
+                                </div>
+                                <div style="background:#151c2c; padding:11px 8px; border-radius:10px; border:1px solid #1e293b; border-top:3px solid #10b981; text-align:center;">
+                                    <div style="font-size:11px; color:#34d399; font-weight:700; margin-bottom:4px;">최다 출전 1위</div>
+                                    <div style="font-size:13.5px; font-weight:800; color:#ffffff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${topActivity ? topActivity.name : '집계 전'}</div>
+                                    <div style="font-size:11.5px; color:#94a3b8; margin-top:3px; font-weight:600;">${topActivity ? `<span style="color:#34d399;">${topActivity.games}경기</span> 출전` : '0전'}</div>
+                                </div>
+                            </div>
+
+                            <!-- 동호인 급수별 필터 바 (전체 | S조 | A조 | B조 | C조 | D조 | 초심) -->
+                            <div style="background:#151c2c; padding:8px 10px; border-radius:10px; border:1px solid #1e293b; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                                <span style="font-size:11.5px; font-weight:700; color:#94a3b8;">급수별 순위 보기</span>
+                                <div style="display:flex; gap:5px; overflow-x:auto;" id="grade-filter-buttons">
+                                    <button onclick="window.filterRankingByGrade('ALL', this)" class="grade-btn" style="padding:5px 11px; background:#2563eb; color:#ffffff; border:1px solid #3b82f6; border-radius:6px; font-size:11.5px; font-weight:800; cursor:pointer; white-space:nowrap;">전체</button>
+                                    <button onclick="window.filterRankingByGrade('S', this)" class="grade-btn" style="padding:5px 10px; background:#0f1420; color:#cbd5e1; border:1px solid #26334d; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;">S조</button>
+                                    <button onclick="window.filterRankingByGrade('A', this)" class="grade-btn" style="padding:5px 10px; background:#0f1420; color:#cbd5e1; border:1px solid #26334d; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;">A조</button>
+                                    <button onclick="window.filterRankingByGrade('B', this)" class="grade-btn" style="padding:5px 10px; background:#0f1420; color:#cbd5e1; border:1px solid #26334d; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;">B조</button>
+                                    <button onclick="window.filterRankingByGrade('C', this)" class="grade-btn" style="padding:5px 10px; background:#0f1420; color:#cbd5e1; border:1px solid #26334d; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;">C조</button>
+                                    <button onclick="window.filterRankingByGrade('D', this)" class="grade-btn" style="padding:5px 10px; background:#0f1420; color:#cbd5e1; border:1px solid #26334d; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;">D조</button>
+                                    <button onclick="window.filterRankingByGrade('초심', this)" class="grade-btn" style="padding:5px 10px; background:#0f1420; color:#cbd5e1; border:1px solid #26334d; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;">초심</button>
+                                </div>
+                            </div>
+
+                            <!-- 종합 순위표 테이블 (1순위 코트 테두리 감성 적용) -->
+                            <div style="background:#151c2c; border-radius:10px; border:1.5px solid #1e293b; overflow:hidden;">
+                                <!-- 테이블 헤더 -->
+                                <div style="display:grid; grid-template-columns:38px 1fr 44px 62px 52px 48px 48px; background:#1a2438; padding:10px 8px; font-size:11.5px; font-weight:700; color:#38bdf8; text-align:center; border-bottom:1px solid #26334d;">
+                                    <div>순위</div>
+                                    <div style="text-align:left; padding-left:6px;">선수 정보 (성별/연령/급수)</div>
+                                    <div>출전</div>
+                                    <div>승 / 패</div>
+                                    <div>승률</div>
+                                    <div>득실</div>
+                                    <div>연승</div>
+                                </div>
+
+                                <!-- 테이블 바디 -->
+                                <div id="ranking-table-body" style="max-height:290px; overflow-y:auto;">
+                                    ${stats.length === 0 ? `
+                                        <div style="text-align:center; padding:40px 15px; color:#94a3b8; font-size:13px;">
+                                            <div style="font-weight:700; color:#cbd5e1; margin-bottom:4px;">현재 등록된 경기 기록이 없습니다.</div>
+                                            <div style="font-size:11.5px; color:#64748b;">코트에서 경기를 마치고 스코어를 입력하면 실시간 순위가 집계됩니다.</div>
+                                        </div>
+                                    ` : stats.map((p, idx) => {
+                                        const genderStr = p.gender ? p.gender[0] : '';
+                                        const ageStr = p.ageGroup ? `${p.ageGroup}대` : '';
+                                        const gradeStr = (p.grade || '').trim();
+                                        const subProfile = [genderStr, ageStr].filter(Boolean).join('/');
+
+                                        // 1~3위 순위 배지 스타일
+                                        const rankBg = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : '#1e293b';
+                                        const rankColor = idx < 3 ? '#0f1420' : '#cbd5e1';
+
+                                        return `
+                                            <div class="ranking-row" data-grade="${gradeStr}" style="display:grid; grid-template-columns:38px 1fr 44px 62px 52px 48px 48px; padding:10px 8px; align-items:center; text-align:center; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
+                                                <div>
+                                                    <span class="rank-num-badge" style="display:inline-block; width:22px; height:22px; line-height:22px; border-radius:5px; background:${rankBg}; color:${rankColor}; font-weight:800; font-size:11.5px;">${idx + 1}</span>
+                                                </div>
+                                                <div style="text-align:left; padding-left:6px; display:flex; align-items:center; gap:5px; overflow:hidden; white-space:nowrap;">
+                                                    <span style="font-weight:700; color:#ffffff; font-size:13px;">${p.name}</span>
+                                                    ${subProfile ? `<span style="font-size:11px; color:#94a3b8;">${subProfile}</span>` : ''}
+                                                    ${gradeStr ? `<span style="background:#2563eb; color:#ffffff; font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:4px;">${gradeStr.includes('조') || gradeStr === '초심' ? gradeStr : gradeStr + '조'}</span>` : ''}
+                                                </div>
+                                                <div style="color:#e2e8f0; font-weight:600;">${p.games}</div>
+                                                <div style="font-weight:700;"><span style="color:#38bdf8;">${p.wins}</span><span style="color:#64748b; margin:0 2px;">/</span><span style="color:#f43f5e;">${p.losses}</span></div>
+                                                <div style="font-weight:800; color:#f59e0b;">${p.winRate}%</div>
+                                                <div style="font-weight:700; color:${p.pointDiff >= 0 ? '#34d399' : '#f43f5e'};">${p.pointDiff >= 0 ? '+' + p.pointDiff : p.pointDiff}</div>
+                                                <div style="color:#cbd5e1; font-weight:600;">${p.maxStreak}</div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- [탭 2] 환상의 짝꿍 (복식 파트너 다승/승률 순위) -->
+                        <div id="tab-pairs" style="display:none;">
+                            <div style="background:#151c2c; border-left:4px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:12.5px; font-weight:700; color:#f8fafc;">복식 파트너 호흡 및 다승 순위 (환상의 짝꿍)</span>
+                                <span style="font-size:11px; color:#94a3b8;">복식 경기 결과 자동 합산</span>
+                            </div>
+                            <div style="background:#151c2c; border-radius:10px; border:1.5px solid #1e293b; overflow:hidden;">
+                                <div style="display:grid; grid-template-columns:42px 1fr 70px 80px 65px; background:#1a2438; padding:10px 10px; font-size:11.5px; font-weight:700; color:#38bdf8; text-align:center; border-bottom:1px solid #26334d;">
+                                    <div>순위</div>
+                                    <div style="text-align:left; padding-left:8px;">복식 파트너 조합</div>
+                                    <div>합작 출전</div>
+                                    <div>승 / 패</div>
+                                    <div>승률</div>
+                                </div>
+                                <div style="max-height:330px; overflow-y:auto;">
+                                    ${pairs.length === 0 ? `
+                                        <div style="text-align:center; padding:40px 15px; color:#94a3b8; font-size:13px;">기록된 복식 파트너 전적이 없습니다.</div>
+                                    ` : pairs.map((pair, idx) => {
+                                        const totalGames = (pair.wins || 0) + (pair.losses || 0);
+                                        return `
+                                            <div style="display:grid; grid-template-columns:42px 1fr 70px 80px 65px; padding:11px 10px; align-items:center; text-align:center; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
+                                                <div style="font-weight:800; color:${idx === 0 ? '#f59e0b' : idx === 1 ? '#cbd5e1' : idx === 2 ? '#b45309' : '#64748b'};">${idx + 1}위</div>
+                                                <div style="text-align:left; font-weight:700; color:#ffffff; padding-left:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                                    ${pair.player1} <span style="color:#f59e0b; margin:0 4px;">·</span> ${pair.player2}
+                                                </div>
+                                                <div style="color:#cbd5e1; font-weight:600;">${totalGames}전</div>
+                                                <div style="font-weight:700;"><span style="color:#38bdf8;">${pair.wins}승</span> <span style="color:#f43f5e;">${pair.losses}패</span></div>
+                                                <div style="font-weight:800; color:#f59e0b;">${pair.winRate}%</div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- [탭 3] 최근 경기 기록 -->
+                        <div id="tab-matches" style="display:none;">
+                            <div style="background:#151c2c; border-left:4px solid #38bdf8; padding:10px 14px; border-radius:6px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:12.5px; font-weight:700; color:#f8fafc;">최근 완료된 공식 경기 결과</span>
+                                <span style="font-size:11px; color:#94a3b8;">최신순 정렬</span>
+                            </div>
+                            <div style="display:flex; flex-direction:column; gap:8px; max-height:340px; overflow-y:auto;">
+                                ${recentMatches.length === 0 ? `
+                                    <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:40px 15px; color:#94a3b8; font-size:13px;">최근 완료된 경기 기록이 없습니다.</div>
+                                ` : recentMatches.map(m => {
+                                    const isAWin = m.winner_team === 'A';
+                                    return `
+                                        <div style="background:#151c2c; padding:12px 14px; border-radius:10px; border:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
+                                            <div style="display:flex; flex-direction:column; gap:4px;">
+                                                <div style="display:flex; align-items:center; gap:6px;">
+                                                    <span style="background:#1e293b; color:#38bdf8; font-size:10.5px; font-weight:700; padding:2px 6px; border-radius:4px;">${m.match_type || '복식'}</span>
+                                                    <span style="font-size:12.5px; font-weight:700; color:${isAWin ? '#ffffff' : '#94a3b8'};">${m.team_a_p1} · ${m.team_a_p2 || ''}</span>
+                                                    <span style="font-size:11px; color:#64748b; font-weight:700;">VS</span>
+                                                    <span style="font-size:12.5px; font-weight:700; color:${!isAWin ? '#ffffff' : '#94a3b8'};">${m.team_b_p1} · ${m.team_b_p2 || ''}</span>
+                                                </div>
+                                            </div>
+                                            <div style="display:flex; align-items:center; gap:10px;">
+                                                <div style="font-weight:800; color:#ffffff; font-size:14px; background:#0f1420; padding:4px 10px; border-radius:6px; border:1px solid #1e293b;">
+                                                    <span style="color:${isAWin ? '#38bdf8' : '#cbd5e1'};">${m.score_a}</span> : <span style="color:${!isAWin ? '#38bdf8' : '#cbd5e1'};">${m.score_b}</span>
+                                                </div>
+                                                <span style="background:${isAWin ? '#2563eb' : '#7c3aed'}; color:#ffffff; font-size:11px; font-weight:800; padding:4px 8px; border-radius:5px;">
+                                                    ${isAWin ? 'A팀 승' : 'B팀 승'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- [탭 4] 관리자 전용 타이틀 관리 -->
+                        ${isAdminMode ? `
+                            <div id="tab-admin" style="display:none;">
+                                <div style="background:#151c2c; border-left:4px solid #f59e0b; padding:10px 14px; border-radius:6px; margin-bottom:12px;">
+                                    <div style="font-size:13px; font-weight:800; color:#f59e0b;">회원 특별 타이틀 부여 및 관리</div>
+                                    <div style="font-size:11.5px; color:#94a3b8; margin-top:2px;">다승왕, 승률왕 등 우수 활동 회원에게 대기판 전용 칭호를 부여합니다.</div>
+                                </div>
+                                <div style="background:#151c2c; padding:16px; border-radius:10px; border:1px solid #26334d; display:flex; flex-direction:column; gap:10px;">
+                                    <div>
+                                        <label style="display:block; font-size:11.5px; font-weight:700; color:#cbd5e1; margin-bottom:5px;">대상 회원 이름</label>
+                                        <input type="text" id="target-player-name" placeholder="예: 홍길동" style="width:100%; box-sizing:border-box; background:#0f1420; border:1px solid #334155; color:#ffffff; padding:10px 12px; border-radius:8px; font-size:13px;">
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:11.5px; font-weight:700; color:#cbd5e1; margin-bottom:5px;">타이틀 배지 스타일</label>
+                                        <select id="target-title-grade" style="width:100%; box-sizing:border-box; background:#0f1420; border:1px solid #334155; color:#ffffff; padding:10px 12px; border-radius:8px; font-size:13px;">
+                                            <option value="gold">골드 배지 (최우수 타이틀)</option>
+                                            <option value="fire">레드 배지 (연승/다승 타이틀)</option>
+                                            <option value="prism">블루 배지 (승률/파트너 타이틀)</option>
+                                            <option value="fun">퍼플 배지 (특별 이벤트 타이틀)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; font-size:11.5px; font-weight:700; color:#cbd5e1; margin-bottom:5px;">타이틀 명칭 입력</label>
+                                        <input type="text" id="target-title-text" placeholder="예: 10월 다승 1위" style="width:100%; box-sizing:border-box; background:#0f1420; border:1px solid #334155; color:#ffffff; padding:10px 12px; border-radius:8px; font-size:13px;">
+                                    </div>
+                                    <button type="button" onclick="window.saveCustomTitle()" style="background:linear-gradient(135deg, #ff7b00 0%, #ea580c 100%); color:#ffffff; border:none; padding:12px; border-radius:8px; font-weight:800; cursor:pointer; font-size:13.5px; margin-top:4px;">타이틀 등록 및 저장</button>
+                                </div>
+                            </div>
+                        ` : ''}
+
                     </div>
                 </div>
-
             </div>
-        </div>
-    `;
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    });
+};
+// 💡 상단 메인 탭 전환 함수 (오렌지 활성화 버튼 스타일 자동 전환)
+window.switchStatsMainTab = function(targetTabId, clickedBtn) {
+    ['tab-ranking', 'tab-pairs', 'tab-matches', 'tab-admin'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.display = (id === targetTabId) ? (id === 'tab-ranking' ? 'flex' : 'block') : 'none';
+        }
+    });
 
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    window.loadStatsData();
+    const buttons = document.querySelectorAll('#stats-main-tabs .stats-tab-btn');
+    buttons.forEach(btn => {
+        btn.style.background = '#151c2c';
+        btn.style.color = '#cbd5e1';
+        btn.style.border = '1px solid #26334d';
+        btn.style.fontWeight = '700';
+    });
+
+    if (clickedBtn) {
+        clickedBtn.style.background = 'linear-gradient(135deg, #ff7b00 0%, #ea580c 100%)';
+        clickedBtn.style.color = '#ffffff';
+        clickedBtn.style.border = '1px solid #f97316';
+        clickedBtn.style.fontWeight = '800';
+    }
+};
+
+// 💡 급수별(전체, S, A, B, C, D, 초심) 필터링 및 순위 번호 재정렬 함수
+window.filterRankingByGrade = function(selectedGrade, btnElement) {
+    // 1. 급수 버튼 활성화 색상 변경 (블루 포인트)
+    const buttons = document.querySelectorAll('#grade-filter-buttons .grade-btn');
+    buttons.forEach(btn => {
+        btn.style.background = '#0f1420';
+        btn.style.color = '#cbd5e1';
+        btn.style.border = '1px solid #26334d';
+        btn.style.fontWeight = '600';
+    });
+    if (btnElement) {
+        btnElement.style.background = '#2563eb';
+        btnElement.style.color = '#ffffff';
+        btnElement.style.border = '1px solid #3b82f6';
+        btnElement.style.fontWeight = '800';
+    }
+
+    // 2. 해당 급수 행 필터링 ('C'와 'C조' 모두 유연하게 매칭) 및 순위 번호 재부여
+    const rows = document.querySelectorAll('.ranking-row');
+    const target = selectedGrade.trim().toUpperCase().replace('조', '');
+    let visibleRank = 1;
+
+    rows.forEach(row => {
+        const rawGrade = (row.getAttribute('data-grade') || '').trim().toUpperCase().replace('조', '');
+        if (target === 'ALL' || rawGrade === target) {
+            row.style.display = 'grid';
+            const badge = row.querySelector('.rank-num-badge');
+            if (badge) badge.textContent = visibleRank++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
 };
 
 // 3) 서버에서 통계 데이터 가져와서 렌더링
@@ -2164,10 +2346,9 @@ window.removeCustomTitle = function(id) {
 };
 
 // =========================================================================
-// 👤 [마이페이지] 로그인한 사용자 본인 전적 리포트 팝업 기능
+// [전적 보기] 개인 상세 전적 리포트 팝업 (메인 화면 디자인 톤앤매너 적용)
 // =========================================================================
 window.openMyStats = function() {
-    // 1순위: 전역 currentUser 변수 / 2순위: localStorage / 3순위: 상단 화면 표시 이름('신혜인님' -> '신혜인')
     let myName = '';
     if (typeof currentUser !== 'undefined' && currentUser && currentUser.name) {
         myName = currentUser.name;
@@ -2184,7 +2365,7 @@ window.openMyStats = function() {
     if (!myName) return;
 
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
-    const period = 'month'; // 기본 이번 달 기준
+    const period = 'month';
 
     socket.emit('getMatchStats', { clubId, period, minGames: 1 }, (res) => {
         if (!res || !res.success) {
@@ -2200,52 +2381,88 @@ window.openMyStats = function() {
         const existing = document.getElementById('my-stats-modal');
         if (existing) existing.remove();
 
+        // 회원 프로필(성별/연령/급수) 조합
+        const genderStr = myData && myData.gender ? myData.gender[0] : '';
+        const ageStr = myData && myData.ageGroup ? `${myData.ageGroup}대` : '';
+        const gradeStr = myData && myData.grade ? myData.grade : '';
+        const profileText = [genderStr, ageStr, gradeStr].filter(Boolean).join(' / ');
+
         const modalHtml = `
-            <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index:99999; padding:15px; box-sizing:border-box;">
-                <div style="background:#1e293b; color:#fff; width:100%; max-width:420px; border-radius:14px; padding:20px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.6);">
-                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:10px; margin-bottom:14px;">
-                        <h3 style="margin:0; font-size:18px; color:#38bdf8;">👤 ${myName} 님의 이번 달 전적</h3>
-                        <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#475569; color:#fff; border:none; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+            <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(5, 8, 15, 0.88); display:flex; justify-content:center; align-items:center; z-index:99999; padding:12px; box-sizing:border-box;">
+                <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:480px; border-radius:14px; border:1.5px solid #2563eb; box-shadow:0 15px 35px rgba(0,0,0,0.8); overflow:hidden;">
+                    
+                    <!-- 팝업 헤더 -->
+                    <div style="padding:16px 20px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <h3 style="margin:0; font-size:16px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">${myName} 회원 전적 리포트</h3>
+                                ${profileText ? `<span style="background:#1e293b; color:#38bdf8; font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; border:1px solid #334155;">${profileText}</span>` : ''}
+                            </div>
+                            <div style="font-size:11.5px; color:#94a3b8; margin-top:4px;">이번 달 클럽 공식 경기 기록 요약</div>
+                        </div>
+                        <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:8px; padding:6px 12px; font-weight:700; cursor:pointer; font-size:12px;">닫기</button>
                     </div>
 
-                    ${!myData ? `
-                        <div style="text-align:center; padding:30px 10px; color:#94a3b8; font-size:14px;">이번 달에 기록된 경기 전적이 아직 없습니다.<br><span style="font-size:12px; color:#64748b;">게임 종료 시 스코어를 입력하면 즉시 집계됩니다!</span></div>
-                    ` : `
-                        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:16px; text-align:center;">
-                            <div style="background:#0f172a; padding:10px; border-radius:8px;">
-                                <div style="font-size:11px; color:#94a3b8;">총 출전</div>
-                                <div style="font-size:16px; font-weight:bold; color:#fff;">${myData.games}전</div>
+                    <div style="padding:18px;">
+                        ${!myData ? `
+                            <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:35px 15px;">
+                                <div style="color:#e2e8f0; font-size:14px; font-weight:700; margin-bottom:6px;">이번 달에 기록된 경기 전적이 없습니다.</div>
+                                <div style="font-size:12px; color:#64748b;">게임 종료 후 스코어를 등록하면 실시간으로 전적이 반영됩니다.</div>
                             </div>
-                            <div style="background:#0f172a; padding:10px; border-radius:8px;">
-                                <div style="font-size:11px; color:#38bdf8;">승 / 패</div>
-                                <div style="font-size:16px; font-weight:bold; color:#38bdf8;">${myData.wins}승 ${myData.losses}패</div>
+                        ` : `
+                            <!-- 상단 4분할 핵심 지표 (메인 화면 접속자 현황판 스타일) -->
+                            <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; padding:14px 8px; display:grid; grid-template-columns:repeat(4, 1fr); text-align:center; margin-bottom:14px;">
+                                <div style="border-right:1px solid #1e293b;">
+                                    <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">총 출전</div>
+                                    <div style="font-size:16px; font-weight:800; color:#ffffff;">${myData.games}<span style="font-size:12px; font-weight:600; margin-left:1px;">전</span></div>
+                                </div>
+                                <div style="border-right:1px solid #1e293b;">
+                                    <div style="font-size:11px; color:#34d399; margin-bottom:4px;">승 / 패</div>
+                                    <div style="font-size:15px; font-weight:800; color:#34d399;">${myData.wins}승 <span style="color:#f43f5e;">${myData.losses}패</span></div>
+                                </div>
+                                <div style="border-right:1px solid #1e293b;">
+                                    <div style="font-size:11px; color:#f59e0b; margin-bottom:4px;">승률</div>
+                                    <div style="font-size:16px; font-weight:800; color:#f59e0b;">${myData.winRate}%</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:11px; color:#38bdf8; margin-bottom:4px;">최다 연승</div>
+                                    <div style="font-size:16px; font-weight:800; color:#38bdf8;">${myData.maxStreak}<span style="font-size:12px; font-weight:600; margin-left:1px;">연승</span></div>
+                                </div>
                             </div>
-                            <div style="background:#0f172a; padding:10px; border-radius:8px;">
-                                <div style="font-size:11px; color:#fbbf24;">승률</div>
-                                <div style="font-size:16px; font-weight:bold; color:#fbbf24;">${myData.winRate}%</div>
-                            </div>
-                        </div>
 
-                        <div style="font-size:12px; color:#94a3b8; margin-bottom:6px; text-align:center;">
-                            최다 연승: <strong style="color:#34d399;">${myData.maxStreak}연승</strong> &nbsp;|&nbsp; 득실차: <strong style="color:${myData.pointDiff >= 0 ? '#34d399':'#f87171'};">${myData.pointDiff >= 0 ? '+'+myData.pointDiff : myData.pointDiff}</strong>
-                        </div>
+                            <!-- 득실 마진 배너 -->
+                            <div style="background:#151c2c; border-left:4px solid #7c3aed; border-radius:6px; padding:10px 14px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; font-size:12.5px;">
+                                <span style="color:#cbd5e1; font-weight:600;">누적 득실점 마진 (득실차)</span>
+                                <strong style="font-size:14px; color:${myData.pointDiff >= 0 ? '#34d399' : '#f43f5e'};">${myData.pointDiff >= 0 ? '+' + myData.pointDiff : myData.pointDiff}점</strong>
+                            </div>
 
-                        <div style="font-size:13px; font-weight:bold; color:#cbd5e1; margin:14px 0 6px 0;">📜 최근 내 경기 기록</div>
-                        <div style="max-height:180px; overflow-y:auto; background:#0f172a; border-radius:8px; padding:8px; font-size:12px;">
-                            ${myMatches.length === 0 ? '<div style="color:#64748b; text-align:center; padding:10px;">최근 경기 내역이 없습니다.</div>' : myMatches.map(m => {
-                                const isTeamA = m.team_a_p1 === myName || m.team_a_p2 === myName;
-                                const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
-                                const matchColor = myWin ? '#38bdf8' : '#f43f5e';
-                                const matchResTxt = myWin ? '승리' : (m.winner_team === 'DRAW' ? '무승부' : '패배');
-                                return `
-                                    <div style="padding:6px 8px; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
-                                        <span style="color:#cbd5e1;">${m.match_type} (${m.score_a}:${m.score_b})</span>
-                                        <span style="font-weight:bold; color:${matchColor};">${matchResTxt}</span>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    `}
+                            <!-- 최근 출전 경기 내역 -->
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-size:13px; font-weight:700; color:#38bdf8;">최근 출전 경기 기록</span>
+                                <span style="font-size:11px; color:#64748b;">최근 ${myMatches.length}경기</span>
+                            </div>
+                            <div style="max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+                                ${myMatches.length === 0 ? '<div style="background:#151c2c; color:#64748b; text-align:center; padding:16px; border-radius:8px; font-size:12px;">최근 경기 내역이 없습니다.</div>' : myMatches.map(m => {
+                                    const isTeamA = m.team_a_p1 === myName || m.team_a_p2 === myName;
+                                    const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
+                                    const badgeBg = myWin ? '#2563eb' : (m.winner_team === 'DRAW' ? '#475569' : '#e11d48');
+                                    const resTxt = myWin ? '승리' : (m.winner_team === 'DRAW' ? '무승부' : '패배');
+                                    return `
+                                        <div style="background:#151c2c; padding:10px 12px; border-radius:8px; border:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+                                            <div style="color:#e2e8f0; font-weight:600;">
+                                                <span style="color:#94a3b8; font-size:11px; margin-right:6px;">[${m.match_type || '복식'}]</span>
+                                                ${m.team_a_p1}·${m.team_a_p2 || ''} <span style="color:#64748b; margin:0 4px;">vs</span> ${m.team_b_p1}·${m.team_b_p2 || ''}
+                                            </div>
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <strong style="color:#ffffff; font-size:13px;">${m.score_a} : ${m.score_b}</strong>
+                                                <span style="background:${badgeBg}; color:#ffffff; font-weight:700; font-size:11px; padding:3px 7px; border-radius:4px;">${resTxt}</span>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `}
+                    </div>
                 </div>
             </div>
         `;

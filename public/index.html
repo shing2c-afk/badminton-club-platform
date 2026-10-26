@@ -505,71 +505,72 @@ body, button, input, select, textarea {
                 <div id="court-status-list"></div>
             </div>
 
-<!-- 🏆 하단 메인 유틸리티 메뉴 (내 전적 보기 & 랭킹 보드) -->
+<!-- 🏆 하단 메인 유틸리티 메뉴 (전적 보기 & 랭킹 보드) -->
 <div style="
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 12px;
-    margin: 35px 0 20px;
-    flex-wrap: wrap;
+    gap: 8px;
+    margin: 25px 0 15px;
+    padding: 0 16px;
+    box-sizing: border-box;
 ">
-    <!-- 👤 내 전적 보기 버튼 -->
+    <!-- 전적 보기 버튼 (차분하고 은은한 블루 톤, 사이즈 슬림화) -->
     <a href="javascript:void(0);" onclick="window.openMyStats()" style="
+        flex: 1;
+        max-width: 155px;
         display: inline-flex;
+        justify-content: center;
         align-items: center;
-        gap: 6px;
-        padding: 8px 16px;
-        background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-        color: #ffffff;
-        font-weight: 700;
+        padding: 10px 14px;
+        background: #1e293b;
+        color: #38bdf8;
+        font-weight: 600;
         font-size: 13px;
         text-decoration: none;
-        border-radius: 24px;
-        border: 1px solid rgba(56, 189, 248, 0.4);
-        box-shadow: 0 3px 12px rgba(2, 132, 199, 0.35);
-        transition: transform 0.2s;
-    " onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
-        <span>👤</span> 내 전적 보기
+        border-radius: 6px;
+        border: 1px solid #334155;
+        transition: background 0.2s;
+    " onmouseover="this.style.background='#273548';" onmouseout="this.style.background='#1e293b';">
+        전적 보기
     </a>
 
-    <!-- 🏆 랭킹 보드 버튼 -->
+    <!-- 랭킹 보드 버튼 (차분하고 은은한 골드/앰버 톤, 사이즈 슬림화) -->
     <a href="javascript:void(0);" onclick="window.openStatsDashboard(false)" style="
+        flex: 1;
+        max-width: 155px;
         display: inline-flex;
+        justify-content: center;
         align-items: center;
-        gap: 6px;
-        padding: 8px 16px;
-        background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-        color: #ffffff;
-        font-weight: 700;
+        padding: 10px 14px;
+        background: #23221e;
+        color: #fbbf24;
+        font-weight: 600;
         font-size: 13px;
         text-decoration: none;
-        border-radius: 24px;
-        border: 1px solid rgba(251, 191, 36, 0.4);
-        box-shadow: 0 3px 12px rgba(217, 119, 6, 0.35);
-        transition: transform 0.2s;
-    " onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
-        <span>🏆</span> 랭킹 보드
+        border-radius: 6px;
+        border: 1px solid #3d3728;
+        transition: background 0.2s;
+    " onmouseover="this.style.background='#2e2c25';" onmouseout="this.style.background='#23221e';">
+        랭킹 보드
     </a>
 </div>
 
-<!-- ⚙️ 관리자 모드 접속 링크 (일반 회원에게 눈에 띄지 않도록 아주 작고 은은하게 하단 구석 배치) -->
+<!-- 관리자 모드 접속 링크 -->
 <div style="
     text-align: center;
-    margin-bottom: 30px;
+    margin-bottom: 25px;
     font-size: 11px;
 ">
     <span onclick="accessAdmin()" style="
         cursor: pointer;
-        color: #334155;
+        color: #475569;
         transition: color 0.2s;
         padding: 4px;
-    " onmouseover="this.style.color='#64748b';" onmouseout="this.style.color='#334155';" title="관리자 모드 접속">
-        ⚙️ 관리자
+    " onmouseover="this.style.color='#94a3b8';" onmouseout="this.style.color='#475569';" title="관리자 모드">
+        관리자
     </span>
 </div>
-        </div>
-    </div>
     
 <!-- 정회원 가입 신청 모달 팝업 창 -->
 <div class="modal-overlay" id="register-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 2147483647; align-items: center; justify-content: center;">
@@ -736,16 +737,6 @@ body, button, input, select, textarea {
     });
   }
 </script>
-
-<!-- [이전 하단 배지 - 상단 전광판으로 통합되어 비활성화]
-<div id="online-badge-container">
-    <div id="online-badge" class="modern-badge visitor-badge">
-        <span class="badge-item">클럽 <strong id="club-count">0</strong>명</span>
-        <span class="badge-divider">|</span>
-        <span class="badge-item">접속 <strong id="online-count">0</strong>명</span>
-    </div>
-</div>
--->
 
 <!-- 2. 오른쪽 하단 모서리에 위치할 앱 공유 버튼 -->
 <div id="share-btn-container">
