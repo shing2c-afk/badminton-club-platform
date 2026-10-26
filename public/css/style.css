@@ -287,6 +287,7 @@ body.gym-wifi-active .online-status-badge {
 .login-card .highlight-neon {
   background: linear-gradient(135deg, #00f2fe 0%, #38ef7d 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 0 12px rgba(0, 242, 254, 0.45));
 }

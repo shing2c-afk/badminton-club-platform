@@ -1913,18 +1913,6 @@ window.submitMatchScore = function(courtId) {
         .title-card-fun { background: linear-gradient(135deg, #2e1065 0%, #4a044e 100%); border: 2px solid #a855f7; animation: funBounce 2.5s infinite ease-in-out; }
     `;
     document.head.appendChild(style);
-
-    // 회원 공개용 플로팅 랭킹 버튼 자동 부착 (TV 화면 제외)
-    window.addEventListener('DOMContentLoaded', () => {
-        if (window.location.pathname.includes('tv')) return;
-        if (document.getElementById('floating-ranking-btn')) return;
-        const floatBtn = document.createElement('button');
-        floatBtn.id = 'floating-ranking-btn';
-        floatBtn.innerHTML = '🏆 랭킹보드';
-        floatBtn.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:9990; padding:10px 16px; border-radius:30px; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; font-weight:800; font-size:13px; border:2px solid #fef08a; box-shadow:0 4px 15px rgba(245,158,11,0.5); cursor:pointer;';
-        floatBtn.onclick = () => window.openStatsDashboard(false);
-        document.body.appendChild(floatBtn);
-    });
 })();
 
 window.currentStatsAdminMode = false;
@@ -2176,12 +2164,23 @@ window.removeCustomTitle = function(id) {
 };
 
 // =========================================================================
-// 👤 [마이페이지] 사용자 본인 전적 리포트 팝업 기능
+// 👤 [마이페이지] 로그인한 사용자 본인 전적 리포트 팝업 기능
 // =========================================================================
-
 window.openMyStats = function() {
-    // 현재 로그인된 사용자 이름 가져오기 (시스템 환경에 맞춰 연동)
-    const myName = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : prompt('조회할 회원 이름을 입력해 주세요:');
+    // 1순위: 전역 currentUser 변수 / 2순위: localStorage / 3순위: 상단 화면 표시 이름('신혜인님' -> '신혜인')
+    let myName = '';
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.name) {
+        myName = currentUser.name;
+    } else if (localStorage.getItem('userName') || localStorage.getItem('currentUserName')) {
+        myName = localStorage.getItem('userName') || localStorage.getItem('currentUserName');
+    } else {
+        const headerText = document.body.innerText.match(/([가-힣a-zA-Z0-9]+)님\s/);
+        if (headerText && headerText[1]) myName = headerText[1].trim();
+    }
+
+    if (!myName) {
+        myName = prompt('조회할 회원 이름을 입력해 주세요:');
+    }
     if (!myName) return;
 
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
@@ -2193,15 +2192,11 @@ window.openMyStats = function() {
             return;
         }
 
-        // 전체 회원 통계 중에서 내 이름과 일치하는 데이터 찾기
         const myData = (res.playersStats || []).find(p => p.name === myName);
-        
-        // 내가 포함된 최근 경기 내역 필터링
         const myMatches = (res.recentMatches || []).filter(r => 
             r.team_a_p1 === myName || r.team_a_p2 === myName || r.team_b_p1 === myName || r.team_b_p2 === myName
         );
 
-        // 마이페이지 팝업 생성
         const existing = document.getElementById('my-stats-modal');
         if (existing) existing.remove();
 
@@ -2209,14 +2204,13 @@ window.openMyStats = function() {
             <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index:99999; padding:15px; box-sizing:border-box;">
                 <div style="background:#1e293b; color:#fff; width:100%; max-width:420px; border-radius:14px; padding:20px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.6);">
                     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:10px; margin-bottom:14px;">
-                        <h3 style="margin:0; font-size:18px; color:#38bdf8;">👤 ${myName} 님의 전적 리포트</h3>
+                        <h3 style="margin:0; font-size:18px; color:#38bdf8;">👤 ${myName} 님의 이번 달 전적</h3>
                         <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#475569; color:#fff; border:none; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
                     </div>
 
                     ${!myData ? `
-                        <div style="text-align:center; padding:30px; color:#94a3b8;">이번 달에 기록된 경기가 없습니다.</div>
+                        <div style="text-align:center; padding:30px 10px; color:#94a3b8; font-size:14px;">이번 달에 기록된 경기 전적이 아직 없습니다.<br><span style="font-size:12px; color:#64748b;">게임 종료 시 스코어를 입력하면 즉시 집계됩니다!</span></div>
                     ` : `
-                        <!-- 요약 카드 -->
                         <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:16px; text-align:center;">
                             <div style="background:#0f172a; padding:10px; border-radius:8px;">
                                 <div style="font-size:11px; color:#94a3b8;">총 출전</div>
@@ -2233,11 +2227,10 @@ window.openMyStats = function() {
                         </div>
 
                         <div style="font-size:12px; color:#94a3b8; margin-bottom:6px; text-align:center;">
-                            최다 연승: <strong style="color:#34d399;">${myData.maxStreak}연승</strong> | 득실차: <strong style="color:${myData.pointDiff >= 0 ? '#34d399':'#f87171'};">${myData.pointDiff >= 0 ? '+'+myData.pointDiff : myData.pointDiff}</strong>
+                            최다 연승: <strong style="color:#34d399;">${myData.maxStreak}연승</strong> &nbsp;|&nbsp; 득실차: <strong style="color:${myData.pointDiff >= 0 ? '#34d399':'#f87171'};">${myData.pointDiff >= 0 ? '+'+myData.pointDiff : myData.pointDiff}</strong>
                         </div>
 
-                        <!-- 최근 내 경기 기록 -->
-                        <div style="font-size:13px; font-weight:bold; color:#cbd5e1; margin:14px 0 6px 0;">📜 내 최근 경기 기록</div>
+                        <div style="font-size:13px; font-weight:bold; color:#cbd5e1; margin:14px 0 6px 0;">📜 최근 내 경기 기록</div>
                         <div style="max-height:180px; overflow-y:auto; background:#0f172a; border-radius:8px; padding:8px; font-size:12px;">
                             ${myMatches.length === 0 ? '<div style="color:#64748b; text-align:center; padding:10px;">최근 경기 내역이 없습니다.</div>' : myMatches.map(m => {
                                 const isTeamA = m.team_a_p1 === myName || m.team_a_p2 === myName;

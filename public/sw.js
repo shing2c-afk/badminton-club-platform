@@ -1,10 +1,22 @@
-// public/sw.js
+// public/sw.js (Version: 2026-10-26-v2)
+const CACHE_VERSION = 'onminton-v20261026';
+
 self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    event.waitUntil(self.clients.claim());
+    event.waitUntil(
+        caches.keys().then((keyList) => {
+            return Promise.all(
+                keyList.map((key) => {
+                    if (key !== CACHE_VERSION) {
+                        return caches.delete(key);
+                    }
+                })
+            );
+        }).then(() => self.clients.claim())
+    );
 });
 
 // 크롬이 PWA 설치를 허용하기 위해 반드시 필요한 fetch 이벤트 처리
