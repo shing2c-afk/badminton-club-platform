@@ -2346,7 +2346,7 @@ window.removeCustomTitle = function(id) {
 };
 
 // =========================================================================
-// 1. [전적 보기] 개인 상세 전적 리포트 팝업 (모바일 최적화 및 확정 기획 반영)
+// 1. [전적 보기] 개인 상세 전적 리포트 팝업 (회원 DB 연동 급수: 홍길동(A조) 완벽 표기)
 // =========================================================================
 window.openMyStats = function(selectedPeriod = 'month') {
     let myName = '';
@@ -2373,16 +2373,75 @@ window.openMyStats = function(selectedPeriod = 'month') {
             return;
         }
 
-        // 전월 대비 성장률 계산을 위해 지난달 데이터 추가 확인 (서버 응답에 전월 데이터가 없을 경우 대비)
+        // 전월 대비 성장률 및 전체 회원 급수 매핑 보강을 위해 지난달/전체 데이터 참조
         socket.emit('getMatchStats', { clubId, period: 'last_month', minGames: 1 }, (prevRes) => {
             const allPlayers = res.playersStats || [];
             const myData = allPlayers.find(p => p.name === myName);
 
-            // 회원 급수 매핑용 객체 (파트너 급수 표시용)
+            // 💡 [핵심] 정회원/일일회원 DB 및 화면 데이터에서 급수(초심~S조)를 샅샅이 찾아 매핑하는 함수
             const gradeMap = {};
-            allPlayers.forEach(p => {
-                if (p.name && p.grade) gradeMap[p.name] = p.grade;
+            const registerGrade = (name, rawGrade) => {
+                if (!name || !rawGrade) return;
+                const cleanName = String(name).trim();
+                let g = String(rawGrade).trim().toUpperCase();
+                if (!g || g === '-' || g === '미정' || g === 'NULL' || g === 'UNDEFINED') return;
+                if (g !== '초심' && !g.endsWith('조')) g += '조';
+                gradeMap[cleanName] = g;
+            };
+
+            // 1순위: 서버에서 내려준 회원 명부(membersList 등) 및 통계 데이터
+            if (Array.isArray(res.members)) res.members.forEach(m => registerGrade(m.name, m.grade || m.level));
+            allPlayers.forEach(p => registerGrade(p.name, p.grade || p.level));
+            if (prevRes && Array.isArray(prevRes.playersStats)) {
+                prevRes.playersStats.forEach(p => registerGrade(p.name, p.grade || p.level));
+            }
+
+            // 2순위: 프론트엔드 전역 회원/대기열 배열 탐색 (window.members, clubMembers, waitingList 등)
+            const globalPools = [
+                window.members, window.clubMembers, window.allMembers,
+                window.regularMembers, window.dailyMembers, window.players, window.waitingList
+            ];
+            globalPools.forEach(pool => {
+                if (Array.isArray(pool)) {
+                    pool.forEach(item => {
+                        if (item && typeof item === 'object') {
+                            registerGrade(item.name || item.userName || item.playerName, item.grade || item.level || item.rank);
+                        }
+                    });
+                }
             });
+
+            // 3순위: localStorage에 캐시된 회원 정보 탐색
+            try {
+                ['members', 'clubMembers', 'waitingList', 'registeredMembers'].forEach(key => {
+                    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(item => {
+                            if (item && typeof item === 'object') {
+                                registerGrade(item.name || item.userName, item.grade || item.level);
+                            }
+                        });
+                    }
+                });
+            } catch (e) {}
+
+            // 4순위: 현재 메인 화면 DOM에 표시된 회원 정보(예: "홍길동 / 남 / 40대 / A조")에서 추출
+            try {
+                const bodyText = document.body.innerText || '';
+                const regex = /([가-힣a-zA-Z0-9]{2,10})\s*\/\s*[남여]\s*\/\s*\d+대\s*\/\s*(초심|[SABCD]조?)/g;
+                let match;
+                while ((match = regex.exec(bodyText)) !== null) {
+                    registerGrade(match[1], match[2]);
+                }
+            } catch (e) {}
+
+            // 이름을 넣으면 "홍길동(A조)" 형태로 반환하는 헬퍼 함수
+            const formatNameWithGrade = (name) => {
+                if (!name) return '';
+                const clean = String(name).trim();
+                const g = gradeMap[clean];
+                return g ? `${clean}(${g})` : clean;
+            };
 
             // 전월 대비 승률 성장률 계산
             let growthHtml = '<span style="color:#64748b;">전월 비교 기록 없음 (신규 집계)</span>';
@@ -2435,7 +2494,6 @@ window.openMyStats = function(selectedPeriod = 'month') {
                 }
             });
 
-            // 서버에서 내려준 pairsStats에 내 기록이 더 있다면 병합 보완
             if (Array.isArray(res.pairsStats)) {
                 res.pairsStats.forEach(pair => {
                     if (pair.player1 === myName || pair.player2 === myName) {
@@ -2452,8 +2510,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
             const top5Partners = Object.values(partnerStatsMap)
                 .map(p => ({
                     ...p,
-                    winRate: p.games > 0 ? Math.round((p.wins / p.games) * 100) : 0,
-                    grade: gradeMap[p.name] || ''
+                    winRate: p.games > 0 ? Math.round((p.wins / p.games) * 100) : 0
                 }))
                 .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.games - a.games))
                 .slice(0, 5);
@@ -2467,12 +2524,13 @@ window.openMyStats = function(selectedPeriod = 'month') {
                 { key: '3months', label: '최근 3개월' },
                 { key: 'all', label: '전체 누적' }
             ];
+            const currentPeriodLabel = (periodTabs.find(t => t.key === selectedPeriod) || { label: '선택한 기간' }).label;
 
             const modalHtml = `
                 <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(5, 8, 15, 0.88); display:flex; justify-content:center; align-items:center; z-index:99999; padding:10px; box-sizing:border-box;">
                     <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:460px; max-height:92vh; border-radius:14px; display:flex; flex-direction:column; border:1.5px solid #2563eb; box-shadow:0 15px 35px rgba(0,0,0,0.85); overflow:hidden;">
                         
-                        <!-- 1. 상단 헤더 ("전적 보기" 타이틀만 심플하게 표시) -->
+                        <!-- 1. 상단 헤더 ("전적 보기"만 표시) -->
                         <div style="padding:14px 18px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
                             <h3 style="margin:0; font-size:16px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">전적 보기</h3>
                             <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:6px 14px; font-weight:700; cursor:pointer; font-size:12px;">닫기</button>
@@ -2493,13 +2551,13 @@ window.openMyStats = function(selectedPeriod = 'month') {
 
                         <!-- 본문 스크롤 영역 -->
                         <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
-                            ${!myData ? `
-                                <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:40px 15px;">
-                                    <div style="color:#e2e8f0; font-size:13.5px; font-weight:700; margin-bottom:6px;">선택한 기간에 기록된 전적이 없습니다.</div>
-                                    <div style="font-size:11.5px; color:#64748b;">게임 종료 후 스코어를 입력하면 실시간으로 집계됩니다.</div>
+                            ${(!myData || myData.games === 0) ? `
+                                <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:45px 15px;">
+                                    <div style="color:#e2e8f0; font-size:14px; font-weight:700; margin-bottom:6px;">${currentPeriodLabel}에 기록된 게임 내역이 없습니다.</div>
+                                    <div style="font-size:11.5px; color:#64748b;">게임 종료 후 스코어를 등록하면 실시간으로 전적이 반영됩니다.</div>
                                 </div>
                             ` : `
-                                <!-- 2. 요약 대시보드 (윗줄: 전/승/패/승률, 아랫줄: 전월 대비 성장률) -->
+                                <!-- 2. 요약 대시보드 -->
                                 <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
                                     <div style="padding:14px 10px; display:grid; grid-template-columns:repeat(4, 1fr); text-align:center;">
                                         <div style="border-right:1px solid #1e293b;">
@@ -2525,7 +2583,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                     </div>
                                 </div>
 
-                                <!-- 3. 나의 베스트 파트너 TOP 5 (성별 무관 / 다승·승률 순 / 1줄 고정) -->
+                                <!-- 3. 나의 베스트 파트너 TOP 5 ("홍길동(A조)" 형태 표기) -->
                                 <div>
                                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                                         <span style="font-size:13px; font-weight:800; color:#38bdf8;">나의 파트너 순위 (TOP 5)</span>
@@ -2537,15 +2595,13 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                         ` : top5Partners.map((p, idx) => {
                                             const rankBg = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : '#1e293b';
                                             const rankColor = idx < 3 ? '#0f1420' : '#cbd5e1';
-                                            const gradeBadge = p.grade ? (p.grade.includes('조') || p.grade === '초심' ? p.grade : p.grade + '조') : '';
                                             return `
-                                                <div style="display:grid; grid-template-columns:36px 1fr auto; align-items:center; padding:10px 12px; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
+                                                <div style="display:grid; grid-template-columns:34px 1fr auto; align-items:center; padding:10px 12px; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
                                                     <div>
                                                         <span style="display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:5px; background:${rankBg}; color:${rankColor}; font-weight:800; font-size:11px;">${idx + 1}</span>
                                                     </div>
-                                                    <div style="display:flex; align-items:center; gap:6px; overflow:hidden; white-space:nowrap; padding-right:8px;">
-                                                        <span style="font-weight:700; color:#ffffff; overflow:hidden; text-overflow:ellipsis;">${p.name}</span>
-                                                        ${gradeBadge ? `<span style="background:#1e293b; color:#38bdf8; border:1px solid #334155; font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:4px; flex-shrink:0;">${gradeBadge}</span>` : ''}
+                                                    <div style="overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-right:8px; font-weight:700; color:#ffffff;">
+                                                        ${formatNameWithGrade(p.name)}
                                                     </div>
                                                     <div style="text-align:right; white-space:nowrap; font-weight:600;">
                                                         <span style="color:#cbd5e1;">${p.games}전</span>
@@ -2559,7 +2615,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                     </div>
                                 </div>
 
-                                <!-- 4. 최신 게임 내역 (최신 5게임 / 모바일 줄바꿈 방지 2줄 카드형) -->
+                                <!-- 4. 최신 게임 내역 (선수 전원 "홍길동(A조)" 형태 표기 & 줄바꿈 방지) -->
                                 <div>
                                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                                         <span style="font-size:13px; font-weight:800; color:#38bdf8;">최신 게임 내역</span>
@@ -2574,18 +2630,18 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                             const badgeBg = myWin ? '#2563eb' : (m.winner_team === 'DRAW' ? '#475569' : '#e11d48');
                                             const resTxt = myWin ? '승리' : (m.winner_team === 'DRAW' ? '무승부' : '패배');
 
-                                            const ourTeam = isTeamA
-                                                ? `${m.team_a_p1}${m.team_a_p2 ? ' · ' + m.team_a_p2 : ''}`
-                                                : `${m.team_b_p1}${m.team_b_p2 ? ' · ' + m.team_b_p2 : ''}`;
-                                            const oppTeam = isTeamA
-                                                ? `${m.team_b_p1}${m.team_b_p2 ? ' · ' + m.team_b_p2 : ''}`
-                                                : `${m.team_a_p1}${m.team_a_p2 ? ' · ' + m.team_a_p2 : ''}`;
+                                            const aP1 = formatNameWithGrade(m.team_a_p1);
+                                            const aP2 = m.team_a_p2 ? formatNameWithGrade(m.team_a_p2) : '';
+                                            const bP1 = formatNameWithGrade(m.team_b_p1);
+                                            const bP2 = m.team_b_p2 ? formatNameWithGrade(m.team_b_p2) : '';
+
+                                            const ourTeam = isTeamA ? `${aP1}${aP2 ? ' · ' + aP2 : ''}` : `${bP1}${bP2 ? ' · ' + bP2 : ''}`;
+                                            const oppTeam = isTeamA ? `${bP1}${bP2 ? ' · ' + bP2 : ''}` : `${aP1}${aP2 ? ' · ' + aP2 : ''}`;
                                             const ourScore = isTeamA ? m.score_a : m.score_b;
                                             const oppScore = isTeamA ? m.score_b : m.score_a;
 
                                             return `
                                                 <div style="background:#151c2c; padding:10px 12px; border-radius:8px; border:1px solid #26334d; display:flex; flex-direction:column; gap:6px;">
-                                                    <!-- 1번째 줄: 경기 구분 + 스코어 및 승패 배지 -->
                                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                                         <span style="background:#0f1420; color:#94a3b8; border:1px solid #1e293b; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:4px;">${m.match_type || '복식'}</span>
                                                         <div style="display:flex; align-items:center; gap:8px;">
@@ -2595,10 +2651,9 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                                             <span style="background:${badgeBg}; color:#ffffff; font-weight:800; font-size:11px; padding:2px 8px; border-radius:4px;">${resTxt}</span>
                                                         </div>
                                                     </div>
-                                                    <!-- 2번째 줄: 우리팀 vs 상대팀 (가로 전체 사용하여 줄바꿈 방지) -->
-                                                    <div style="display:flex; align-items:center; justify-content:space-between; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                                    <div style="display:flex; align-items:center; justify-content:space-between; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                                         <span style="color:#ffffff; font-weight:700; overflow:hidden; text-overflow:ellipsis;">${ourTeam}</span>
-                                                        <span style="color:#f59e0b; font-weight:800; font-size:11px; margin:0 8px; flex-shrink:0;">VS</span>
+                                                        <span style="color:#f59e0b; font-weight:800; font-size:10.5px; margin:0 6px; flex-shrink:0;">VS</span>
                                                         <span style="color:#94a3b8; font-weight:600; overflow:hidden; text-overflow:ellipsis; text-align:right;">${oppTeam}</span>
                                                     </div>
                                                 </div>
