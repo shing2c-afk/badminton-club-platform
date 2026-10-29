@@ -3456,3 +3456,176 @@ window.deleteCustomTitle = function(id) {
         }
     });
 };
+
+// =========================================================================
+// 4. [관리자 전용] 자체대회 대진표 작성용 정회원 기간별 전적 통계 엑셀(CSV) 다운로드
+// =========================================================================
+window.exportRegularMemberStatsCSV = function() {
+    const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
+    const periodEl = document.getElementById('admin-export-stats-period');
+    const selectedPeriod = periodEl ? periodEl.value : '3months';
+
+    const periodLabelMap = {
+        'all': '전체누적',
+        '3months': '최근3개월',
+        'month': '이번달',
+        'last_month': '지난달'
+    };
+    const periodLabel = periodLabelMap[selectedPeriod] || selectedPeriod;
+
+    socket.emit('getMatchStats', { clubId, period: selectedPeriod, minGames: 1 }, (res) => {
+        if (!res || !res.success) {
+            alert('전적 데이터를 불러오지 못했습니다.');
+            return;
+        }
+
+        const allPlayers = res.playersStats || [];
+        const allPairs = res.pairsStats || res.pairStats || [];
+        const members = res.members || [];
+
+        // 회원 정보(급수, 성별, 연령대, 정회원 여부) 매핑 보완
+        const memberMap = {};
+        members.forEach(m => {
+            if (m && m.name) memberMap[String(m.name).trim()] = m;
+        });
+
+        const isRegularMember = (mType) => {
+            const u = String(mType || '정회원').toUpperCase();
+            return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
+        };
+
+        // 1) 정회원 개인 전적 필터링 및 정렬 (급수순 -> 승률순 -> 다승순)
+        const regularPlayers = allPlayers.filter(p => {
+            const prof = memberMap[p.name] || {};
+            return isRegularMember(p.memberType || prof.memberType);
+        }).map(p => {
+            const prof = memberMap[p.name] || {};
+            return {
+                ...p,
+                grade: p.grade || prof.grade || '미지정',
+                gender: p.gender || prof.gender || '-',
+                ageGroup: p.ageGroup || prof.ageGroup || '-'
+            };
+        });
+
+        if (regularPlayers.length === 0) {
+            alert(`[${periodLabel}] 기간에 기록된 정회원 전적 데이터가 없습니다.`);
+            return;
+        }
+
+        // 정회원 이름 Set (파트너 통계 필터링용)
+        const regularNamesSet = new Set(regularPlayers.map(p => p.name));
+
+        // 2) 정회원 간 복식 파트너 전적 필터링
+        const regularPairs = allPairs.filter(pr => {
+            const p1 = pr.player1 || (pr.players && pr.players[0]) || '';
+            const p2 = pr.player2 || (pr.players && pr.players[1]) || '';
+            return pr.games > 0 && regularNamesSet.has(p1) && regularNamesSet.has(p2);
+        });
+
+        // CSV 셀 이스케이프 헬퍼
+        const escapeCsv = (val) => {
+            if (val === null || val === undefined) return '""';
+            const str = String(val).replace(/"/g, '""');
+            return `"${str}"`;
+        };
+
+        const formatTypeStat = (byType, typeName) => {
+            const st = (byType && byType[typeName]) ? byType[typeName] : { games: 0, wins: 0, losses: 0 };
+            if (!st.games) return '0전';
+            const rate = Math.round((st.wins / st.games) * 100);
+            return `${st.games}전 ${st.wins}승 ${st.losses}패 (${rate}%)`;
+        };
+
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        const csvRows = [];
+
+        // 상단 요약 헤더
+        csvRows.push([`[오늘민턴] 클럽 정회원 전적 통계 리포트 (자체대회 대진표 작성 참고자료)`].map(escapeCsv).join(','));
+        csvRows.push([`조회 클럽: ${clubId}`, `집계 기간: ${periodLabel}`, `추출 일자: ${dateStr}`, `집계 대상: 정회원 (${regularPlayers.length}명)`].map(escapeCsv).join(','));
+        csvRows.push('');
+
+        // [섹션 1] 정회원 개인별 상세 전적
+        csvRows.push([`■ 1. 정회원 개인별 전적 통계 (다승 및 승률 순)`].map(escapeCsv).join(','));
+        csvRows.push([
+            '순위', '이름', '급수', '성별', '연령대',
+            '총 출전수', '승', '패', '승률(%)',
+            '총 득점', '총 실점', '득실차',
+            '접전승(2점차)', '대승(10점차)', '최다연승',
+            '남복 전적', '여복 전적', '혼복 전적'
+        ].map(escapeCsv).join(','));
+
+        regularPlayers.forEach((p, idx) => {
+            const pointDiff = (p.pointsFor || 0) - (p.pointsAgainst || 0);
+            const ageStr = p.ageGroup && p.ageGroup !== '-' ? `${p.ageGroup}대` : '-';
+            csvRows.push([
+                idx + 1,
+                p.name,
+                p.grade,
+                p.gender,
+                ageStr,
+                p.games || 0,
+                p.wins || 0,
+                p.losses || 0,
+                `${p.winRate || 0}%`,
+                p.pointsFor || 0,
+                p.pointsAgainst || 0,
+                pointDiff > 0 ? `+${pointDiff}` : pointDiff,
+                p.clutchWins || 0,
+                p.bigWins || 0,
+                p.maxStreak || 0,
+                formatTypeStat(p.byType, '남복'),
+                formatTypeStat(p.byType, '여복'),
+                formatTypeStat(p.byType, '혼복')
+            ].map(escapeCsv).join(','));
+        });
+
+        csvRows.push('');
+        csvRows.push('');
+
+        // [섹션 2] 정회원 복식 파트너 조합별 전적 (대진표 파트너 매칭 참고용)
+        csvRows.push([`■ 2. 정회원 복식 파트너(페어) 조합별 전적 (합작 다승 및 승률 순)`].map(escapeCsv).join(','));
+        csvRows.push([
+            '순위', '파트너 조합', '선수1(급수)', '선수2(급수)',
+            '합작 출전수', '합작 승', '합작 패', '합작 승률(%)', '합작 득실차'
+        ].map(escapeCsv).join(','));
+
+        regularPairs.forEach((pr, idx) => {
+            const p1 = pr.player1 || (pr.players && pr.players[0]) || '';
+            const p2 = pr.player2 || (pr.players && pr.players[1]) || '';
+            const g1 = (memberMap[p1] && memberMap[p1].grade) || pr.p1Grade || '';
+            const g2 = (memberMap[p2] && memberMap[p2].grade) || pr.p2Grade || '';
+            const p1Text = g1 ? `${p1}(${g1})` : p1;
+            const p2Text = g2 ? `${p2}(${g2})` : p2;
+            const losses = typeof pr.losses === 'number' ? pr.losses : Math.max(0, (pr.games || 0) - (pr.wins || 0));
+            const diff = (pr.pointsFor || 0) - (pr.pointsAgainst || 0);
+
+            csvRows.push([
+                idx + 1,
+                `${p1Text} & ${p2Text}`,
+                p1Text,
+                p2Text,
+                pr.games || 0,
+                pr.wins || 0,
+                losses,
+                `${pr.winRate || 0}%`,
+                diff > 0 ? `+${diff}` : diff
+            ].map(escapeCsv).join(','));
+        });
+
+        // 엑셀 한글 깨짐 방지를 위한 UTF-8 BOM(\uFEFF) 추가
+        const csvContent = '\uFEFF' + csvRows.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `오늘민턴_정회원전적통계_${periodLabel}_${dateStr}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    });
+};

@@ -701,19 +701,42 @@ input:checked + .slider:before {
             </div>
         </div>
         <div class="card-body">
-            <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
-                <div style="font-size: 13px; font-weight: 700; color: #fbbf24; margin-bottom: 6px;">전적 통계 & 이벤트 타이틀 관리</div>
-                <p class="form-desc" style="margin-bottom: 8px;">월별/기간별 회원 전적 통계를 확인하고, 7대 다중 조건과 추천 템플릿으로 클럽 맞춤형 이벤트 타이틀을 설정·관리합니다.</p>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <!-- 전적 통계 보드 열기 버튼 -->
-                    <button type="button" class="btn-success" onclick="window.openStatsDashboard(false)" style="width: 100%; background: #1e293b; border: 1px solid #334155; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2); margin-top: 0; color: #38bdf8; font-weight: 700; cursor: pointer;">
-                        📊 클럽 랭킹 보드 (사용자 화면 미리보기) &rarr;
-                    </button>
-                    <!-- 3단계 관리자 이벤트 타이틀 전용 관리창 열기 버튼 -->
-                    <button type="button" class="btn-success" onclick="window.openAdminEventTitleManager('month')" style="width: 100%; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 3px 10px rgba(245, 158, 11, 0.3); margin-top: 0; color: #0f1420; font-weight: 800; cursor: pointer;">
-                        ✨ 이달의 이벤트 타이틀 설정 및 관리 &rarr;
-                    </button>
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 14px;">
+                
+                <!-- 1) 랭킹 보드 & 이벤트 타이틀 설정 -->
+                <div>
+                    <div style="font-size: 13px; font-weight: 700; color: #fbbf24; margin-bottom: 6px;">전적 통계 & 이벤트 타이틀 관리</div>
+                    <p class="form-desc" style="margin-bottom: 8px;">회원 전적 통계를 확인하고, 클럽 맞춤형 이벤트 타이틀과 포상 미션을 설정·관리합니다.</p>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <button type="button" class="btn-success" onclick="window.openStatsDashboard(false)" style="width: 100%; background: #1e293b; border: 1px solid #334155; margin-top: 0; color: #38bdf8; font-weight: 700; cursor: pointer;">
+                            📊 클럽 랭킹 보드 (사용자 화면 미리보기) &rarr;
+                        </button>
+                        <button type="button" class="btn-success" onclick="window.openAdminEventTitleManager('month')" style="width: 100%; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 3px 10px rgba(245, 158, 11, 0.3); margin-top: 0; color: #0f1420; font-weight: 800; cursor: pointer;">
+                            ✨ 이달의 이벤트 타이틀 설정 및 관리 &rarr;
+                        </button>
+                    </div>
                 </div>
+
+                <!-- 구분선 -->
+                <div style="border-top: 1px dashed #334155;"></div>
+
+                <!-- 2) 자체대회 대진표 작성용 정회원 전적 엑셀(CSV) 다운로드 -->
+                <div>
+                    <div style="font-size: 13px; font-weight: 700; color: #34d399; margin-bottom: 6px;">📥 정회원 전적 통계 파일 다운로드 (자체대회 대진표용)</div>
+                    <p class="form-desc" style="margin-bottom: 8px;">클럽 자체대회 조 편성 및 대진표 작성에 활용할 수 있도록 기간별 정회원 개인 전적 및 파트너 궁합 통계를 엑셀(CSV) 파일로 내려받습니다.</p>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <select id="admin-export-stats-period" style="flex: 1; padding: 10px; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 6px; font-size: 12.5px; font-weight: 700;">
+                            <option value="all">전체 누적 전적</option>
+                            <option value="3months" selected>최근 3개월 전적 (추천)</option>
+                            <option value="month">이번 달 전적</option>
+                            <option value="last_month">지난달 전적</option>
+                        </select>
+                        <button type="button" onclick="window.exportRegularMemberStatsCSV()" style="padding: 10px 14px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; border: none; border-radius: 6px; font-weight: 800; font-size: 12.5px; cursor: pointer; white-space: nowrap; box-shadow: 0 3px 10px rgba(16, 185, 129, 0.25);">
+                            📥 엑셀(CSV) 다운로드
+                        </button>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
