@@ -2169,43 +2169,44 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
         <span style="font-size:11px; color:#94a3b8; font-weight:600;">특별 포상 미션</span>
     </div>
     <div style="padding:12px; display:flex; flex-direction:column; gap:10px;">
-        ${customTitles.length === 0 ? `
-            <div style="padding:16px 10px; text-align:center;">
-                <div style="color:#e2e8f0; font-size:12.5px; font-weight:700; margin-bottom:3px;">이번 달 이벤트 타이틀을 준비 중입니다.</div>
-                <div style="color:#64748b; font-size:11px;">관리자가 포상 미션을 등록하면 이곳에 표시됩니다.</div>
-            </div>
-        ` : customTitles.map(ct => {
-            const isPublished = (ct.status === 'published') || (ct.winner && ct.winner !== '집계 중' && ct.winner !== '대상자 없음' && ct.status !== 'pending');
-            const descText = ct.description || '특별 선정 미션 진행 중';
-            const prizeText = ct.prizeInfo ? `🎁 포상 상품: ${ct.prizeInfo}` : '';
+${customTitles.length === 0 ? `
+    <div style="padding:16px 10px; text-align:center;">
+        <div style="color:#e2e8f0; font-size:12.5px; font-weight:700; margin-bottom:3px;">이번 달 이벤트 타이틀을 준비 중입니다.</div>
+        <div style="color:#64748b; font-size:11px;">관리자가 포상 미션을 등록하면 이곳에 표시됩니다.</div>
+    </div>
+` : customTitles.map(ct => {
+    const isPublished = (ct.status === 'published') || (ct.winner && ct.winner !== '집계 중' && ct.winner !== '대상자 없음' && ct.status !== 'pending');
+    const descText = ct.description || '특별 선정 미션 진행 중';
+    const prizeText = ct.prizeInfo ? `🎁 포상 상품: ${ct.prizeInfo}` : '';
 
-            return `
-                <div style="background:#0f1420; border:1px solid #26334d; border-left:4px solid ${isPublished ? '#f59e0b' : '#38bdf8'}; border-radius:8px; padding:11px;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;">
-                        <div style="font-size:13.5px; font-weight:800; color:#ffffff; word-break:keep-all;">${ct.titleName}</div>
-                        <span style="background:${isPublished ? '#f59e0b' : '#1e293b'}; color:${isPublished ? '#0f1420' : '#38bdf8'}; border:1px solid ${isPublished ? '#f59e0b' : '#334155'}; font-size:10px; font-weight:800; padding:2px 7px; border-radius:4px; white-space:nowrap; flex-shrink:0;">
-                            ${isPublished ? '선정 완료' : '월말 발표'}
-                        </span>
-                    </div>
-                    <div style="font-size:11.5px; color:#cbd5e1; line-height:1.45; margin-bottom:7px; word-break:keep-all;">
-                        ${descText}
-                    </div>
-                    ${prizeText ? `
-                        <div style="font-size:11.5px; color:#fbbf24; font-weight:700; margin-bottom:8px; background:rgba(245,158,11,0.1); padding:6px 10px; border-radius:5px; border:1px dashed rgba(245,158,11,0.35); word-break:keep-all;">
-                            ${prizeText}
-                        </div>
-                    ` : ''}
-                    <div style="background:#151c2c; border:1px solid ${isPublished ? 'rgba(245,158,11,0.4)' : '#1e293b'}; border-radius:6px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <span style="font-size:11px; color:#94a3b8; font-weight:600; white-space:nowrap;">수상 대상자</span>
-                        ${isPublished ? `
-                            <strong style="font-size:12px; color:#f59e0b; font-weight:800; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ct.winner}</strong>
-                        ` : `
-                            <span style="font-size:11px; color:#64748b; font-weight:700; white-space:nowrap;">조건 달성 회원 집계 중</span>
-                        `}
-                    </div>
+    return `
+        <!-- 세로 선(border-left)을 제거하고 깔끔한 사방 테두리만 남기도록 수정 -->
+        <div style="background:#0f1420; border:1px solid #26334d; border-radius:8px; padding:11px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;">
+                <div style="font-size:13.5px; font-weight:800; color:#ffffff; word-break:keep-all;">${ct.titleName}</div>
+                <span style="background:${isPublished ? '#f59e0b' : '#1e293b'}; color:${isPublished ? '#0f1420' : '#38bdf8'}; border:1px solid ${isPublished ? '#f59e0b' : '#334155'}; font-size:10px; font-weight:800; padding:2px 7px; border-radius:4px; white-space:nowrap; flex-shrink:0;">
+                    ${isPublished ? '선정 완료' : '월말 발표'}
+                </span>
+            </div>
+            <div style="font-size:11.5px; color:#cbd5e1; line-height:1.45; margin-bottom:7px; word-break:keep-all;">
+                ${descText}
+            </div>
+            ${prizeText ? `
+                <div style="font-size:11.5px; color:#fbbf24; font-weight:700; margin-bottom:8px; background:rgba(245,158,11,0.1); padding:6px 10px; border-radius:5px; border:1px dashed rgba(245,158,11,0.35); word-break:keep-all;">
+                    ${prizeText}
                 </div>
-            `;
-        }).join('')}
+            ` : ''}
+            <div style="background:#151c2c; border:1px solid ${isPublished ? 'rgba(245,158,11,0.4)' : '#1e293b'}; border-radius:6px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <span style="font-size:11px; color:#94a3b8; font-weight:600; white-space:nowrap;">수상 대상자</span>
+                ${isPublished ? `
+                    <strong style="font-size:12px; color:#f59e0b; font-weight:800; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ct.winner}</strong>
+                ` : `
+                    <span style="font-size:11px; color:#64748b; font-weight:700; white-space:nowrap;">조건 달성 회원 집계 중</span>
+                `}
+            </div>
+        </div>
+    `;
+}).join('')}
     </div>
 </div>
 
