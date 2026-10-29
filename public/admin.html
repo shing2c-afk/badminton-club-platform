@@ -692,7 +692,7 @@ input:checked + .slider:before {
         </div>
     </div>
 
-    <!-- 8. 전적 통계 및 이벤트 타이틀 관리 (독립 접이식 카드) -->
+   <!-- 8. 전적 통계 및 이벤트 타이틀 관리 (독립 접이식 카드) -->
     <div class="card" id="card-stats" style="border-left: 4px solid #f59e0b;">
         <div class="card-header" onclick="toggleCard(this)">
             <div class="card-title">
@@ -702,11 +702,18 @@ input:checked + .slider:before {
         </div>
         <div class="card-body">
             <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
-                <div style="font-size: 13px; font-weight: 700; color: #fbbf24; margin-bottom: 6px;">전적 통계 & 커스텀 타이틀 관리</div>
-                <p class="form-desc" style="margin-bottom: 8px;">월별/분기별 회원 전적 통계를 조회하고, 반짝이는 커스텀 이벤트 타이틀(다승왕, 승률왕 등)을 생성·관리합니다.</p>
-                <button type="button" class="btn-success" onclick="window.openStatsDashboard(true)" style="width: 100%; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 3px 10px rgba(245, 158, 11, 0.3); margin-top: 0; color: #fff; font-weight: 700; cursor: pointer;">
-                    📊 전적 통계 & 타이틀 관리 열기 &rarr;
-                </button>
+                <div style="font-size: 13px; font-weight: 700; color: #fbbf24; margin-bottom: 6px;">전적 통계 & 이벤트 타이틀 관리</div>
+                <p class="form-desc" style="margin-bottom: 8px;">월별/기간별 회원 전적 통계를 확인하고, 7대 다중 조건과 추천 템플릿으로 클럽 맞춤형 이벤트 타이틀을 설정·관리합니다.</p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <!-- 전적 통계 보드 열기 버튼 -->
+                    <button type="button" class="btn-success" onclick="window.openStatsDashboard(false)" style="width: 100%; background: #1e293b; border: 1px solid #334155; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2); margin-top: 0; color: #38bdf8; font-weight: 700; cursor: pointer;">
+                        📊 클럽 랭킹 보드 (사용자 화면 미리보기) &rarr;
+                    </button>
+                    <!-- 3단계 관리자 이벤트 타이틀 전용 관리창 열기 버튼 -->
+                    <button type="button" class="btn-success" onclick="window.openAdminEventTitleManager('month')" style="width: 100%; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); box-shadow: 0 3px 10px rgba(245, 158, 11, 0.3); margin-top: 0; color: #0f1420; font-weight: 800; cursor: pointer;">
+                        ✨ 이달의 이벤트 타이틀 설정 및 관리 &rarr;
+                    </button>
+                </div>
             </div>
         </div>
     </div>
