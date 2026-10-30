@@ -3657,7 +3657,7 @@ io.on('connection', (socket) => {
                     if (!a1 || !a2 || Math.abs(a1 - a2) < 20) return false;
                 } else if (ageFilter === 'PAIR_SAME_AGE') {
                     if (!a1 || !a2 || a1 !== a2) return false;
-                } else if (['20', '30', '40', '50', '60'].includes(ageFilter)) {
+                } else if (['10', '20', '30', '40', '50', '60'].includes(ageFilter)) {
                     const targetAge = parseInt(ageFilter, 10);
                     if (targetAge === 60) {
                         if (a1 < 60 && a2 < 60) return false;
@@ -3701,12 +3701,10 @@ io.on('connection', (socket) => {
                 }
 
                 const ageNum = parseInt(p.ageGroup, 10) || 0;
-                if (ageFilter === 'YOUTH_2030') {
-                    if (ageNum !== 20 && ageNum !== 30) return false;
-                } else if (ageFilter === 'SENIOR_5060') {
-                    if (ageNum < 50) return false;
-                } else if (['20', '30', '40', '50', '60'].includes(ageFilter)) {
-                    const tAge = parseInt(ageFilter, 10);
+                    if (ageFilter === 'YOUTH_2030' && ageNum !== 10 && ageNum !== 20 && ageNum !== 30) return false;
+                    if (ageFilter === 'SENIOR_5060' && ageNum < 50) return false;
+                    if (['10', '20', '30', '40', '50', '60'].includes(ageFilter)) {
+                const tAge = parseInt(ageFilter, 10);
                     if (tAge === 60 ? ageNum < 60 : ageNum !== tAge) return false;
                 }
                 return true;
