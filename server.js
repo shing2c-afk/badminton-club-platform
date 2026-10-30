@@ -3670,12 +3670,19 @@ io.on('connection', (socket) => {
                 const stat = (targetType !== 'ALL' && pr.byType && pr.byType[targetType]) ? pr.byType[targetType] : pr;
                 const games = stat.games || 0;
                 const wins = stat.wins || 0;
-                const losses = stat.losses || 0;
+                const losses = typeof stat.losses === 'number' ? stat.losses : Math.max(0, games - wins);
                 const winRate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
                 const pointDiff = (stat.pointsFor || 0) - (stat.pointsAgainst || 0);
+
+                // 파트너 2인 이름 및 급수 안전 조합 (undefined 방지)
+                const p1Name = String(pr.player1 || pr.p1Name || (pr.players && pr.players[0]) || '').trim();
+                const p2Name = String(pr.player2 || pr.p2Name || (pr.players && pr.players[1]) || '').trim();
+                const p1Formatted = pr.p1Formatted || (pr.p1Grade ? `${p1Name}(${pr.p1Grade})` : p1Name);
+                const p2Formatted = pr.p2Formatted || (pr.p2Grade ? `${p2Name}(${pr.p2Grade})` : p2Name);
+
                 return {
                     ...pr,
-                    displayName: `${pr.p1Formatted} · ${pr.p2Formatted}`,
+                    displayName: `${p1Formatted} & ${p2Formatted}`,
                     evalGames: games,
                     evalWins: wins,
                     evalLosses: losses,
