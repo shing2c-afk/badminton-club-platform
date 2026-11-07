@@ -2825,7 +2825,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
 };
 
 // =========================================================================
-// 3. [관리자 모드] 이벤트 타이틀 통합 작성 · 달성 조건(인라인 칩 UI) · 대상자 선정
+// 3. [관리자 모드] 이벤트 타이틀 통합 작성 · 칼각 그리드 칩 UI · 대상자 선정
 // =========================================================================
 
 // 추천 이벤트 타이틀 템플릿 10종
@@ -2902,7 +2902,7 @@ window.ADMIN_EVENT_PRESETS = [
     }
 ];
 
-// 인라인 칩(버튼형) 옵션 정의
+// 칼각 그리드 정렬을 위한 옵션 정의 (wide: true 항목은 4열 그리드에서 2칸 차지)
 window.ADMIN_COND_OPTIONS = {
     scope: [
         { val: 'player', label: '개인 (1인)' },
@@ -2922,7 +2922,7 @@ window.ADMIN_COND_OPTIONS = {
     grade_player: [
         { val: 'ALL', label: '전체' },
         { val: 'LOW_CD', label: '초심+D조' },
-        { val: 'LOW_CDC', label: '초심+D+C조' },
+        { val: 'LOW_CDC', label: '초심+D+C조', wide: true },
         { val: '초심', label: '초심' },
         { val: 'D조', label: 'D조' },
         { val: 'C조', label: 'C조' },
@@ -2930,11 +2930,11 @@ window.ADMIN_COND_OPTIONS = {
         { val: 'A조', label: 'A조' }
     ],
     grade_pair: [
-        { val: 'ALL', label: '전체' },
-        { val: 'PAIR_MENTOR', label: '멘토&멘티(A·B+C·D·초)' },
-        { val: 'PAIR_SAME', label: '동일 급수' },
-        { val: 'PAIR_LOW', label: '초심·D조끼리' },
-        { val: 'PAIR_MID_LOW', label: '초·D·C조끼리' },
+        { val: 'ALL', label: '전체', wide: true },
+        { val: 'PAIR_SAME', label: '동일 급수끼리', wide: true },
+        { val: 'PAIR_MENTOR', label: '멘토&멘티(상위+하위)', wide: true },
+        { val: 'PAIR_LOW', label: '초심·D조끼리', wide: true },
+        { val: 'PAIR_MID_LOW', label: '초·D·C조끼리', wide: true },
         { val: '초심', label: '초심 포함' },
         { val: 'D조', label: 'D조 포함' },
         { val: 'C조', label: 'C조 포함' },
@@ -2942,21 +2942,21 @@ window.ADMIN_COND_OPTIONS = {
         { val: 'A조', label: 'A조 포함' }
     ],
     age_player: [
-        { val: 'ALL', label: '전체' },
-        { val: 'YOUTH_2030', label: '청년층(10~30대)' },
-        { val: 'SENIOR_5060', label: '중장년(50·60대+)' },
+        { val: 'ALL', label: '전체', wide: true },
+        { val: 'YOUTH_2030', label: '청년층(10~30대)', wide: true },
+        { val: 'SENIOR_5060', label: '중장년(50·60대+)', wide: true },
         { val: '10', label: '10대' },
         { val: '20', label: '20대' },
         { val: '30', label: '30대' },
         { val: '40', label: '40대' },
         { val: '50', label: '50대' },
-        { val: '60', label: '60대 이상' }
+        { val: '60', label: '60대+' }
     ],
     age_pair: [
-        { val: 'ALL', label: '전체' },
-        { val: 'PAIR_DIFF_AGE', label: '세대공감(다른 연령대)' },
-        { val: 'PAIR_GAP_20', label: '세대초월(20년차+)' },
-        { val: 'PAIR_SAME_AGE', label: '동년배(같은 연령대)' },
+        { val: 'ALL', label: '전체', wide: true },
+        { val: 'PAIR_SAME_AGE', label: '동년배(같은 연령대)', wide: true },
+        { val: 'PAIR_DIFF_AGE', label: '세대공감(다른 연령대)', wide: true },
+        { val: 'PAIR_GAP_20', label: '세대초월(20년차↑)', wide: true },
         { val: '10', label: '10대 포함' },
         { val: '20', label: '20대 포함' },
         { val: '30', label: '30대 포함' },
@@ -2973,7 +2973,7 @@ window.ADMIN_COND_OPTIONS = {
         { val: 'big_wins', label: '대승 폭격기 (10점차 승)' },
         { val: 'max_streak', label: '최다 연승 (연속 승리)' },
         { val: 'point_diff', label: '최고 득실차 (득실 1위)' },
-        { val: 'most_losses', label: '칠전팔기 (최다패 격려)' }
+        { val: 'most_losses', label: '칠전팔기 열정상 (최다패 격려)', full: true }
     ]
 };
 
@@ -3007,15 +3007,15 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                         color: rgba(148, 163, 184, 0.35) !important;
                         font-weight: 400 !important;
                     }
-                    /* 세련된 모바일 인라인 미니 칩(Chip) 스타일 */
-                    .adm-chip-group {
-                        display: flex;
-                        flex-wrap: wrap;
-                        gap: 4px;
-                    }
+                    /* 칼각 그리드 칩(Chip) 레이아웃 */
+                    .adm-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; }
+                    .adm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+                    .adm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
                     .adm-chip {
-                        padding: 4px 8px;
-                        border-radius: 5px;
+                        width: 100%;
+                        height: 30px;
+                        padding: 0 4px;
+                        border-radius: 6px;
                         background: #0f1420;
                         border: 1px solid #26334d;
                         color: #94a3b8;
@@ -3023,21 +3023,30 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                         font-weight: 600;
                         cursor: pointer;
                         transition: all 0.12s ease;
-                        line-height: 1.3;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        text-align: center;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        box-sizing: border-box;
                         user-select: none;
                     }
+                    .adm-chip.span-2 { grid-column: span 2; }
+                    .adm-chip.span-full { grid-column: 1 / -1; }
                     .adm-chip.active {
-                        background: rgba(37, 99, 235, 0.22);
+                        background: rgba(37, 99, 235, 0.25);
                         border-color: #38bdf8;
                         color: #ffffff;
                         font-weight: 800;
-                        box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+                        box-shadow: inset 0 0 6px rgba(56, 189, 248, 0.25);
                     }
                     .adm-chip.metric-chip.active {
-                        background: rgba(245, 158, 11, 0.2);
+                        background: rgba(245, 158, 11, 0.22);
                         border-color: #f59e0b;
                         color: #fbbf24;
-                        box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+                        box-shadow: inset 0 0 6px rgba(245, 158, 11, 0.25);
                     }
                 </style>
                 <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:500px; max-height:94vh; border-radius:12px; display:flex; flex-direction:column; border:1.5px solid #f59e0b; box-shadow:0 15px 45px rgba(0,0,0,0.9); overflow:hidden;">
@@ -3057,7 +3066,6 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                         <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:11px;">
                             
                             <input type="hidden" id="admin-edit-title-id" value="">
-                            <!-- 7대 조건 상태 저장용 히든 인풋 -->
                             <input type="hidden" id="admin-cond-scope" value="player">
                             <input type="hidden" id="admin-cond-match-type" value="ALL">
                             <input type="hidden" id="admin-cond-grade" value="ALL">
@@ -3093,55 +3101,57 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
 
                             <div style="border-top:1px dashed #26334d;"></div>
 
-                            <!-- 1-2. 달성 조건 설정 (방법 A: 세련된 터치형 미니 칩 UI) -->
-                            <div style="display:flex; flex-direction:column; gap:8px;">
-                                <div style="font-size:12px; font-weight:800; color:#38bdf8;">달성 조건 설정 (터치 선택)</div>
+                            <!-- 1-2. 달성 조건 설정 (칼각 그리드 칩 UI) -->
+                            <div style="display:flex; flex-direction:column; gap:7px;">
+                                <div style="font-size:12px; font-weight:800; color:#38bdf8;">달성 조건 설정</div>
 
-                                <!-- ① 선정 단위 & ② 대상 종목 -->
-                                <div style="display:grid; grid-template-columns:1fr 1.15fr; gap:6px; background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
-                                    <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">① 선정 단위</label>
-                                        <div id="chip-box-scope" class="adm-chip-group"></div>
-                                    </div>
-                                    <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">② 대상 종목</label>
-                                        <div id="chip-box-matchType" class="adm-chip-group"></div>
-                                    </div>
+                                <!-- ① 선정 단위 (2등분 고정) -->
+                                <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">① 선정 단위</label>
+                                    <div id="chip-box-scope" class="adm-grid-2"></div>
                                 </div>
 
-                                <!-- ③ 급수 조건 -->
-                                <div style="background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
-                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">③ 급수 조건</label>
-                                    <div id="chip-box-grade" class="adm-chip-group"></div>
+                                <!-- ② 대상 종목 (4등분 고정) -->
+                                <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">② 대상 종목</label>
+                                    <div id="chip-box-matchType" class="adm-grid-4"></div>
                                 </div>
 
-                                <!-- ④ 연령대 조건 -->
-                                <div style="background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
-                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">④ 연령대 조건</label>
-                                    <div id="chip-box-age" class="adm-chip-group"></div>
+                                <!-- ③ 급수 조건 (4열 그리드 + 긴 항목 2칸 병합) -->
+                                <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">③ 급수 조건</label>
+                                    <div id="chip-box-grade" class="adm-grid-4"></div>
                                 </div>
 
-                                <!-- ⑤ 성별 조건 & ⑥ 최소 출전 수 -->
-                                <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:6px; background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b; align-items:center;">
-                                    <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">⑤ 성별 조건</label>
-                                        <div id="chip-box-gender" class="adm-chip-group"></div>
+                                <!-- ④ 연령대 조건 (4열 그리드 + 긴 항목 2칸 병합) -->
+                                <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">④ 연령대 조건</label>
+                                    <div id="chip-box-age" class="adm-grid-4"></div>
+                                </div>
+
+                                <!-- ⑤ 성별 조건 (3등분) & ⑥ 최소 출전 수 -->
+                                <div style="display:grid; grid-template-columns:1.25fr 1fr; gap:6px;">
+                                    <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b;">
+                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">⑤ 성별 조건</label>
+                                        <div id="chip-box-gender" class="adm-grid-3"></div>
                                     </div>
-                                    <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">⑥ 최소 출전 수</label>
-                                        <div style="display:flex; align-items:center; gap:4px;">
-                                            <button type="button" onclick="window.adjustAdminMinGames(-1)" style="width:24px; height:24px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:4px; font-weight:800; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">-</button>
-                                            <input type="number" id="admin-cond-min-games" value="3" min="1" max="100" oninput="window.onAdminConditionInteractiveChange()" style="width:42px; height:24px; text-align:center; background:#0f1420; border:1px solid #334155; border-radius:4px; color:#ffffff; font-size:11px; font-weight:800; box-sizing:border-box;">
-                                            <button type="button" onclick="window.adjustAdminMinGames(1)" style="width:24px; height:24px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:4px; font-weight:800; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">+</button>
-                                            <span style="font-size:10px; color:#94a3b8;">경기</span>
+                                    <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b; display:flex; flex-direction:column; justify-content:space-between;">
+                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">⑥ 최소 출전 수</label>
+                                        <div style="display:flex; align-items:center; justify-content:space-between; height:30px; background:#0f1420; border:1px solid #26334d; border-radius:6px; padding:0 4px;">
+                                            <button type="button" onclick="window.adjustAdminMinGames(-1)" style="width:24px; height:22px; background:#1e293b; color:#e2e8f0; border:none; border-radius:4px; font-weight:800; font-size:12px; cursor:pointer;">-</button>
+                                            <div style="display:flex; align-items:center; gap:2px;">
+                                                <input type="number" id="admin-cond-min-games" value="3" min="1" max="100" oninput="window.onAdminConditionInteractiveChange()" style="width:28px; text-align:center; background:transparent; border:none; color:#ffffff; font-size:11.5px; font-weight:800; padding:0;">
+                                                <span style="font-size:10px; color:#94a3b8; font-weight:600;">경기</span>
+                                            </div>
+                                            <button type="button" onclick="window.adjustAdminMinGames(1)" style="width:24px; height:22px; background:#1e293b; color:#e2e8f0; border:none; border-radius:4px; font-weight:800; font-size:12px; cursor:pointer;">+</button>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- ⑦ 수상 산출 기준 -->
-                                <div style="background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
-                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">⑦ 수상 산출 기준</label>
-                                    <div id="chip-box-metric" class="adm-chip-group" style="display:grid; grid-template-columns:1fr 1fr; gap:4px;"></div>
+                                <!-- ⑦ 수상 산출 기준 (2열 칼각 그리드) -->
+                                <div style="background:#111726; padding:7px 8px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:5px;">⑦ 수상 산출 기준</label>
+                                    <div id="chip-box-metric" class="adm-grid-2"></div>
                                 </div>
 
                                 <!-- 월초 이벤트 타이틀 예고 등록/수정 저장 버튼 -->
@@ -3184,9 +3194,9 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                         <!-- ================================================= -->
                         <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:11px;">
                             <div style="font-size:11.5px; font-weight:800; color:#38bdf8; margin-bottom:8px;">추천 이벤트 타이틀 템플릿 (선택 시 자동 입력)</div>
-                            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:6px;">
+                            <div class="adm-grid-2">
                                 ${window.ADMIN_EVENT_PRESETS.map((p, idx) => `
-                                    <button type="button" onclick="window.applyAdminTitlePreset(${idx})" style="padding:7px 8px; background:#0f1420; color:#e2e8f0; border:1px solid #26334d; border-radius:6px; font-size:11px; font-weight:600; text-align:left; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                    <button type="button" onclick="window.applyAdminTitlePreset(${idx})" style="height:32px; padding:0 8px; background:#0f1420; color:#e2e8f0; border:1px solid #26334d; border-radius:6px; font-size:11px; font-weight:600; text-align:center; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                         ${p.label}
                                     </button>
                                 `).join('')}
@@ -3250,7 +3260,7 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
     });
 };
 
-// 인라인 미니 칩(버튼) 전체 렌더링 함수
+// 칼각 그리드 칩 렌더링 함수 (wide: 2칸 병합, full: 전체 병합 지원)
 window.renderAdminConditionChips = function(triggerPreview = true) {
     const scope = document.getElementById('admin-cond-scope').value || 'player';
     const matchType = document.getElementById('admin-cond-match-type').value || 'ALL';
@@ -3263,7 +3273,6 @@ window.renderAdminConditionChips = function(triggerPreview = true) {
     const gradeList = scope === 'pair' ? opts.grade_pair : opts.grade_player;
     const ageList = scope === 'pair' ? opts.age_pair : opts.age_player;
 
-    // 만약 단위 전환 시 기존 선택값이 새 목록에 없으면 'ALL'로 안전 복구
     const validGrade = gradeList.some(o => o.val === grade) ? grade : 'ALL';
     const validAge = ageList.some(o => o.val === age) ? age : 'ALL';
     document.getElementById('admin-cond-grade').value = validGrade;
@@ -3272,8 +3281,9 @@ window.renderAdminConditionChips = function(triggerPreview = true) {
     const buildChips = (list, curVal, groupKey, extraClass = '') => {
         return list.map(item => {
             const isAct = String(item.val) === String(curVal) ? 'active' : '';
+            const spanClass = item.full ? 'span-full' : (item.wide ? 'span-2' : '');
             const safeVal = String(item.val).replace(/'/g, "\\'");
-            return `<button type="button" class="adm-chip ${extraClass} ${isAct}" onclick="window.selectAdminCondChip('${groupKey}', '${safeVal}')">${item.label}</button>`;
+            return `<button type="button" class="adm-chip ${extraClass} ${spanClass} ${isAct}" onclick="window.selectAdminCondChip('${groupKey}', '${safeVal}')">${item.label}</button>`;
         }).join('');
     };
 
@@ -3291,14 +3301,9 @@ window.renderAdminConditionChips = function(triggerPreview = true) {
     if (elAge) elAge.innerHTML = buildChips(ageList, validAge, 'age');
     if (elMetric) elMetric.innerHTML = buildChips(opts.metric, metric, 'metric', 'metric-chip');
 
-    if (triggerPreview) {
-        window.previewAdminTitleCandidates();
-    } else {
-        window.previewAdminTitleCandidates();
-    }
+    window.previewAdminTitleCandidates();
 };
 
-// 칩 터치 시 상태 업데이트 및 후보군 즉시 갱신
 window.selectAdminCondChip = function(groupKey, val) {
     if (window._adminTitleCache) window._adminTitleCache.showCandidates = true;
 
@@ -3321,7 +3326,6 @@ window.selectAdminCondChip = function(groupKey, val) {
     window.renderAdminConditionChips(true);
 };
 
-// 최소 출전 수 +/- 버튼 제어
 window.adjustAdminMinGames = function(delta) {
     const el = document.getElementById('admin-cond-min-games');
     if (!el) return;
@@ -3332,7 +3336,6 @@ window.adjustAdminMinGames = function(delta) {
     window.onAdminConditionInteractiveChange();
 };
 
-// 기존 호환용 래퍼
 window.onAdminScopeChange = function(savedGrade = 'ALL', savedAge = 'ALL', isUserInteractive = false) {
     if (isUserInteractive && window._adminTitleCache) {
         window._adminTitleCache.showCandidates = true;
@@ -3366,7 +3369,6 @@ window.switchAdminCandidatePeriod = function(period) {
     });
 };
 
-// 달성 조건에 맞는 실시간 후보군 TOP 5 계산 및 렌더링 (이름+급수 분리 매칭 및 진단 안내 포함)
 window.previewAdminTitleCandidates = function() {
     const cache = window._adminTitleCache;
     const container = document.getElementById('admin-candidate-preview-list');
@@ -3392,7 +3394,6 @@ window.previewAdminTitleCandidates = function() {
     const metric = document.getElementById('admin-cond-metric').value;
     const minG = Math.max(1, parseInt(document.getElementById('admin-cond-min-games').value, 10) || 1);
 
-    // 이름에 '홍길동(D조)'처럼 괄호가 섞여 있어도 순수 이름과 괄호 안 급수를 분리하는 헬퍼
     const parsePlayerToken = (raw) => {
         const str = String(raw || '').trim();
         const match = str.match(/^(.+?)\(([^)]+)\)$/);
@@ -3535,7 +3536,6 @@ window.previewAdminTitleCandidates = function() {
         });
     }
 
-    // 종목 필터 적용 후 최소 1경기 이상 있는 후보들의 최대 경기수 확인 (진단 안내용)
     const activeInType = list.filter(i => i.evalGames >= 1);
     const maxGamesFound = activeInType.reduce((mx, i) => Math.max(mx, i.evalGames), 0);
 
@@ -3579,7 +3579,7 @@ window.previewAdminTitleCandidates = function() {
         if (activeInType.length > 0 && maxGamesFound < minG) {
             reasonHint = `조건에 맞는 ${unitName}이 <strong>${activeInType.length}팀(명)</strong> 있으나 최대 출전 수가 <strong>${maxGamesFound}경기</strong>입니다.<br><span style="color:#38bdf8;">⑥ 최소 출전 수를 ${maxGamesFound} 이하로 낮추면 후보가 바로 표시됩니다.</span>`;
         } else if (ageFilter !== 'ALL' || gradeFilter !== 'ALL') {
-            reasonHint = `[${periodName}] 선택하신 급수·연령대·종목 조건 및 최소 ${minG}경기를 모두 만족하는 ${unitName} 내역이 없습니다. (회원 명부에 급수·연령대가 등록되어 있는지 또는 최소 출전 수를 확인해 주세요)`;
+            reasonHint = `[${periodName}] 선택하신 급수·연령대·종목 조건 및 최소 ${minG}경기를 모두 만족하는 ${unitName} 내역이 없습니다.`;
         }
         container.innerHTML = `<div style="padding:11px 8px; text-align:center; color:#94a3b8; font-size:10.5px; line-height:1.45;">${reasonHint}</div>`;
         return;
