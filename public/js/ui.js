@@ -2992,7 +2992,8 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
             playersStats: res.playersStats || [],
             pairsStats: res.pairsStats || res.pairStats || [],
             customTitles: res.customTitles || [],
-            showCandidates: false
+            showCandidates: false,
+            includeGuests: false // 기본: 정회원만 필터링 (토글 시 일일회원 하늘색 표시 포함)
         };
 
         const customTitles = res.customTitles || [];
@@ -3167,7 +3168,7 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                                 <div>
                                     <label style="font-size:11px; color:#34d399; font-weight:800; display:block; margin-bottom:4px;">대상자 선정 (후보군에서 [선정] 클릭 후 [확정] 시 사용자 화면 발표)</label>
                                     <div style="display:flex; gap:6px; align-items:center;">
-                                        <input type="text" id="admin-manual-winner" placeholder="아래 후보군 TOP 5에서 [선정]을 누르거나 직접 입력" style="flex:1; height:34px; padding:6px 9px; background:#0f1420; border:1px solid #334155; border-radius:6px; color:#f59e0b; font-weight:800; font-size:11.5px; box-sizing:border-box;">
+                                        <input type="text" id="admin-manual-winner" placeholder="아래 후보군 TOP 5에서 [선정]을 누르거나 직접 입력" style="flex:1; height:34px; padding:6px 9px; background:#0f1420; border:1px solid #334155; border-radius:6px; color:#ffffff; font-weight:800; font-size:11.5px; box-sizing:border-box;">
                                         <button type="button" onclick="window.submitNewCustomTitle('published')" style="height:34px; padding:0 14px; background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color:#0f1420; border:none; border-radius:6px; font-weight:800; font-size:12px; cursor:pointer; white-space:nowrap; flex-shrink:0;">
                                             확정
                                         </button>
@@ -3176,11 +3177,20 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
 
                                 <!-- 후보군 TOP 5 실시간 리스트 -->
                                 <div style="background:#0f1420; border:1px solid #26334d; border-radius:8px; padding:9px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:4px;">
-                                        <span id="admin-candidate-box-title" style="font-size:11px; font-weight:800; color:#cbd5e1;">달성 조건 부합 후보군 TOP 5 (실시간 집계)</span>
-                                        <div style="display:flex; gap:4px; flex-shrink:0;">
-                                            <button type="button" onclick="window.switchAdminCandidatePeriod('month')" id="admin-period-btn-month" style="padding:3px 8px; background:${previewPeriod === 'month' ? '#2563eb' : '#151c2c'}; color:#ffffff; border:1px solid #334155; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer;">이번 달</button>
-                                            <button type="button" onclick="window.switchAdminCandidatePeriod('last_month')" id="admin-period-btn-last" style="padding:3px 8px; background:${previewPeriod === 'last_month' ? '#2563eb' : '#151c2c'}; color:#ffffff; border:1px solid #334155; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer;">지난달</button>
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:4px; flex-wrap:wrap;">
+                                        <span id="admin-candidate-box-title" style="font-size:11px; font-weight:800; color:#cbd5e1;">달성 조건 부합 후보군 TOP 5</span>
+                                        <div style="display:flex; gap:4px; align-items:center; flex-shrink:0;">
+                                            <button type="button" onclick="window.toggleAdminIncludeGuests()" id="admin-btn-include-guests" style="padding:3px 7px; background:#151c2c; color:#94a3b8; border:1px solid #334155; border-radius:4px; font-size:9.5px; font-weight:700; cursor:pointer;" title="일일회원(하늘색 텍스트)을 후보군에 함께 표시할지 선택합니다">일일포함 OFF</button>
+                                            <button type="button" onclick="window.switchAdminCandidatePeriod('month')" id="admin-period-btn-month" style="padding:3px 7px; background:${previewPeriod === 'month' ? '#2563eb' : '#151c2c'}; color:#ffffff; border:1px solid #334155; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer;">이번 달</button>
+                                            <button type="button" onclick="window.switchAdminCandidatePeriod('last_month')" id="admin-period-btn-last" style="padding:3px 7px; background:${previewPeriod === 'last_month' ? '#2563eb' : '#151c2c'}; color:#ffffff; border:1px solid #334155; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer;">지난달</button>
+                                        </div>
+                                    </div>
+                                    <!-- 텍스트 색상 범례 안내 -->
+                                    <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 6px; margin-bottom:6px; background:#151c2c; border-radius:4px; font-size:9.5px; color:#94a3b8;">
+                                        <span>회원 색상 구분 (앱 공통)</span>
+                                        <div style="display:flex; gap:10px; font-weight:700;">
+                                            <span style="color:#ffffff;">● 정회원 (흰색)</span>
+                                            <span style="color:#38bdf8;">● 일일회원 (하늘색)</span>
                                         </div>
                                     </div>
                                     <div id="admin-candidate-preview-list" style="display:flex; flex-direction:column; gap:4px;"></div>
@@ -3214,6 +3224,8 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                                 ` : customTitles.map((ct, idx) => {
                                     const isPub = ct.status === 'published';
                                     const unitBadge = (ct.condition && ct.condition.scope === 'pair') ? '파트너(2인)' : '개인(1인)';
+                                    const autoWinHtml = window.formatAdminWinnerWithMemberColors(ct.autoWinner || '집계 중 (경기 내역 없음)');
+                                    const finalWinHtml = isPub ? window.formatAdminWinnerWithMemberColors(ct.winner || '미확정') : '<span style="color:#64748b;">미확정</span>';
                                     return `
                                         <div style="background:#0f1420; border:1px solid #26334d; border-radius:8px; padding:10px; display:flex; flex-direction:column; gap:5px;">
                                             <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
@@ -3234,8 +3246,8 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                                             ${ct.prizeInfo ? `<div style="font-size:10.5px; color:#fbbf24; font-weight:700;">포상 상품: ${ct.prizeInfo}</div>` : ''}
                                             <div style="font-size:10.5px; color:#cbd5e1; line-height:1.35;">${ct.description || ''}</div>
                                             <div style="background:#151c2c; border-radius:5px; padding:5px 8px; font-size:10.5px; display:flex; justify-content:space-between; align-items:center; gap:6px;">
-                                                <span style="color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">현재 1위 후보: <strong style="color:#38bdf8;">${ct.autoWinner || '집계 중 (경기 내역 없음)'}</strong></span>
-                                                <span style="color:#cbd5e1; white-space:nowrap; flex-shrink:0;">대상자: <strong style="color:#f59e0b;">${isPub ? ct.winner : '미확정'}</strong></span>
+                                                <span style="color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">현재 1위 후보: <strong>${autoWinHtml}</strong></span>
+                                                <span style="color:#cbd5e1; white-space:nowrap; flex-shrink:0;">대상자: <strong>${finalWinHtml}</strong></span>
                                             </div>
                                         </div>
                                     `;
@@ -3260,7 +3272,63 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
     });
 };
 
-// 칼각 그리드 칩 렌더링 함수 (wide: 2칸 병합, full: 전체 병합 지원)
+// 선수 텍스트('홍길동(C조) & 김철수(B조) · 3승')에서 정회원(흰색) / 일일회원(하늘색) 색상만 깔끔하게 입혀주는 헬퍼
+window.formatAdminWinnerWithMemberColors = function(rawWinnerStr) {
+    if (!rawWinnerStr || rawWinnerStr.includes('집계 중') || rawWinnerStr.includes('없음') || rawWinnerStr.includes('미확정')) {
+        return `<span style="color:#64748b;">${rawWinnerStr || ''}</span>`;
+    }
+    const cache = window._adminTitleCache || {};
+    const parseToken = (raw) => {
+        const str = String(raw || '').trim();
+        const match = str.match(/^(.+?)\(([^)]+)\)$/);
+        return match ? { cleanName: match[1].trim() } : { cleanName: str };
+    };
+    const memberMap = {};
+    (cache.members || []).forEach(m => {
+        if (m && m.name) {
+            memberMap[parseToken(m.name).cleanName] = m;
+            memberMap[String(m.name).trim()] = m;
+        }
+    });
+    const checkRegular = (cleanName) => {
+        const m = memberMap[cleanName];
+        if (!m) return false; // 명부에 없으면 일일회원(하늘색)
+        const u = String(m.memberType || '정회원').toUpperCase();
+        return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
+    };
+
+    const parts = String(rawWinnerStr).split(' · ');
+    const namesPart = parts[0] || '';
+    const metricPart = parts.slice(1).join(' · ');
+
+    const coloredNames = namesPart.split(/\s*(?:&|·)\s*/).map(token => {
+        const { cleanName } = parseToken(token);
+        const isReg = checkRegular(cleanName);
+        const color = isReg ? '#ffffff' : '#38bdf8';
+        return `<span style="color:${color};">${token}</span>`;
+    }).join(' <span style="color:#64748b;">&</span> ');
+
+    return metricPart ? `${coloredNames} <span style="color:#34d399; font-weight:700;">· ${metricPart}</span>` : coloredNames;
+};
+
+// 일일회원 포함 보기 토글 (하늘색 텍스트로 일일회원 확인용)
+window.toggleAdminIncludeGuests = function() {
+    if (!window._adminTitleCache) return;
+    window._adminTitleCache.includeGuests = !window._adminTitleCache.includeGuests;
+    window._adminTitleCache.showCandidates = true;
+
+    const btn = document.getElementById('admin-btn-include-guests');
+    if (btn) {
+        const on = window._adminTitleCache.includeGuests;
+        btn.innerText = on ? '일일포함 ON' : '일일포함 OFF';
+        btn.style.background = on ? 'rgba(56, 189, 248, 0.2)' : '#151c2c';
+        btn.style.color = on ? '#38bdf8' : '#94a3b8';
+        btn.style.borderColor = on ? '#38bdf8' : '#334155';
+    }
+    window.previewAdminTitleCandidates();
+};
+
+// 칼각 그리드 칩 렌더링 함수
 window.renderAdminConditionChips = function(triggerPreview = true) {
     const scope = document.getElementById('admin-cond-scope').value || 'player';
     const matchType = document.getElementById('admin-cond-match-type').value || 'ALL';
@@ -3369,6 +3437,7 @@ window.switchAdminCandidatePeriod = function(period) {
     });
 };
 
+// 후보군 TOP 5 계산 및 렌더링 (정회원=#ffffff 흰색 / 일일회원=#38bdf8 하늘색, '일일' 텍스트 미표시)
 window.previewAdminTitleCandidates = function() {
     const cache = window._adminTitleCache;
     const container = document.getElementById('admin-candidate-preview-list');
@@ -3393,6 +3462,7 @@ window.previewAdminTitleCandidates = function() {
     const ageFilter = document.getElementById('admin-cond-age').value;
     const metric = document.getElementById('admin-cond-metric').value;
     const minG = Math.max(1, parseInt(document.getElementById('admin-cond-min-games').value, 10) || 1);
+    const includeGuests = !!cache.includeGuests;
 
     const parsePlayerToken = (raw) => {
         const str = String(raw || '').trim();
@@ -3412,10 +3482,14 @@ window.previewAdminTitleCandidates = function() {
         }
     });
 
-    const isRegular = (mType) => {
-        const u = String(mType || '정회원').toUpperCase();
+    // 명부에 정식 등록되어 있고 일일/게스트가 아닌 경우만 정회원(true)으로 판별
+    const checkIsRegular = (cleanName, fallbackType) => {
+        const prof = memberMap[cleanName];
+        if (!prof) return false; // 명부 미등록 당일 참가자는 일일회원(하늘색)으로 분류
+        const u = String(prof.memberType || fallbackType || '정회원').toUpperCase();
         return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
     };
+
     const getGradeRank = (g) => ({ 'S조': 6, 'A조': 5, 'B조': 4, 'C조': 3, 'D조': 2, '초심': 1 }[g] || 0);
 
     let list = [];
@@ -3437,11 +3511,16 @@ window.previewAdminTitleCandidates = function() {
             const p2Gender = pr.p2Gender || m2.gender || '';
             const p1Age = parseInt(pr.p1Age || m1.ageGroup, 10) || 0;
             const p2Age = parseInt(pr.p2Age || m2.ageGroup, 10) || 0;
-            const p1Type = pr.p1Type || m1.memberType || '정회원';
-            const p2Type = pr.p2Type || m2.memberType || '정회원';
+
+            const p1IsReg = checkIsRegular(t1.cleanName, pr.p1Type);
+            const p2IsReg = checkIsRegular(t2.cleanName, pr.p2Type);
 
             const p1Formatted = p1Grade ? `${t1.cleanName}(${p1Grade})` : t1.cleanName;
             const p2Formatted = p2Grade ? `${t2.cleanName}(${p2Grade})` : t2.cleanName;
+
+            // 정회원=#ffffff(흰색), 일일회원=#38bdf8(하늘색) - '일일' 글자 없이 색상만으로 구분
+            const p1Html = `<span style="color:${p1IsReg ? '#ffffff' : '#38bdf8'};">${p1Formatted}</span>`;
+            const p2Html = `<span style="color:${p2IsReg ? '#ffffff' : '#38bdf8'};">${p2Formatted}</span>`;
 
             return {
                 ...pr,
@@ -3449,12 +3528,14 @@ window.previewAdminTitleCandidates = function() {
                 p1Grade, p2Grade,
                 p1Gender, p2Gender,
                 p1Age, p2Age,
-                p1Type, p2Type,
-                p1Formatted, p2Formatted
+                p1IsReg, p2IsReg,
+                hasGuest: (!p1IsReg || !p2IsReg),
+                p1Formatted, p2Formatted,
+                displayHtml: `${p1Html} <span style="color:#64748b;">&</span> ${p2Html}`
             };
         }).filter(pr => {
             if (!pr.p1Name || !pr.p2Name) return false;
-            if (!isRegular(pr.p1Type) || !isRegular(pr.p2Type)) return false;
+            if (!includeGuests && pr.hasGuest) return false;
 
             if (genderFilter === '남' && (pr.p1Gender !== '남' || pr.p2Gender !== '남')) return false;
             if (genderFilter === '여' && (pr.p1Gender !== '여' || pr.p2Gender !== '여')) return false;
@@ -3486,26 +3567,34 @@ window.previewAdminTitleCandidates = function() {
             const pointDiff = (stat.pointsFor || 0) - (stat.pointsAgainst || 0);
             return {
                 displayName: `${pr.p1Formatted} & ${pr.p2Formatted}`,
+                displayHtml: pr.displayHtml,
+                hasGuest: pr.hasGuest,
                 evalGames: games, evalWins: wins, evalLosses: losses, evalWinRate: winRate,
                 evalClutchWins: stat.clutchWins || 0, evalBigWins: stat.bigWins || 0,
                 evalMaxStreak: stat.maxStreak || 0, evalPointDiff: pointDiff
             };
         });
     } else {
-        const regPlayers = (cache.playersStats || []).map(p => {
+        const allPlayers = (cache.playersStats || []).map(p => {
             const t = parsePlayerToken(p.name);
             const prof = memberMap[t.cleanName] || {};
+            const grade = p.grade || prof.grade || t.inlineGrade || '';
+            const isReg = checkIsRegular(t.cleanName, p.memberType);
+            const formatted = `${t.cleanName}${grade ? '(' + grade + ')' : ''}`;
             return {
                 ...p,
                 cleanName: t.cleanName,
-                grade: p.grade || prof.grade || t.inlineGrade || '',
+                grade,
                 gender: p.gender || prof.gender || '',
                 ageGroup: parseInt(p.ageGroup || prof.ageGroup, 10) || 0,
-                memberType: p.memberType || prof.memberType || '정회원'
+                isReg,
+                hasGuest: !isReg,
+                formatted,
+                displayHtml: `<span style="color:${isReg ? '#ffffff' : '#38bdf8'};">${formatted}</span>`
             };
-        }).filter(p => isRegular(p.memberType));
+        }).filter(p => includeGuests || p.isReg);
 
-        list = regPlayers.filter(p => {
+        list = allPlayers.filter(p => {
             if (genderFilter !== 'ALL' && p.gender !== genderFilter) return false;
             const g = p.grade || '';
             if (gradeFilter === 'LOW_CD' && g !== '초심' && g !== 'D조') return false;
@@ -3528,7 +3617,9 @@ window.previewAdminTitleCandidates = function() {
             const winRate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
             const pointDiff = (stat.pointsFor || 0) - (stat.pointsAgainst || 0);
             return {
-                displayName: `${p.cleanName}${p.grade ? '(' + p.grade + ')' : ''}`,
+                displayName: p.formatted,
+                displayHtml: p.displayHtml,
+                hasGuest: p.hasGuest,
                 evalGames: games, evalWins: wins, evalLosses: losses, evalWinRate: winRate,
                 evalClutchWins: stat.clutchWins || 0, evalBigWins: stat.bigWins || 0,
                 evalMaxStreak: stat.maxStreak || 0, evalPointDiff: pointDiff
@@ -3575,11 +3666,11 @@ window.previewAdminTitleCandidates = function() {
     const unitName = scope === 'pair' ? '파트너(2인 팀)' : '개인(1인)';
 
     if (top5.length === 0) {
-        let reasonHint = `조건에 맞는 ${unitName} 경기 기록이 아직 없습니다.`;
+        let reasonHint = `조건에 맞는 정회원 ${unitName} 경기 기록이 아직 없습니다.`;
         if (activeInType.length > 0 && maxGamesFound < minG) {
             reasonHint = `조건에 맞는 ${unitName}이 <strong>${activeInType.length}팀(명)</strong> 있으나 최대 출전 수가 <strong>${maxGamesFound}경기</strong>입니다.<br><span style="color:#38bdf8;">⑥ 최소 출전 수를 ${maxGamesFound} 이하로 낮추면 후보가 바로 표시됩니다.</span>`;
-        } else if (ageFilter !== 'ALL' || gradeFilter !== 'ALL') {
-            reasonHint = `[${periodName}] 선택하신 급수·연령대·종목 조건 및 최소 ${minG}경기를 모두 만족하는 ${unitName} 내역이 없습니다.`;
+        } else if (!includeGuests) {
+            reasonHint = `[${periodName}] 조건을 만족하는 정회원 ${unitName} 내역이 없습니다.<br><span style="color:#64748b;">(우측 상단 [일일포함 OFF]를 켜면 일일회원이 포함된 경기인지 하늘색 텍스트로 확인할 수 있습니다)</span>`;
         }
         container.innerHTML = `<div style="padding:11px 8px; text-align:center; color:#94a3b8; font-size:10.5px; line-height:1.45;">${reasonHint}</div>`;
         return;
@@ -3591,21 +3682,28 @@ window.previewAdminTitleCandidates = function() {
             <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:#151c2c; border:1px solid #1e293b; border-radius:5px; font-size:11px; gap:6px;">
                 <div style="overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">
                     <span style="color:#f59e0b; font-weight:800; margin-right:4px;">${idx + 1}위</span>
-                    <strong style="color:#ffffff;">${c.displayName}</strong>
+                    <strong>${c.displayHtml}</strong>
                 </div>
                 <div style="display:flex; align-items:center; gap:6px; flex-shrink:0; white-space:nowrap;">
-                    <span style="color:#38bdf8; font-weight:700; font-size:10.5px;">${c.metricText}</span>
-                    <button type="button" onclick="window.selectCandidateAsWinner('${winnerStr}')" style="padding:3px 8px; background:#2563eb; color:#ffffff; border:none; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer;">선정</button>
+                    <span style="color:#34d399; font-weight:700; font-size:10.5px;">${c.metricText}</span>
+                    <button type="button" onclick="window.selectCandidateAsWinner('${winnerStr}', ${c.hasGuest})" style="padding:3px 8px; background:#2563eb; color:#ffffff; border:none; border-radius:4px; font-size:10px; font-weight:700; cursor:pointer;">선정</button>
                 </div>
             </div>
         `;
     }).join('');
 };
 
-window.selectCandidateAsWinner = function(winnerText) {
+window.selectCandidateAsWinner = function(winnerText, hasGuest = false) {
+    if (hasGuest) {
+        if (!confirm('선택하신 후보에 일일회원(하늘색 표시)이 포함되어 있습니다.\n그래도 이벤트 타이틀 대상자로 선정하시겠습니까?')) {
+            return;
+        }
+    }
     const winnerEl = document.getElementById('admin-manual-winner');
     if (winnerEl) {
         winnerEl.value = winnerText;
+        // 입력칸 자체의 텍스트 색상도 일일회원 포함 시 하늘색, 정회원만 있을 시 흰색으로 직관적 반영
+        winnerEl.style.color = hasGuest ? '#38bdf8' : '#ffffff';
         winnerEl.focus();
     }
 };
@@ -3629,6 +3727,7 @@ window.applyAdminTitlePreset = function(idx) {
     document.getElementById('admin-cond-metric').value = p.metricType;
     document.getElementById('admin-cond-min-games').value = p.minGames;
     document.getElementById('admin-manual-winner').value = '';
+    document.getElementById('admin-manual-winner').style.color = '#ffffff';
 
     window.renderAdminConditionChips(true);
 
@@ -3686,11 +3785,15 @@ window.loadTitleForEdit = function(idx) {
     document.getElementById('admin-cond-age').value = cond.ageFilter || 'ALL';
     document.getElementById('admin-cond-metric').value = cond.metricType || 'most_wins';
     document.getElementById('admin-cond-min-games').value = cond.minGames || 3;
-    document.getElementById('admin-manual-winner').value = ct.manualWinner || (ct.status === 'published' ? ct.winner : '');
+
+    const winnerVal = ct.manualWinner || (ct.status === 'published' ? ct.winner : '');
+    const winnerEl = document.getElementById('admin-manual-winner');
+    winnerEl.value = winnerVal;
+    winnerEl.style.color = '#ffffff';
 
     const boxTitle = document.getElementById('admin-candidate-box-title');
     if (boxTitle) {
-        boxTitle.innerHTML = `<span style="color:#fbbf24;">[${ct.titleName}]</span> 실시간 후보군 TOP 5`;
+        boxTitle.innerHTML = `<span style="color:#fbbf24;">[${ct.titleName}]</span> 후보군 TOP 5`;
     }
 
     window.renderAdminConditionChips(true);
@@ -3713,11 +3816,13 @@ window.resetAdminTitleForm = function() {
     document.getElementById('admin-cond-age').value = 'ALL';
     document.getElementById('admin-cond-metric').value = 'most_wins';
     document.getElementById('admin-cond-min-games').value = 3;
-    document.getElementById('admin-manual-winner').value = '';
+    const winnerEl = document.getElementById('admin-manual-winner');
+    winnerEl.value = '';
+    winnerEl.style.color = '#ffffff';
 
     const boxTitle = document.getElementById('admin-candidate-box-title');
     if (boxTitle) {
-        boxTitle.innerText = '달성 조건 부합 후보군 TOP 5 (실시간 집계)';
+        boxTitle.innerText = '달성 조건 부합 후보군 TOP 5';
     }
 
     window.renderAdminConditionChips(false);
@@ -3779,6 +3884,19 @@ window.submitNewCustomTitle = function(mode = 'pending') {
             window.openAdminEventTitleManager(period, null);
         } else {
             alert((res && res.message) || '저장에 실패했습니다.');
+        }
+    });
+};
+
+window.deleteCustomTitle = function(id) {
+    if (!confirm('이 이벤트 타이틀을 삭제하시겠습니까?')) return;
+    const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
+    socket.emit('deleteCustomTitle', { clubId, id }, (res) => {
+        if (res && res.success) {
+            const period = (window._adminTitleCache && window._adminTitleCache.period) || 'month';
+            window.openAdminEventTitleManager(period, null);
+        } else {
+            alert('삭제에 실패했습니다.');
         }
     });
 };
