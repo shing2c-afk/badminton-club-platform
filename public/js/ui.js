@@ -2825,7 +2825,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
 };
 
 // =========================================================================
-// 3. [관리자 모드] 이벤트 타이틀 통합 작성 · 달성 조건 설정 · 대상자 선정 및 확정
+// 3. [관리자 모드] 이벤트 타이틀 통합 작성 · 달성 조건(인라인 칩 UI) · 대상자 선정
 // =========================================================================
 
 // 추천 이벤트 타이틀 템플릿 10종
@@ -2902,6 +2902,81 @@ window.ADMIN_EVENT_PRESETS = [
     }
 ];
 
+// 인라인 칩(버튼형) 옵션 정의
+window.ADMIN_COND_OPTIONS = {
+    scope: [
+        { val: 'player', label: '개인 (1인)' },
+        { val: 'pair', label: '파트너 (2인 팀)' }
+    ],
+    matchType: [
+        { val: 'ALL', label: '전체' },
+        { val: '남복', label: '남복' },
+        { val: '여복', label: '여복' },
+        { val: '혼복', label: '혼복' }
+    ],
+    gender: [
+        { val: 'ALL', label: '전체' },
+        { val: '남', label: '남성' },
+        { val: '여', label: '여성' }
+    ],
+    grade_player: [
+        { val: 'ALL', label: '전체' },
+        { val: 'LOW_CD', label: '초심+D조' },
+        { val: 'LOW_CDC', label: '초심+D+C조' },
+        { val: '초심', label: '초심' },
+        { val: 'D조', label: 'D조' },
+        { val: 'C조', label: 'C조' },
+        { val: 'B조', label: 'B조' },
+        { val: 'A조', label: 'A조' }
+    ],
+    grade_pair: [
+        { val: 'ALL', label: '전체' },
+        { val: 'PAIR_MENTOR', label: '멘토&멘티(A·B+C·D·초)' },
+        { val: 'PAIR_SAME', label: '동일 급수' },
+        { val: 'PAIR_LOW', label: '초심·D조끼리' },
+        { val: 'PAIR_MID_LOW', label: '초·D·C조끼리' },
+        { val: '초심', label: '초심 포함' },
+        { val: 'D조', label: 'D조 포함' },
+        { val: 'C조', label: 'C조 포함' },
+        { val: 'B조', label: 'B조 포함' },
+        { val: 'A조', label: 'A조 포함' }
+    ],
+    age_player: [
+        { val: 'ALL', label: '전체' },
+        { val: 'YOUTH_2030', label: '청년층(10~30대)' },
+        { val: 'SENIOR_5060', label: '중장년(50·60대+)' },
+        { val: '10', label: '10대' },
+        { val: '20', label: '20대' },
+        { val: '30', label: '30대' },
+        { val: '40', label: '40대' },
+        { val: '50', label: '50대' },
+        { val: '60', label: '60대 이상' }
+    ],
+    age_pair: [
+        { val: 'ALL', label: '전체' },
+        { val: 'PAIR_DIFF_AGE', label: '세대공감(다른 연령대)' },
+        { val: 'PAIR_GAP_20', label: '세대초월(20년차+)' },
+        { val: 'PAIR_SAME_AGE', label: '동년배(같은 연령대)' },
+        { val: '10', label: '10대 포함' },
+        { val: '20', label: '20대 포함' },
+        { val: '30', label: '30대 포함' },
+        { val: '40', label: '40대 포함' },
+        { val: '50', label: '50대 포함' },
+        { val: '60', label: '60대+ 포함' }
+    ],
+    metric: [
+        { val: 'most_wins', label: '다승 (최다 승리)' },
+        { val: 'win_rate', label: '최고 승률 (승률 1위)' },
+        { val: 'win_rate_100', label: '무패 신화 (승률 100%)' },
+        { val: 'most_games', label: '최다 출전 (코트 철인)' },
+        { val: 'clutch_wins', label: '접전 승부사 (2점차 승)' },
+        { val: 'big_wins', label: '대승 폭격기 (10점차 승)' },
+        { val: 'max_streak', label: '최다 연승 (연속 승리)' },
+        { val: 'point_diff', label: '최고 득실차 (득실 1위)' },
+        { val: 'most_losses', label: '칠전팔기 (최다패 격려)' }
+    ]
+};
+
 window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelectId = null) {
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
 
@@ -2917,7 +2992,7 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
             playersStats: res.playersStats || [],
             pairsStats: res.pairsStats || res.pairStats || [],
             customTitles: res.customTitles || [],
-            showCandidates: false // 명시적으로 타이틀을 선택하거나 조건을 조작할 때만 후보 표시
+            showCandidates: false
         };
 
         const customTitles = res.customTitles || [];
@@ -2932,17 +3007,37 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                         color: rgba(148, 163, 184, 0.35) !important;
                         font-weight: 400 !important;
                     }
-                    #admin-event-title-modal select {
-                        font-size: 11px !important;
-                        font-weight: 600 !important;
-                        padding: 6px 8px !important;
-                        height: 32px !important;
-                        box-sizing: border-box !important;
+                    /* 세련된 모바일 인라인 미니 칩(Chip) 스타일 */
+                    .adm-chip-group {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 4px;
                     }
-                    #admin-event-title-modal select option {
-                        font-size: 11px;
+                    .adm-chip {
+                        padding: 4px 8px;
+                        border-radius: 5px;
                         background: #0f1420;
-                        color: #f8fafc;
+                        border: 1px solid #26334d;
+                        color: #94a3b8;
+                        font-size: 10.5px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.12s ease;
+                        line-height: 1.3;
+                        user-select: none;
+                    }
+                    .adm-chip.active {
+                        background: rgba(37, 99, 235, 0.22);
+                        border-color: #38bdf8;
+                        color: #ffffff;
+                        font-weight: 800;
+                        box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+                    }
+                    .adm-chip.metric-chip.active {
+                        background: rgba(245, 158, 11, 0.2);
+                        border-color: #f59e0b;
+                        color: #fbbf24;
+                        box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
                     }
                 </style>
                 <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:500px; max-height:94vh; border-radius:12px; display:flex; flex-direction:column; border:1.5px solid #f59e0b; box-shadow:0 15px 45px rgba(0,0,0,0.9); overflow:hidden;">
@@ -2959,12 +3054,19 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                         <!-- ================================================= -->
                         <!-- [카드 1] 이벤트 타이틀 작성 + 달성 조건 설정 + 대상자 선정 -->
                         <!-- ================================================= -->
-                        <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:12px;">
+                        <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:11px;">
                             
                             <input type="hidden" id="admin-edit-title-id" value="">
+                            <!-- 7대 조건 상태 저장용 히든 인풋 -->
+                            <input type="hidden" id="admin-cond-scope" value="player">
+                            <input type="hidden" id="admin-cond-match-type" value="ALL">
+                            <input type="hidden" id="admin-cond-grade" value="ALL">
+                            <input type="hidden" id="admin-cond-age" value="ALL">
+                            <input type="hidden" id="admin-cond-gender" value="ALL">
+                            <input type="hidden" id="admin-cond-metric" value="most_wins">
 
                             <!-- 1-1. 이벤트 타이틀 작성 -->
-                            <div style="display:flex; flex-direction:column; gap:8px;">
+                            <div style="display:flex; flex-direction:column; gap:7px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <span id="admin-form-mode-title" style="font-size:12.5px; font-weight:800; color:#f59e0b;">이벤트 타이틀 작성</span>
                                     <button type="button" onclick="window.resetAdminTitleForm()" style="padding:3px 8px; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:4px; font-size:10px; font-weight:600; cursor:pointer;">새로 작성 (초기화)</button>
@@ -2985,74 +3087,61 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                                         <label style="font-size:10.5px; color:#94a3b8; font-weight:700;">이벤트 타이틀 설명</label>
                                         <button type="button" onclick="window.autoGenerateAdminDesc()" style="padding:2px 6px; background:#1e293b; color:#38bdf8; border:1px solid #334155; border-radius:4px; font-size:10px; font-weight:600; cursor:pointer;">조건 설명 자동완성</button>
                                     </div>
-                                    <textarea id="admin-new-title-desc" placeholder="회원들이 도전 목표를 알 수 있도록 달성 조건을 적어주세요." style="width:100%; height:44px; padding:7px 9px; background:#0f1420; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:11px; box-sizing:border-box; resize:none; line-height:1.4;"></textarea>
+                                    <textarea id="admin-new-title-desc" placeholder="회원들이 도전 목표를 알 수 있도록 달성 조건을 적어주세요." style="width:100%; height:42px; padding:6px 9px; background:#0f1420; border:1px solid #334155; border-radius:6px; color:#e2e8f0; font-size:11px; box-sizing:border-box; resize:none; line-height:1.4;"></textarea>
                                 </div>
                             </div>
 
                             <div style="border-top:1px dashed #26334d;"></div>
 
-                            <!-- 1-2. 달성 조건 설정 -->
+                            <!-- 1-2. 달성 조건 설정 (방법 A: 세련된 터치형 미니 칩 UI) -->
                             <div style="display:flex; flex-direction:column; gap:8px;">
-                                <div style="font-size:12px; font-weight:800; color:#38bdf8;">달성 조건 설정</div>
+                                <div style="font-size:12px; font-weight:800; color:#38bdf8;">달성 조건 설정 (터치 선택)</div>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                                <!-- ① 선정 단위 & ② 대상 종목 -->
+                                <div style="display:grid; grid-template-columns:1fr 1.15fr; gap:6px; background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
                                     <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">① 선정 단위</label>
-                                        <select id="admin-cond-scope" onchange="window.onAdminScopeChange('ALL', 'ALL', true)" style="width:100%; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#38bdf8;">
-                                            <option value="player">개인 (1인)</option>
-                                            <option value="pair">파트너 (2인 팀)</option>
-                                        </select>
+                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">① 선정 단위</label>
+                                        <div id="chip-box-scope" class="adm-chip-group"></div>
                                     </div>
                                     <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">② 대상 종목</label>
-                                        <select id="admin-cond-match-type" onchange="window.onAdminConditionInteractiveChange()" style="width:100%; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#ffffff;">
-                                            <option value="ALL">전체</option>
-                                            <option value="남복">남복</option>
-                                            <option value="여복">여복</option>
-                                            <option value="혼복">혼복</option>
-                                        </select>
+                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">② 대상 종목</label>
+                                        <div id="chip-box-matchType" class="adm-chip-group"></div>
                                     </div>
                                 </div>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                                <!-- ③ 급수 조건 -->
+                                <div style="background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">③ 급수 조건</label>
+                                    <div id="chip-box-grade" class="adm-chip-group"></div>
+                                </div>
+
+                                <!-- ④ 연령대 조건 -->
+                                <div style="background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">④ 연령대 조건</label>
+                                    <div id="chip-box-age" class="adm-chip-group"></div>
+                                </div>
+
+                                <!-- ⑤ 성별 조건 & ⑥ 최소 출전 수 -->
+                                <div style="display:grid; grid-template-columns:1.1fr 0.9fr; gap:6px; background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b; align-items:center;">
                                     <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">③ 급수 조건</label>
-                                        <select id="admin-cond-grade" onchange="window.onAdminConditionInteractiveChange()" style="width:100%; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#ffffff;"></select>
+                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">⑤ 성별 조건</label>
+                                        <div id="chip-box-gender" class="adm-chip-group"></div>
                                     </div>
                                     <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">④ 연령대 조건</label>
-                                        <select id="admin-cond-age" onchange="window.onAdminConditionInteractiveChange()" style="width:100%; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#ffffff;"></select>
+                                        <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">⑥ 최소 출전 수</label>
+                                        <div style="display:flex; align-items:center; gap:4px;">
+                                            <button type="button" onclick="window.adjustAdminMinGames(-1)" style="width:24px; height:24px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:4px; font-weight:800; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">-</button>
+                                            <input type="number" id="admin-cond-min-games" value="3" min="1" max="100" oninput="window.onAdminConditionInteractiveChange()" style="width:42px; height:24px; text-align:center; background:#0f1420; border:1px solid #334155; border-radius:4px; color:#ffffff; font-size:11px; font-weight:800; box-sizing:border-box;">
+                                            <button type="button" onclick="window.adjustAdminMinGames(1)" style="width:24px; height:24px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:4px; font-weight:800; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">+</button>
+                                            <span style="font-size:10px; color:#94a3b8;">경기</span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-                                    <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">⑤ 성별 조건</label>
-                                        <select id="admin-cond-gender" onchange="window.onAdminConditionInteractiveChange()" style="width:100%; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#ffffff;">
-                                            <option value="ALL">전체</option>
-                                            <option value="남">남성</option>
-                                            <option value="여">여성</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">⑥ 최소 출전 수</label>
-                                        <input type="number" id="admin-cond-min-games" value="3" min="1" max="100" oninput="window.onAdminConditionInteractiveChange()" style="width:100%; height:32px; padding:6px 8px; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#ffffff; font-size:11px; font-weight:600; box-sizing:border-box;">
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label style="font-size:10px; color:#94a3b8; font-weight:600; display:block; margin-bottom:2px;">⑦ 수상 산출 기준</label>
-                                    <select id="admin-cond-metric" onchange="window.onAdminConditionInteractiveChange()" style="width:100%; background:#0f1420; border:1px solid #334155; border-radius:5px; color:#f59e0b;">
-                                        <option value="most_wins">다승 (최다 승리)</option>
-                                        <option value="win_rate">최고 승률 (승률 1위)</option>
-                                        <option value="win_rate_100">무패 신화 (승률 100% 다승 순)</option>
-                                        <option value="most_games">최다 출전 (코트 철인·개근)</option>
-                                        <option value="clutch_wins">접전 승부사 (2점 차 이내 최다승)</option>
-                                        <option value="big_wins">대승 폭격기 (10점 차 이상 대승)</option>
-                                        <option value="max_streak">최다 연승 (연속 승리 기록)</option>
-                                        <option value="point_diff">최고 득실차 (득점-실점 1위)</option>
-                                        <option value="most_losses">칠전팔기 열정상 (최다 패배 격려)</option>
-                                    </select>
+                                <!-- ⑦ 수상 산출 기준 -->
+                                <div style="background:#111726; padding:7px; border-radius:7px; border:1px solid #1e293b;">
+                                    <label style="font-size:10px; color:#94a3b8; font-weight:700; display:block; margin-bottom:4px;">⑦ 수상 산출 기준</label>
+                                    <div id="chip-box-metric" class="adm-chip-group" style="display:grid; grid-template-columns:1fr 1fr; gap:4px;"></div>
                                 </div>
 
                                 <!-- 월초 이벤트 타이틀 예고 등록/수정 저장 버튼 -->
@@ -3157,17 +3246,107 @@ window.openAdminEventTitleManager = function(previewPeriod = 'month', autoSelect
                 return;
             }
         }
-        window.onAdminScopeChange('ALL', 'ALL', false);
+        window.renderAdminConditionChips(false);
     });
 };
 
-// 조건 드롭다운을 관리자가 직접 조작할 때 후보군 시뮬레이터 활성화
+// 인라인 미니 칩(버튼) 전체 렌더링 함수
+window.renderAdminConditionChips = function(triggerPreview = true) {
+    const scope = document.getElementById('admin-cond-scope').value || 'player';
+    const matchType = document.getElementById('admin-cond-match-type').value || 'ALL';
+    const gender = document.getElementById('admin-cond-gender').value || 'ALL';
+    const grade = document.getElementById('admin-cond-grade').value || 'ALL';
+    const age = document.getElementById('admin-cond-age').value || 'ALL';
+    const metric = document.getElementById('admin-cond-metric').value || 'most_wins';
+
+    const opts = window.ADMIN_COND_OPTIONS;
+    const gradeList = scope === 'pair' ? opts.grade_pair : opts.grade_player;
+    const ageList = scope === 'pair' ? opts.age_pair : opts.age_player;
+
+    // 만약 단위 전환 시 기존 선택값이 새 목록에 없으면 'ALL'로 안전 복구
+    const validGrade = gradeList.some(o => o.val === grade) ? grade : 'ALL';
+    const validAge = ageList.some(o => o.val === age) ? age : 'ALL';
+    document.getElementById('admin-cond-grade').value = validGrade;
+    document.getElementById('admin-cond-age').value = validAge;
+
+    const buildChips = (list, curVal, groupKey, extraClass = '') => {
+        return list.map(item => {
+            const isAct = String(item.val) === String(curVal) ? 'active' : '';
+            const safeVal = String(item.val).replace(/'/g, "\\'");
+            return `<button type="button" class="adm-chip ${extraClass} ${isAct}" onclick="window.selectAdminCondChip('${groupKey}', '${safeVal}')">${item.label}</button>`;
+        }).join('');
+    };
+
+    const elScope = document.getElementById('chip-box-scope');
+    const elType = document.getElementById('chip-box-matchType');
+    const elGender = document.getElementById('chip-box-gender');
+    const elGrade = document.getElementById('chip-box-grade');
+    const elAge = document.getElementById('chip-box-age');
+    const elMetric = document.getElementById('chip-box-metric');
+
+    if (elScope) elScope.innerHTML = buildChips(opts.scope, scope, 'scope');
+    if (elType) elType.innerHTML = buildChips(opts.matchType, matchType, 'matchType');
+    if (elGender) elGender.innerHTML = buildChips(opts.gender, gender, 'gender');
+    if (elGrade) elGrade.innerHTML = buildChips(gradeList, validGrade, 'grade');
+    if (elAge) elAge.innerHTML = buildChips(ageList, validAge, 'age');
+    if (elMetric) elMetric.innerHTML = buildChips(opts.metric, metric, 'metric', 'metric-chip');
+
+    if (triggerPreview) {
+        window.previewAdminTitleCandidates();
+    } else {
+        window.previewAdminTitleCandidates();
+    }
+};
+
+// 칩 터치 시 상태 업데이트 및 후보군 즉시 갱신
+window.selectAdminCondChip = function(groupKey, val) {
+    if (window._adminTitleCache) window._adminTitleCache.showCandidates = true;
+
+    if (groupKey === 'scope') {
+        document.getElementById('admin-cond-scope').value = val;
+        document.getElementById('admin-cond-grade').value = 'ALL';
+        document.getElementById('admin-cond-age').value = 'ALL';
+    } else if (groupKey === 'matchType') {
+        document.getElementById('admin-cond-match-type').value = val;
+    } else if (groupKey === 'gender') {
+        document.getElementById('admin-cond-gender').value = val;
+    } else if (groupKey === 'grade') {
+        document.getElementById('admin-cond-grade').value = val;
+    } else if (groupKey === 'age') {
+        document.getElementById('admin-cond-age').value = val;
+    } else if (groupKey === 'metric') {
+        document.getElementById('admin-cond-metric').value = val;
+    }
+
+    window.renderAdminConditionChips(true);
+};
+
+// 최소 출전 수 +/- 버튼 제어
+window.adjustAdminMinGames = function(delta) {
+    const el = document.getElementById('admin-cond-min-games');
+    if (!el) return;
+    let v = (parseInt(el.value, 10) || 1) + delta;
+    if (v < 1) v = 1;
+    if (v > 100) v = 100;
+    el.value = v;
+    window.onAdminConditionInteractiveChange();
+};
+
+// 기존 호환용 래퍼
+window.onAdminScopeChange = function(savedGrade = 'ALL', savedAge = 'ALL', isUserInteractive = false) {
+    if (isUserInteractive && window._adminTitleCache) {
+        window._adminTitleCache.showCandidates = true;
+    }
+    document.getElementById('admin-cond-grade').value = savedGrade;
+    document.getElementById('admin-cond-age').value = savedAge;
+    window.renderAdminConditionChips(true);
+};
+
 window.onAdminConditionInteractiveChange = function() {
     if (window._adminTitleCache) window._adminTitleCache.showCandidates = true;
     window.previewAdminTitleCandidates();
 };
 
-// 작성 중인 폼 내용을 유지한 채로 후보군 집계 기간(이번 달 / 지난달)만 전환
 window.switchAdminCandidatePeriod = function(period) {
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
     socket.emit('getMatchStats', { clubId, period: period, minGames: 1 }, (res) => {
@@ -3187,75 +3366,7 @@ window.switchAdminCandidatePeriod = function(period) {
     });
 };
 
-// 선정 단위 변경 시 급수/연령대 옵션 업데이트
-window.onAdminScopeChange = function(savedGrade = 'ALL', savedAge = 'ALL', isUserInteractive = false) {
-    const scopeEl = document.getElementById('admin-cond-scope');
-    const gradeEl = document.getElementById('admin-cond-grade');
-    const ageEl = document.getElementById('admin-cond-age');
-    if (!scopeEl || !gradeEl || !ageEl) return;
-
-    if (isUserInteractive && window._adminTitleCache) {
-        window._adminTitleCache.showCandidates = true;
-    }
-
-    if (scopeEl.value === 'pair') {
-        gradeEl.innerHTML = `
-            <option value="ALL">전체</option>
-            <option value="PAIR_MENTOR">멘토&멘티 (A·B + C·D·초심)</option>
-            <option value="PAIR_SAME">동일 급수끼리</option>
-            <option value="PAIR_LOW">초심·D조끼리</option>
-            <option value="PAIR_MID_LOW">초심·D·C조끼리</option>
-            <option value="초심">초심 포함</option>
-            <option value="D조">D조 포함</option>
-            <option value="C조">C조 포함</option>
-            <option value="B조">B조 포함</option>
-            <option value="A조">A조 포함</option>
-        `;
-        ageEl.innerHTML = `
-            <option value="ALL">전체</option>
-            <option value="PAIR_DIFF_AGE">세대공감 (다른 연령대)</option>
-            <option value="PAIR_GAP_20">세대초월 (20년 이상 차이)</option>
-            <option value="PAIR_SAME_AGE">동년배 (같은 연령대)</option>
-            <option value="10">10대 포함</option>
-            <option value="20">20대 포함</option>
-            <option value="30">30대 포함</option>
-            <option value="40">40대 포함</option>
-            <option value="50">50대 포함</option>
-            <option value="60">60대+ 포함</option>
-        `;
-    } else {
-        gradeEl.innerHTML = `
-            <option value="ALL">전체</option>
-            <option value="LOW_CD">초심 + D조</option>
-            <option value="LOW_CDC">초심 + D조 + C조</option>
-            <option value="초심">초심</option>
-            <option value="D조">D조</option>
-            <option value="C조">C조</option>
-            <option value="B조">B조</option>
-            <option value="A조">A조</option>
-        `;
-        ageEl.innerHTML = `
-            <option value="ALL">전체</option>
-            <option value="YOUTH_2030">청년층 (10~30대)</option>
-            <option value="SENIOR_5060">중장년층 (50·60대+)</option>
-            <option value="10">10대</option>
-            <option value="20">20대</option>
-            <option value="30">30대</option>
-            <option value="40">40대</option>
-            <option value="50">50대</option>
-            <option value="60">60대 이상</option>
-        `;
-    }
-
-    gradeEl.value = savedGrade;
-    if (!gradeEl.value) gradeEl.value = 'ALL';
-    ageEl.value = savedAge;
-    if (!ageEl.value) ageEl.value = 'ALL';
-
-    window.previewAdminTitleCandidates();
-};
-
-// 달성 조건에 맞는 실시간 후보군 TOP 5 계산 및 렌더링 (파트너 2인 팀 매핑 완벽 보완)
+// 달성 조건에 맞는 실시간 후보군 TOP 5 계산 및 렌더링 (이름+급수 분리 매칭 및 진단 안내 포함)
 window.previewAdminTitleCandidates = function() {
     const cache = window._adminTitleCache;
     const container = document.getElementById('admin-candidate-preview-list');
@@ -3263,12 +3374,11 @@ window.previewAdminTitleCandidates = function() {
 
     const editId = document.getElementById('admin-edit-title-id') ? document.getElementById('admin-edit-title-id').value : '';
 
-    // 신규 작성 초기 상태(예고 등록 직후 등)에서는 엉뚱한 기본값 후보군이 보이지 않도록 대기 안내 표시
     if (!editId && !cache.showCandidates) {
         container.innerHTML = `
             <div style="padding:12px 8px; text-align:center; color:#94a3b8; font-size:10.5px; line-height:1.45;">
-                아래 <strong>[등록된 이벤트 타이틀]</strong> 목록에서 <strong>[수정/선정]</strong> 버튼을 누르면<br>
-                해당 타이틀의 조건에 맞는 실시간 후보군 TOP 5가 이곳에 표시됩니다.
+                위 조건을 터치하여 시뮬레이션하거나, 아래 <strong>[등록된 이벤트 타이틀]</strong>에서<br>
+                <strong>[수정/선정]</strong>을 누르면 실시간 후보군 TOP 5가 표시됩니다.
             </div>
         `;
         return;
@@ -3282,10 +3392,23 @@ window.previewAdminTitleCandidates = function() {
     const metric = document.getElementById('admin-cond-metric').value;
     const minG = Math.max(1, parseInt(document.getElementById('admin-cond-min-games').value, 10) || 1);
 
-    // 회원 프로필 맵 구성 (파트너 이름·급수·성별·연령대 정확 매핑용)
+    // 이름에 '홍길동(D조)'처럼 괄호가 섞여 있어도 순수 이름과 괄호 안 급수를 분리하는 헬퍼
+    const parsePlayerToken = (raw) => {
+        const str = String(raw || '').trim();
+        const match = str.match(/^(.+?)\(([^)]+)\)$/);
+        if (match) {
+            return { cleanName: match[1].trim(), inlineGrade: match[2].trim() };
+        }
+        return { cleanName: str, inlineGrade: '' };
+    };
+
     const memberMap = {};
     (cache.members || []).forEach(m => {
-        if (m && m.name) memberMap[String(m.name).trim()] = m;
+        if (m && m.name) {
+            const { cleanName } = parsePlayerToken(m.name);
+            memberMap[cleanName] = m;
+            memberMap[String(m.name).trim()] = m;
+        }
     });
 
     const isRegular = (mType) => {
@@ -3298,26 +3421,30 @@ window.previewAdminTitleCandidates = function() {
     if (scope === 'pair') {
         const rawPairs = cache.pairsStats || [];
         list = rawPairs.map(pr => {
-            const p1Name = String(pr.player1 || (pr.players && pr.players[0]) || '').trim();
-            const p2Name = String(pr.player2 || (pr.players && pr.players[1]) || '').trim();
-            const m1 = memberMap[p1Name] || {};
-            const m2 = memberMap[p2Name] || {};
+            const rawP1 = pr.player1 || pr.p1Name || (pr.players && pr.players[0]) || (pr.pair ? pr.pair.split(/[+&·,/]/)[0] : '');
+            const rawP2 = pr.player2 || pr.p2Name || (pr.players && pr.players[1]) || (pr.pair ? pr.pair.split(/[+&·,/]/)[1] : '');
 
-            const p1Grade = pr.p1Grade || m1.grade || '';
-            const p2Grade = pr.p2Grade || m2.grade || '';
+            const t1 = parsePlayerToken(rawP1);
+            const t2 = parsePlayerToken(rawP2);
+
+            const m1 = memberMap[t1.cleanName] || {};
+            const m2 = memberMap[t2.cleanName] || {};
+
+            const p1Grade = pr.p1Grade || m1.grade || t1.inlineGrade || '';
+            const p2Grade = pr.p2Grade || m2.grade || t2.inlineGrade || '';
             const p1Gender = pr.p1Gender || m1.gender || '';
             const p2Gender = pr.p2Gender || m2.gender || '';
-            const p1Age = pr.p1Age || m1.ageGroup || 0;
-            const p2Age = pr.p2Age || m2.ageGroup || 0;
+            const p1Age = parseInt(pr.p1Age || m1.ageGroup, 10) || 0;
+            const p2Age = parseInt(pr.p2Age || m2.ageGroup, 10) || 0;
             const p1Type = pr.p1Type || m1.memberType || '정회원';
             const p2Type = pr.p2Type || m2.memberType || '정회원';
 
-            const p1Formatted = pr.p1Formatted || (p1Grade ? `${p1Name}(${p1Grade})` : p1Name);
-            const p2Formatted = pr.p2Formatted || (p2Grade ? `${p2Name}(${p2Grade})` : p2Name);
+            const p1Formatted = p1Grade ? `${t1.cleanName}(${p1Grade})` : t1.cleanName;
+            const p2Formatted = p2Grade ? `${t2.cleanName}(${p2Grade})` : t2.cleanName;
 
             return {
                 ...pr,
-                p1Name, p2Name,
+                p1Name: t1.cleanName, p2Name: t2.cleanName,
                 p1Grade, p2Grade,
                 p1Gender, p2Gender,
                 p1Age, p2Age,
@@ -3339,8 +3466,8 @@ window.previewAdminTitleCandidates = function() {
             if (gradeFilter === 'PAIR_MID_LOW' && (r1 < 1 || r1 > 3 || r2 < 1 || r2 > 3)) return false;
             if (['초심', 'D조', 'C조', 'B조', 'A조'].includes(gradeFilter) && pr.p1Grade !== gradeFilter && pr.p2Grade !== gradeFilter) return false;
 
-            const a1 = parseInt(pr.p1Age, 10) || 0;
-            const a2 = parseInt(pr.p2Age, 10) || 0;
+            const a1 = pr.p1Age;
+            const a2 = pr.p2Age;
             if (ageFilter === 'PAIR_DIFF_AGE' && (!a1 || !a2 || a1 === a2)) return false;
             if (ageFilter === 'PAIR_GAP_20' && (!a1 || !a2 || Math.abs(a1 - a2) < 20)) return false;
             if (ageFilter === 'PAIR_SAME_AGE' && (!a1 || !a2 || a1 !== a2)) return false;
@@ -3365,12 +3492,14 @@ window.previewAdminTitleCandidates = function() {
         });
     } else {
         const regPlayers = (cache.playersStats || []).map(p => {
-            const prof = memberMap[String(p.name || '').trim()] || {};
+            const t = parsePlayerToken(p.name);
+            const prof = memberMap[t.cleanName] || {};
             return {
                 ...p,
-                grade: p.grade || prof.grade || '',
+                cleanName: t.cleanName,
+                grade: p.grade || prof.grade || t.inlineGrade || '',
                 gender: p.gender || prof.gender || '',
-                ageGroup: p.ageGroup || prof.ageGroup || 0,
+                ageGroup: parseInt(p.ageGroup || prof.ageGroup, 10) || 0,
                 memberType: p.memberType || prof.memberType || '정회원'
             };
         }).filter(p => isRegular(p.memberType));
@@ -3382,7 +3511,7 @@ window.previewAdminTitleCandidates = function() {
             if (gradeFilter === 'LOW_CDC' && g !== '초심' && g !== 'D조' && g !== 'C조') return false;
             if (['초심', 'D조', 'C조', 'B조', 'A조'].includes(gradeFilter) && g !== gradeFilter) return false;
 
-            const ageNum = parseInt(p.ageGroup, 10) || 0;
+            const ageNum = p.ageGroup;
             if (ageFilter === 'YOUTH_2030' && ageNum !== 10 && ageNum !== 20 && ageNum !== 30) return false;
             if (ageFilter === 'SENIOR_5060' && ageNum < 50) return false;
             if (['10', '20', '30', '40', '50', '60'].includes(ageFilter)) {
@@ -3398,13 +3527,17 @@ window.previewAdminTitleCandidates = function() {
             const winRate = games > 0 ? Math.round((wins / games) * 1000) / 10 : 0;
             const pointDiff = (stat.pointsFor || 0) - (stat.pointsAgainst || 0);
             return {
-                displayName: `${p.name}${p.grade ? '(' + p.grade + ')' : ''}`,
+                displayName: `${p.cleanName}${p.grade ? '(' + p.grade + ')' : ''}`,
                 evalGames: games, evalWins: wins, evalLosses: losses, evalWinRate: winRate,
                 evalClutchWins: stat.clutchWins || 0, evalBigWins: stat.bigWins || 0,
                 evalMaxStreak: stat.maxStreak || 0, evalPointDiff: pointDiff
             };
         });
     }
+
+    // 종목 필터 적용 후 최소 1경기 이상 있는 후보들의 최대 경기수 확인 (진단 안내용)
+    const activeInType = list.filter(i => i.evalGames >= 1);
+    const maxGamesFound = activeInType.reduce((mx, i) => Math.max(mx, i.evalGames), 0);
 
     let qualified = list.filter(i => i.evalGames >= minG);
 
@@ -3442,7 +3575,13 @@ window.previewAdminTitleCandidates = function() {
     const unitName = scope === 'pair' ? '파트너(2인 팀)' : '개인(1인)';
 
     if (top5.length === 0) {
-        container.innerHTML = `<div style="padding:12px 8px; text-align:center; color:#64748b; font-size:10.5px;">[${periodName}] 현재 해당 ${unitName} 달성 조건(${minG}경기 이상)을 만족하는 후보 내역이 없습니다.</div>`;
+        let reasonHint = `조건에 맞는 ${unitName} 경기 기록이 아직 없습니다.`;
+        if (activeInType.length > 0 && maxGamesFound < minG) {
+            reasonHint = `조건에 맞는 ${unitName}이 <strong>${activeInType.length}팀(명)</strong> 있으나 최대 출전 수가 <strong>${maxGamesFound}경기</strong>입니다.<br><span style="color:#38bdf8;">⑥ 최소 출전 수를 ${maxGamesFound} 이하로 낮추면 후보가 바로 표시됩니다.</span>`;
+        } else if (ageFilter !== 'ALL' || gradeFilter !== 'ALL') {
+            reasonHint = `[${periodName}] 선택하신 급수·연령대·종목 조건 및 최소 ${minG}경기를 모두 만족하는 ${unitName} 내역이 없습니다. (회원 명부에 급수·연령대가 등록되어 있는지 또는 최소 출전 수를 확인해 주세요)`;
+        }
+        container.innerHTML = `<div style="padding:11px 8px; text-align:center; color:#94a3b8; font-size:10.5px; line-height:1.45;">${reasonHint}</div>`;
         return;
     }
 
@@ -3485,24 +3624,35 @@ window.applyAdminTitlePreset = function(idx) {
     document.getElementById('admin-cond-scope').value = p.scope;
     document.getElementById('admin-cond-match-type').value = p.targetMatchType;
     document.getElementById('admin-cond-gender').value = p.genderFilter;
+    document.getElementById('admin-cond-grade').value = p.gradeFilter;
+    document.getElementById('admin-cond-age').value = p.ageFilter;
     document.getElementById('admin-cond-metric').value = p.metricType;
     document.getElementById('admin-cond-min-games').value = p.minGames;
     document.getElementById('admin-manual-winner').value = '';
 
-    window.onAdminScopeChange(p.gradeFilter, p.ageFilter, false);
+    window.renderAdminConditionChips(true);
 
     const bodyEl = document.getElementById('admin-event-modal-body');
     if (bodyEl) bodyEl.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 window.autoGenerateAdminDesc = function() {
-    const scopeTxt = document.getElementById('admin-cond-scope').selectedOptions[0].text;
-    const typeTxt = document.getElementById('admin-cond-match-type').selectedOptions[0].text;
-    const genderTxt = document.getElementById('admin-cond-gender').selectedOptions[0].text;
-    const gradeTxt = document.getElementById('admin-cond-grade').selectedOptions[0].text;
-    const ageTxt = document.getElementById('admin-cond-age').selectedOptions[0].text;
-    const metricTxt = document.getElementById('admin-cond-metric').selectedOptions[0].text;
+    const scope = document.getElementById('admin-cond-scope').value;
+    const matchType = document.getElementById('admin-cond-match-type').value;
+    const gender = document.getElementById('admin-cond-gender').value;
+    const grade = document.getElementById('admin-cond-grade').value;
+    const age = document.getElementById('admin-cond-age').value;
+    const metric = document.getElementById('admin-cond-metric').value;
     const minG = document.getElementById('admin-cond-min-games').value || 3;
+
+    const opts = window.ADMIN_COND_OPTIONS;
+    const findLabel = (arr, v) => (arr.find(o => o.val === v) || { label: '전체' }).label;
+
+    const typeTxt = findLabel(opts.matchType, matchType);
+    const genderTxt = findLabel(opts.gender, gender);
+    const gradeTxt = findLabel(scope === 'pair' ? opts.grade_pair : opts.grade_player, grade);
+    const ageTxt = findLabel(scope === 'pair' ? opts.age_pair : opts.age_player, age);
+    const metricTxt = findLabel(opts.metric, metric);
 
     const parts = [];
     if (typeTxt !== '전체') parts.push(typeTxt);
@@ -3511,7 +3661,7 @@ window.autoGenerateAdminDesc = function() {
     if (ageTxt !== '전체') parts.push(ageTxt);
 
     const targetDesc = parts.length > 0 ? `[${parts.join(' · ')}]` : '전체 정회원';
-    const unitDesc = scopeTxt.includes('파트너') ? '파트너(2인) 팀' : '회원';
+    const unitDesc = scope === 'pair' ? '파트너(2인) 팀' : '회원';
 
     document.getElementById('admin-new-title-desc').value = `이번 달 ${targetDesc} 대상 최소 ${minG}경기 이상 출전하여 [${metricTxt}] 1위를 달성한 ${unitDesc}`;
 };
@@ -3532,6 +3682,8 @@ window.loadTitleForEdit = function(idx) {
     document.getElementById('admin-cond-scope').value = cond.scope || 'player';
     document.getElementById('admin-cond-match-type').value = cond.targetMatchType || 'ALL';
     document.getElementById('admin-cond-gender').value = cond.genderFilter || 'ALL';
+    document.getElementById('admin-cond-grade').value = cond.gradeFilter || 'ALL';
+    document.getElementById('admin-cond-age').value = cond.ageFilter || 'ALL';
     document.getElementById('admin-cond-metric').value = cond.metricType || 'most_wins';
     document.getElementById('admin-cond-min-games').value = cond.minGames || 3;
     document.getElementById('admin-manual-winner').value = ct.manualWinner || (ct.status === 'published' ? ct.winner : '');
@@ -3541,7 +3693,7 @@ window.loadTitleForEdit = function(idx) {
         boxTitle.innerHTML = `<span style="color:#fbbf24;">[${ct.titleName}]</span> 실시간 후보군 TOP 5`;
     }
 
-    window.onAdminScopeChange(cond.gradeFilter || 'ALL', cond.ageFilter || 'ALL', false);
+    window.renderAdminConditionChips(true);
 
     const bodyEl = document.getElementById('admin-event-modal-body');
     if (bodyEl) bodyEl.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3557,6 +3709,8 @@ window.resetAdminTitleForm = function() {
     document.getElementById('admin-cond-scope').value = 'player';
     document.getElementById('admin-cond-match-type').value = 'ALL';
     document.getElementById('admin-cond-gender').value = 'ALL';
+    document.getElementById('admin-cond-grade').value = 'ALL';
+    document.getElementById('admin-cond-age').value = 'ALL';
     document.getElementById('admin-cond-metric').value = 'most_wins';
     document.getElementById('admin-cond-min-games').value = 3;
     document.getElementById('admin-manual-winner').value = '';
@@ -3566,7 +3720,7 @@ window.resetAdminTitleForm = function() {
         boxTitle.innerText = '달성 조건 부합 후보군 TOP 5 (실시간 집계)';
     }
 
-    window.onAdminScopeChange('ALL', 'ALL', false);
+    window.renderAdminConditionChips(false);
 };
 
 window.submitNewCustomTitle = function(mode = 'pending') {
@@ -3622,7 +3776,6 @@ window.submitNewCustomTitle = function(mode = 'pending') {
         if (res && res.success) {
             alert(mode === 'published' ? '대상자가 확정되어 사용자 화면에 발표되었습니다!' : '이벤트 타이틀 설정이 저장(예고 등록)되었습니다!');
             const period = (window._adminTitleCache && window._adminTitleCache.period) || 'month';
-            // 예고 등록 직후에는 폼을 깨끗하게 비우고 후보군 리스트도 대기 상태로 둠
             window.openAdminEventTitleManager(period, null);
         } else {
             alert((res && res.message) || '저장에 실패했습니다.');
