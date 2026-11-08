@@ -3865,7 +3865,15 @@ io.on('connection', (socket) => {
                     const gender = rawGender.includes('여') || rawGender.toUpperCase() === 'F' ? '여' : (rawGender.includes('남') || rawGender.toUpperCase() === 'M' ? '남' : rawGender);
                     const rawAge = row.age_group || row.ageGroup || row.age || row.decade || row.birth_year || row.birthYear || '';
                     const ageGroup = normalizeAgeDecade(rawAge);
-                    const memberType = String(row.member_type || row.memberType || row.type || row.role || '정회원').trim();
+                    let memberType = String(row.member_type || row.memberType || row.type || row.role || '').trim();
+if (!memberType) {
+    const rawStr = JSON.stringify(row).toUpperCase();
+    if (rawStr.includes('일일') || rawStr.includes('게스트') || rawStr.includes('GUEST') || rawStr.includes('비회원')) {
+        memberType = '일일회원';
+    } else {
+        memberType = '정회원';
+    }
+}
 
                     const prev = profileMap[name] || {};
                     profileMap[name] = {
