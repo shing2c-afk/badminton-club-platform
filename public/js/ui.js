@@ -2505,54 +2505,119 @@ window.removeCustomTitle = function(id) {
 };
 
 // =========================================================================
-// [공통 헬퍼] 회원 명부(members) 대조하여 정회원(#ffffff) / 일일회원(#38bdf8) 색상 적용
+// [공통 헬퍼] 회원 명부 및 모든 데이터 대조하여 정회원(#ffffff) / 일일회원(#38bdf8) 색상 적용
 // =========================================================================
 window.colorizePlayerName = function(rawText, membersList) {
     if (!rawText) return '';
     const str = String(rawText).trim();
-    if (str.includes('집계 중') || str.includes('없음') || str.includes('미확정')) {
+    if (str.includes('집계 중') || str.includes('없음') || str.includes('미확정') || str.includes('<span')) {
         return str;
     }
 
     const members = membersList || (window._adminTitleCache && window._adminTitleCache.members) || window.clubMembers || [];
-    
+
     const extractCleanName = (token) => {
-        const t = String(token || '').trim();
-        const m = t.match(/^(.+?)\(([^)]+)\)$/);
-        return m ? m[1].trim() : t;
+        return String(token || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+    };
+
+    // 객체 내부의 모든 속성에서 일일회원/게스트 단어가 있는지 검사
+    const checkIsGuestObj = (obj) => {
+        if (!obj || typeof obj !== 'object') return false;
+        if (obj.isGuest === true || obj.isDaily === true || obj.guest === true || obj.isRegular === false) return true;
+        const fields = [obj.memberType, obj.type, obj.role, obj.category, obj.status, obj.group, obj.grade, obj.level, obj.note, obj.memo, obj.name];
+        for (const val of fields) {
+            if (val) {
+                const u = String(val).toUpperCase();
+                if (u.includes('일일') || u.includes('게스트') || u.includes('GUEST') || u.includes('비회원') || u.includes('임시') || u.includes('방문')) {
+                    return true;
+                }
+            }
+        }
+        return false;
     };
 
     const memberMap = {};
-    members.forEach(m => {
-        if (m && m.name) {
-            memberMap[extractCleanName(m.name)] = m;
-            memberMap[String(m.name).trim()] = m;
+    const guestSet = new Set();
+
+    // 1. 서버 명부(res.members) 등록
+    if (Array.isArray(members)) {
+        members.forEach(m => {
+            if (!m) return;
+            const rawName = typeof m === 'string' ? m : (m.name || m.userName || m.playerName);
+            if (!rawName) return;
+            const clean = extractCleanName(rawName);
+            memberMap[clean] = m;
+            if (checkIsGuestObj(m)) guestSet.add(clean);
+        });
+    }
+
+    // 2. 화면/전역/로컬스토리지의 일일회원 및 통계 데이터까지 모두 대조
+    const extraPools = [
+        window.dailyMembers,
+        window.waitingList,
+        window.players,
+        window.allMembers,
+        window.members,
+        window._adminTitleCache && window._adminTitleCache.playersStats
+    ];
+    extraPools.forEach(pool => {
+        if (Array.isArray(pool)) {
+            pool.forEach(item => {
+                if (!item || typeof item !== 'object') return;
+                const rawName = item.name || item.userName || item.playerName;
+                if (!rawName) return;
+                const clean = extractCleanName(rawName);
+                if (pool === window.dailyMembers || checkIsGuestObj(item)) {
+                    guestSet.add(clean);
+                }
+            });
         }
     });
 
-    const isRegMember = (token, explicitType) => {
-        if (explicitType) {
-            const u = String(explicitType).toUpperCase();
-            if (u.includes('일일') || u.includes('게스트') || u.includes('GUEST')) return false;
-        }
+    try {
+        ['dailyMembers', 'waitingList', 'members', 'clubMembers'].forEach(key => {
+            const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+            if (Array.isArray(parsed)) {
+                parsed.forEach(item => {
+                    if (!item || typeof item !== 'object') return;
+                    const rawName = item.name || item.userName || item.playerName;
+                    if (!rawName) return;
+                    const clean = extractCleanName(rawName);
+                    if (key === 'dailyMembers' || checkIsGuestObj(item)) {
+                        guestSet.add(clean);
+                    }
+                });
+            }
+        });
+    } catch (e) {}
+
+    const isRegMember = (token) => {
+        const rawU = String(token || '').toUpperCase();
+        if (rawU.includes('일일') || rawU.includes('게스트') || rawU.includes('GUEST')) return false;
+
         const clean = extractCleanName(token);
+        if (!clean) return true;
+        if (guestSet.has(clean)) return false; // 일일회원으로 확인되면 무조건 하늘색
+
         const prof = memberMap[clean];
-        if (!prof) return false; // 정식 회원 명부에 없으면 일일회원(하늘색)으로 판별
-        const u = String(prof.memberType || '정회원').toUpperCase();
-        return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
+        if (!prof) {
+            // 명부 데이터가 아예 안 넘어온 경우가 아니라면, 명부 미등록자는 일일회원(하늘색)
+            return Object.keys(memberMap).length === 0 ? true : false;
+        }
+        return !checkIsGuestObj(prof);
     };
 
-    // '홍길동(C조) · 3승' 처럼 뒤에 기록이 붙어있는 경우 분리
-    const metricSplit = str.split(' · ');
-    const namesPart = metricSplit[0];
-    const metricPart = metricSplit.slice(1).join(' · ');
+    // '홍길동(C조) · 3승' 처럼 뒤에 숫자 기록이 붙어있는 경우만 분리 (팀원 '홍길동 · 김철수'와 구분)
+    const metricMatch = str.match(/^(.*?)\s*·\s*(\d+.*)$/);
+    const namesPart = metricMatch ? metricMatch[1] : str;
+    const metricPart = metricMatch ? metricMatch[2] : '';
 
-    // 2인 팀(' & ' 또는 ' , ' 또는 ' / ') 또는 1인 각각 색상 적용
-    const coloredNames = namesPart.split(/\s*(?:&|,|\/)\s*/).map(token => {
+    // 2인 팀(' & ', ',', '/', '·') 또는 1인 각각 색상 적용
+    const coloredNames = namesPart.split(/\s*(?:&|,|\/|·)\s*/).map(token => {
         const isReg = isRegMember(token);
         const color = isReg ? '#ffffff' : '#38bdf8';
         return `<span style="color:${color}; font-weight:700;">${token}</span>`;
-    }).join(' <span style="color:#64748b;">&</span> ');
+    }).join(' <span style="color:#64748b;">·</span> ');
 
     return metricPart ? `${coloredNames} <span style="color:#f59e0b;">· ${metricPart}</span>` : coloredNames;
 };
@@ -2860,7 +2925,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                                         <span style="background:#0f1420; color:#94a3b8; border:1px solid #1e293b; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:4px;">${m.match_type || '복식'}</span>
                                                         <div style="display:flex; align-items:center; gap:8px;">
                                                             <strong style="color:#ffffff; font-size:13px; letter-spacing:0.5px;">
-                                                                <span style="color:${myWin ? '#38bdf8' : '#cbd5e1'};">${ourScore}</span> : <span style="color:${!myWin ? '#f43f5e' : '#cbd5e1'};">${oppScore}</span>
+                                                                <span style="color:${myWin ? '#34d399' : '#cbd5e1'};">${ourScore}</span> : <span style="color:${!myWin ? '#f43f5e' : '#cbd5e1'};">${oppScore}</span>
                                                             </strong>
                                                             <span style="background:${badgeBg}; color:#ffffff; font-weight:800; font-size:11px; padding:2px 8px; border-radius:4px;">${resTxt}</span>
                                                         </div>
