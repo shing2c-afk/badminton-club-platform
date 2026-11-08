@@ -1932,6 +1932,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
             alert('클럽 랭킹 보드 데이터를 불러오지 못했습니다.');
             return;
         }
+        window.clubMembers = res.members || [];
 
         const allPlayers = res.playersStats || [];
         const allPairs = res.pairsStats || res.pairStats || [];
@@ -1968,12 +1969,16 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
             if (!name) return '';
             const clean = String(name).trim();
             const g = gradeMap[clean];
-            return g ? `${clean}(${g})` : clean;
+            const label = g ? `${clean}(${g})` : clean;
+            return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
         };
 
-        // 💡 모든 집계는 무조건 '정회원' 기준으로만 필터링
+        // 💡 정회원 명부(res.members)에 등록된 회원인지 엄격히 판별
+        const memberRegistrySet = new Set((res.members || []).map(m => String(m.name || '').replace(/\([^)]*\)/g, '').trim()));
         const regularPlayers = allPlayers.filter(p => {
-            const mType = p.memberType || memberTypeMap[p.name] || '정회원';
+            const clean = String(p.name || '').replace(/\([^)]*\)/g, '').trim();
+            if (memberRegistrySet.size > 0 && !memberRegistrySet.has(clean)) return false; // 명부 미등록자는 일일회원으로 분류
+            const mType = memberTypeMap[clean] || p.memberType || '정회원';
             const upper = String(mType).toUpperCase();
             return !upper.includes('일일') && !upper.includes('게스트') && !upper.includes('GUEST');
         });
@@ -2096,7 +2101,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                         </div>
                         <div style="text-align:right; white-space:nowrap; font-weight:600; font-size:12px;">
                             <span style="color:#cbd5e1;">${item.games}전</span>
-                            <span style="color:#38bdf8; margin-left:3px;">${item.wins}승</span>
+                            <span style="color:#34d399; margin-left:3px;">${item.wins}승</span>
                             <span style="color:#f43f5e; margin-left:2px;">${item.losses}패</span>
                             <span style="color:#f59e0b; font-weight:800; margin-left:4px;">(승률 ${rateVal}%)</span>
                         </div>
@@ -2199,7 +2204,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                     <div style="background:#151c2c; border:1px solid ${isPublished ? 'rgba(245,158,11,0.4)' : '#1e293b'}; border-radius:6px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
                         <span style="font-size:11px; color:#94a3b8; font-weight:600; white-space:nowrap;">수상 대상자</span>
                         ${isPublished ? `
-                            <strong style="font-size:12px; color:#f59e0b; font-weight:800; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${ct.winner}</strong>
+                            <strong style="font-size:12px; color:#ffffff; font-weight:800; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.colorizePlayerName(ct.winner, res.members)}</strong>
                         ` : `
                             <span style="font-size:11px; color:#64748b; font-weight:700; white-space:nowrap;">조건 달성 회원 집계 중</span>
                         `}
@@ -2376,7 +2381,7 @@ window.switchRankingSubTab = function(group, key, clickedBtn) {
     }
 };
 
-// 3) 서버에서 통계 데이터 가져와서 렌더링
+// 3. 서버에서 통계 데이터 가져와서 렌더링
 window.loadStatsData = function() {
     if (typeof socket === 'undefined') return;
     const periodEl = document.getElementById('stats-period-select');
@@ -2387,6 +2392,7 @@ window.loadStatsData = function() {
 
     socket.emit('getMatchStats', { clubId, period, minGames }, (res) => {
         if (!res || !res.success) return;
+        window.clubMembers = res.members || [];
 
         // A. 타이틀 카드 렌더링 (기본 5대 + 커스텀 타이틀)
         const titlesGrid = document.getElementById('stats-titles-grid');
@@ -2410,8 +2416,8 @@ window.loadStatsData = function() {
                     ` : ''}
                     <div style="font-size:11px; color:#fde68a; opacity:0.9; margin-bottom:4px;">${t.metricLabel}</div>
                     <div style="font-size:15px; font-weight:800; color:#fff; margin-bottom:8px;">${t.titleName}</div>
-                    <div style="font-size:14px; font-weight:700; color:#38bdf8; background:rgba(0,0,0,0.35); padding:6px 10px; border-radius:6px; text-align:center;">
-                        👑 ${t.winner}
+                    <div style="font-size:14px; font-weight:700; color:#ffffff; background:rgba(0,0,0,0.35); padding:6px 10px; border-radius:6px; text-align:center;">
+                        👑 ${window.colorizePlayerName(t.winner, res.members)}
                     </div>
                 </div>
             `).join('');
@@ -2461,7 +2467,7 @@ window.loadStatsData = function() {
     });
 };
 
-// 4) 새 커스텀 타이틀 생성 요청
+// 4. 새 커스텀 타이틀 생성 요청
 window.createNewCustomTitle = function() {
     const titleName = document.getElementById('new-title-name').value.trim();
     const metricType = document.getElementById('new-title-metric').value;
@@ -2487,7 +2493,7 @@ window.createNewCustomTitle = function() {
     });
 };
 
-// 5) 커스텀 타이틀 삭제 요청
+// 5. 커스텀 타이틀 삭제 요청
 window.removeCustomTitle = function(id) {
     if (!confirm('이 이벤트 타이틀을 삭제하시겠습니까?')) return;
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
@@ -2496,6 +2502,59 @@ window.removeCustomTitle = function(id) {
             window.loadStatsData();
         }
     });
+};
+
+// =========================================================================
+// [공통 헬퍼] 회원 명부(members) 대조하여 정회원(#ffffff) / 일일회원(#38bdf8) 색상 적용
+// =========================================================================
+window.colorizePlayerName = function(rawText, membersList) {
+    if (!rawText) return '';
+    const str = String(rawText).trim();
+    if (str.includes('집계 중') || str.includes('없음') || str.includes('미확정')) {
+        return str;
+    }
+
+    const members = membersList || (window._adminTitleCache && window._adminTitleCache.members) || window.clubMembers || [];
+    
+    const extractCleanName = (token) => {
+        const t = String(token || '').trim();
+        const m = t.match(/^(.+?)\(([^)]+)\)$/);
+        return m ? m[1].trim() : t;
+    };
+
+    const memberMap = {};
+    members.forEach(m => {
+        if (m && m.name) {
+            memberMap[extractCleanName(m.name)] = m;
+            memberMap[String(m.name).trim()] = m;
+        }
+    });
+
+    const isRegMember = (token, explicitType) => {
+        if (explicitType) {
+            const u = String(explicitType).toUpperCase();
+            if (u.includes('일일') || u.includes('게스트') || u.includes('GUEST')) return false;
+        }
+        const clean = extractCleanName(token);
+        const prof = memberMap[clean];
+        if (!prof) return false; // 정식 회원 명부에 없으면 일일회원(하늘색)으로 판별
+        const u = String(prof.memberType || '정회원').toUpperCase();
+        return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
+    };
+
+    // '홍길동(C조) · 3승' 처럼 뒤에 기록이 붙어있는 경우 분리
+    const metricSplit = str.split(' · ');
+    const namesPart = metricSplit[0];
+    const metricPart = metricSplit.slice(1).join(' · ');
+
+    // 2인 팀(' & ' 또는 ' , ' 또는 ' / ') 또는 1인 각각 색상 적용
+    const coloredNames = namesPart.split(/\s*(?:&|,|\/)\s*/).map(token => {
+        const isReg = isRegMember(token);
+        const color = isReg ? '#ffffff' : '#38bdf8';
+        return `<span style="color:${color}; font-weight:700;">${token}</span>`;
+    }).join(' <span style="color:#64748b;">&</span> ');
+
+    return metricPart ? `${coloredNames} <span style="color:#f59e0b;">· ${metricPart}</span>` : coloredNames;
 };
 
 // =========================================================================
@@ -2525,6 +2584,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
             alert('전적 정보를 불러오지 못했습니다.');
             return;
         }
+        window.clubMembers = res.members || [];
 
         // 전월 대비 성장률 및 전체 회원 급수 매핑 보강을 위해 지난달/전체 데이터 참조
         socket.emit('getMatchStats', { clubId, period: 'last_month', minGames: 1 }, (prevRes) => {
@@ -2588,12 +2648,13 @@ window.openMyStats = function(selectedPeriod = 'month') {
                 }
             } catch (e) {}
 
-            // 이름을 넣으면 "홍길동(A조)" 형태로 반환하는 헬퍼 함수
+            // 이름을 넣으면 "홍길동(A조)" 형태로 반환하고 정회원/일일회원 색상을 입히는 헬퍼 함수
             const formatNameWithGrade = (name) => {
                 if (!name) return '';
                 const clean = String(name).trim();
                 const g = gradeMap[clean];
-                return g ? `${clean}(${g})` : clean;
+                const label = g ? `${clean}(${g})` : clean;
+                return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
             };
 
             // 전월 대비 승률 성장률 계산
@@ -2718,8 +2779,8 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                             <div style="font-size:15px; font-weight:800; color:#ffffff;">${myData.games}전</div>
                                         </div>
                                         <div style="border-right:1px solid #1e293b;">
-                                            <div style="font-size:11px; color:#38bdf8; margin-bottom:4px;">승리</div>
-                                            <div style="font-size:15px; font-weight:800; color:#38bdf8;">${myData.wins}승</div>
+                                            <div style="font-size:11px; color:#34d399; margin-bottom:4px;">승리</div>
+                                            <div style="font-size:15px; font-weight:800; color:#34d399;">${myData.wins}승</div>
                                         </div>
                                         <div style="border-right:1px solid #1e293b;">
                                             <div style="font-size:11px; color:#f43f5e; margin-bottom:4px;">패배</div>
@@ -2758,7 +2819,7 @@ window.openMyStats = function(selectedPeriod = 'month') {
                                                     </div>
                                                     <div style="text-align:right; white-space:nowrap; font-weight:600;">
                                                         <span style="color:#cbd5e1;">${p.games}전</span>
-                                                        <span style="color:#38bdf8; margin-left:3px;">${p.wins}승</span>
+                                                        <span style="color:#34d399; margin-left:3px;">${p.wins}승</span>
                                                         <span style="color:#f43f5e; margin-left:2px;">${p.losses}패</span>
                                                         <span style="color:#f59e0b; font-weight:800; margin-left:4px;">(${p.winRate}%)</span>
                                                     </div>
