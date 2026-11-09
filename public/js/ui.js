@@ -1973,15 +1973,8 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
             return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
         };
 
-        // 💡 정회원 명부(res.members)에 등록된 회원인지 엄격히 판별
-        const memberRegistrySet = new Set((res.members || []).map(m => String(m.name || '').replace(/\([^)]*\)/g, '').trim()));
-        const regularPlayers = allPlayers.filter(p => {
-            const clean = String(p.name || '').replace(/\([^)]*\)/g, '').trim();
-            if (memberRegistrySet.size > 0 && !memberRegistrySet.has(clean)) return false; // 명부 미등록자는 일일회원으로 분류
-            const mType = memberTypeMap[clean] || p.memberType || '정회원';
-            const upper = String(mType).toUpperCase();
-            return !upper.includes('일일') && !upper.includes('게스트') && !upper.includes('GUEST');
-        });
+        // 💡 정회원(흰색)과 일일회원(하늘색) 모두 클럽 랭킹 보드에 함께 표시
+        const regularPlayers = allPlayers;
 
         // -----------------------------------------------------------------
         // ① 급수별 랭킹 데이터 산출 (정회원 기준)
@@ -2163,7 +2156,18 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                     </div>
 
                     <!-- 본문 스크롤 영역 -->
-                    <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:18px;">
+                    <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
+                        
+                        <!-- 회원 색상 구분 및 정회원 포상 기준 안내 -->
+                        <div style="background:#151c2c; border:1px solid #26334d; border-radius:8px; padding:9px 12px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; font-size:11.5px;">
+                            <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
+                                <span style="color:#ffffff;">● 정회원(흰색)</span>
+                                <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
+                            </div>
+                            <div style="color:#cbd5e1; font-size:11px;">
+                                ※ 공식 타이틀 및 포상은 <strong style="color:#f59e0b;">정회원 기준</strong>으로 선정됩니다.
+                            </div>
+                        </div>
                         
                         <!-- ========================================================= -->
 <!-- ========================================================= -->
