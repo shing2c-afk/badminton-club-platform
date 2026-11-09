@@ -3851,12 +3851,12 @@ io.on('connection', (socket) => {
                     return '';
                 };
 
-                const registerProfile = (row) => {
+                const registerProfile = (row, sourceHint = '') => {
                     if (!row || typeof row !== 'object') return;
                     const name = String(
                         row.name || row.member_name || row.user_name || row.userName || 
                         row.player_name || row.playerName || row.kor_name || ''
-                    ).trim();
+                    ).trim().replace(/\([^)]*\)/g, '').trim();
                     if (!name) return;
 
                     const rawGrade = row.grade || row.level || row.rank || row.tier || row.skill || row.user_grade || row.member_grade || row.class || '';
@@ -3865,22 +3865,35 @@ io.on('connection', (socket) => {
                     const gender = rawGender.includes('여') || rawGender.toUpperCase() === 'F' ? '여' : (rawGender.includes('남') || rawGender.toUpperCase() === 'M' ? '남' : rawGender);
                     const rawAge = row.age_group || row.ageGroup || row.age || row.decade || row.birth_year || row.birthYear || '';
                     const ageGroup = normalizeAgeDecade(rawAge);
-                    let memberType = String(row.member_type || row.memberType || row.type || row.role || '').trim();
-if (!memberType) {
-    const rawStr = JSON.stringify(row).toUpperCase();
-    if (rawStr.includes('일일') || rawStr.includes('게스트') || rawStr.includes('GUEST') || rawStr.includes('비회원')) {
-        memberType = '일일회원';
-    } else {
-        memberType = '정회원';
-    }
-}
+
+                    const explicitType = String(row.member_type || row.memberType || row.type || row.role || '').trim();
+                    const rawStr = JSON.stringify(row).toUpperCase();
+                    const isExplicitGuest = row.isGuest === true || row.isDaily === true || row.guest === true || row.isRegular === false ||
+                        explicitType.includes('일일') || explicitType.includes('게스트') || explicitType.toUpperCase().includes('GUEST') ||
+                        rawStr.includes('일일') || rawStr.includes('게스트') || rawStr.includes('GUEST') || rawStr.includes('비회원') ||
+                        sourceHint === 'GUEST';
+
+                    const isExplicitRegular = explicitType === '정회원' || explicitType.toUpperCase() === 'REGULAR' || sourceHint === 'REGULAR';
 
                     const prev = profileMap[name] || {};
+                    let finalType = prev.memberType || '';
+
+                    // 한 번이라도 일일회원으로 확인되면 다른 데이터 때문에 정회원으로 바뀌지 않게 고정
+                    if (isExplicitGuest || prev.isLockedGuest) {
+                        finalType = '일일회원';
+                    } else if (isExplicitRegular || prev.isLockedRegular) {
+                        finalType = '정회원';
+                    } else if (!finalType) {
+                        finalType = (sourceHint === 'TRANSIENT') ? '일일회원' : '정회원';
+                    }
+
                     profileMap[name] = {
                         grade: grade || prev.grade || '',
                         gender: gender || prev.gender || '',
                         ageGroup: ageGroup || prev.ageGroup || '',
-                        memberType: memberType || prev.memberType || '정회원'
+                        memberType: finalType,
+                        isLockedGuest: Boolean(isExplicitGuest || prev.isLockedGuest),
+                        isLockedRegular: Boolean(!isExplicitGuest && !prev.isLockedGuest && (isExplicitRegular || prev.isLockedRegular))
                     };
                 };
 
@@ -3890,16 +3903,26 @@ if (!memberType) {
                     const clubsJsonPath = path.join(__dirname, 'clubs-data.json');
                     if (fs.existsSync(clubsJsonPath)) {
                         const clubsData = JSON.parse(fs.readFileSync(clubsJsonPath, 'utf8'));
-                        const scanObj = (obj) => {
+                        const scanObj = (obj, parentKey = '') => {
                             if (!obj || typeof obj !== 'object') return;
+                            const pk = String(parentKey).toUpperCase();
+                            let hint = '';
+                            if (pk.includes('DAILY') || pk.includes('GUEST') || pk.includes('TEMP') || pk.includes('일일') || pk.includes('게스트')) {
+                                hint = 'GUEST';
+                            } else if (pk.includes('WAIT') || pk.includes('QUEUE') || pk.includes('COURT') || pk.includes('SESSION') || pk.includes('MATCH') || pk.includes('GAME')) {
+                                hint = 'TRANSIENT';
+                            } else if (pk === 'MEMBERS' || pk === 'REGULAR' || pk === 'REGULARMEMBERS' || pk === 'CLUBMEMBERS') {
+                                hint = 'REGULAR';
+                            }
+
                             if (Array.isArray(obj)) {
-                                obj.forEach(item => scanObj(item));
+                                obj.forEach(item => scanObj(item, parentKey));
                             } else {
-                                if (obj.name && (obj.grade || obj.level || obj.rank || obj.gender)) {
-                                    registerProfile(obj);
+                                if (obj.name && (obj.grade || obj.level || obj.rank || obj.gender || obj.memberType || obj.type)) {
+                                    registerProfile(obj, hint);
                                 }
-                                Object.values(obj).forEach(val => {
-                                    if (typeof val === 'object') scanObj(val);
+                                Object.entries(obj).forEach(([k, val]) => {
+                                    if (typeof val === 'object') scanObj(val, k);
                                 });
                             }
                         };
@@ -3910,7 +3933,7 @@ if (!memberType) {
                         const dictData = require(dictPath);
                         if (typeof dictData === 'object') {
                             Object.entries(dictData).forEach(([k, v]) => {
-                                if (typeof v === 'object') registerProfile({ name: v.name || k, ...v });
+                                if (typeof v === 'object') registerProfile({ name: v.name || k, ...v }, 'REGULAR');
                             });
                         }
                     }
@@ -3923,11 +3946,18 @@ if (!memberType) {
                     let pending = tables.length;
                     tables.forEach(tbl => {
                         const tableName = tbl.name;
+                        const tblUpper = String(tableName).toUpperCase();
+                        let hint = '';
+                        if (tblUpper.includes('DAILY') || tblUpper.includes('GUEST') || tblUpper.includes('TEMP')) {
+                            hint = 'GUEST';
+                        } else if (tblUpper.includes('WAIT') || tblUpper.includes('QUEUE') || tblUpper.includes('COURT') || tblUpper.includes('SESSION') || tblUpper.includes('LOG')) {
+                            hint = 'TRANSIENT';
+                        }
                         db.all(`SELECT * FROM "${tableName}"`, [], (rErr, tRows) => {
                             if (!rErr && Array.isArray(tRows)) {
                                 tRows.forEach(row => {
                                     if (!row.club_id || row.club_id === currentClubId) {
-                                        registerProfile(row);
+                                        registerProfile(row, hint);
                                     }
                                 });
                             }
@@ -3952,14 +3982,15 @@ if (!memberType) {
                 const initPlayer = (name) => {
                     if (!name) return null;
                     const cleanName = String(name).trim();
+                    const bareName = cleanName.replace(/\([^)]*\)/g, '').trim();
                     if (!playerMap[cleanName]) {
-                        const prof = profileMap[cleanName] || {};
+                        const prof = profileMap[cleanName] || profileMap[bareName];
                         playerMap[cleanName] = {
                             name: cleanName,
-                            grade: prof.grade || '',
-                            gender: prof.gender || '',
-                            ageGroup: prof.ageGroup || '',
-                            memberType: prof.memberType || '정회원',
+                            grade: (prof && prof.grade) || '',
+                            gender: (prof && prof.gender) || '',
+                            ageGroup: (prof && prof.ageGroup) || '',
+                            memberType: prof ? (prof.memberType || '정회원') : '일일회원',
                             ...createEmptyTypeStat(),
                             byType: {
                                 '남복': createEmptyTypeStat(),
@@ -4005,23 +4036,23 @@ if (!memberType) {
                     const pairKey = `${n1} & ${n2}`;
 
                     if (!pairMap[pairKey]) {
-                        const prof1 = profileMap[n1] || {};
-                        const prof2 = profileMap[n2] || {};
+                        const prof1 = profileMap[n1] || profileMap[n1.replace(/\([^)]*\)/g, '').trim()];
+                        const prof2 = profileMap[n2] || profileMap[n2.replace(/\([^)]*\)/g, '').trim()];
                         pairMap[pairKey] = {
                             pairName: pairKey,
                             player1: n1,
                             player2: n2,
                             players: sortedPair,
-                            p1Grade: prof1.grade || '',
-                            p2Grade: prof2.grade || '',
-                            p1Gender: prof1.gender || '',
-                            p2Gender: prof2.gender || '',
-                            p1Age: prof1.ageGroup || '',
-                            p2Age: prof2.ageGroup || '',
-                            p1Type: prof1.memberType || '정회원',
-                            p2Type: prof2.memberType || '정회원',
-                            p1Formatted: `${n1}${prof1.grade ? '(' + prof1.grade + ')' : ''}`,
-                            p2Formatted: `${n2}${prof2.grade ? '(' + prof2.grade + ')' : ''}`,
+                            p1Grade: (prof1 && prof1.grade) || '',
+                            p2Grade: (prof2 && prof2.grade) || '',
+                            p1Gender: (prof1 && prof1.gender) || '',
+                            p2Gender: (prof2 && prof2.gender) || '',
+                            p1Age: (prof1 && prof1.ageGroup) || '',
+                            p2Age: (prof2 && prof2.ageGroup) || '',
+                            p1Type: prof1 ? (prof1.memberType || '정회원') : '일일회원',
+                            p2Type: prof2 ? (prof2.memberType || '정회원') : '일일회원',
+                            p1Formatted: `${n1}${prof1 && prof1.grade ? '(' + prof1.grade + ')' : ''}`,
+                            p2Formatted: `${n2}${prof2 && prof2.grade ? '(' + prof2.grade + ')' : ''}`,
                             ...createEmptyTypeStat(),
                             byType: {
                                 '남복': createEmptyTypeStat(),
@@ -4094,10 +4125,15 @@ if (!memberType) {
                         const evaluateTitlesWithMonthRows = (monthRows) => {
                             const monthBuilt = (period === 'month') ? periodBuilt : buildStatsFromRows(monthRows, profileMap);
 
-                            const membersList = Object.keys(profileMap).map(name => ({
-                                name,
-                                ...profileMap[name]
-                            }));
+                            const allKnownNames = new Set([
+                            ...Object.keys(profileMap),
+                            ...(periodBuilt.playersStats || []).map(p => p.name)
+                        ]);
+                        const membersList = Array.from(allKnownNames).map(name => {
+                            const bare = String(name).replace(/\([^)]*\)/g, '').trim();
+                            const prof = profileMap[name] || profileMap[bare];
+                            return prof ? { name, ...prof } : { name, grade: '', gender: '', ageGroup: '', memberType: '일일회원' };
+                        });
 
                             db.all(`SELECT * FROM custom_titles WHERE club_id = ? AND is_active = 1 ORDER BY id DESC`, [currentClubId], (tErr, customRows) => {
                                 // 🔍 server.js에서 아래 부분을 찾아 덮어쓰기 하세요.
