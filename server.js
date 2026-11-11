@@ -1818,8 +1818,13 @@ function getValidPlayers(playersArr) {
 
 setInterval(() => {
     const now = Date.now();
-    const nowObj = new Date();
-    const currentHHMM = `${String(nowObj.getHours()).padStart(2, '0')}:${String(nowObj.getMinutes()).padStart(2, '0')}`;
+    // 💡 서버(Render) 시간대와 무관하게 항상 한국 시간(KST) 기준으로 현재 시각 계산
+    const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const currentHHMM = `${String(nowKr.getHours()).padStart(2, '0')}:${String(nowKr.getMinutes()).padStart(2, '0')}`;
+
+    // 💡 현재 시각 기준 10초 뒤의 'HH:MM' 계산 (청소 종료 10초 전 사전 알림용)
+    const after10SecKr = new Date(nowKr.getTime() + 10000);
+    const future10SecHHMM = String(after10SecKr.getHours()).padStart(2, '0') + ':' + String(after10SecKr.getMinutes()).padStart(2, '0');
 
     // 🏢 [멀티 테넌트] 등록된 각 클럽별로 독립적으로 청소 시간, 대기열 및 코트 타이머 순회
     const clubIdsToRun = (typeof clubs === 'object' && Object.keys(clubs).length > 0) ? Object.keys(clubs) : ['unjeong'];
@@ -1827,15 +1832,15 @@ setInterval(() => {
     clubIdsToRun.forEach(cId => {
         const club = clubs[cId] || {};
         
-        // 💡 공용 config가 아니라 해당 클럽의 고유 config를 확실하게 보장
+        // 💡 공용 config 기본값과 해당 클럽의 고유 config를 안전하게 병합 (타이머 설정값 누락/NaN 방지)
+        const baseConfig = (typeof config !== 'undefined' && config) ? config : {};
         if (!club.config) {
-            club.config = JSON.parse(JSON.stringify(typeof config !== 'undefined' ? config : {}));
+            club.config = JSON.parse(JSON.stringify(baseConfig));
         }
-        const clubConfig = club.config; 
+        const clubConfig = club.config;
+        const entryTimeoutSec = Number(clubConfig.ENTRY_TIMEOUT_SEC) || Number(baseConfig.ENTRY_TIMEOUT_SEC) || 120;
+        const nantaLimitSec = Number(clubConfig.NANTA_COURT_LIMIT_SEC) || Number(baseConfig.NANTA_COURT_LIMIT_SEC) || 600;
 
-        // 타이머 체크 로그
-        // console.log(`🔍 [타이머 체크] 클럽: ${cId}, 현재 설정된 청소시작멘트:`, clubConfig.cleaningStartMsg);
-        
         // 클럽별 독립된 청소 상태 관리 (클럽 객체 내부에 isCleaningTime 유지)
         if (typeof club.isCleaningTime === 'undefined') {
             club.isCleaningTime = false;
@@ -1846,11 +1851,6 @@ setInterval(() => {
         const cCourtsData = club.courtsData || (cId === 'unjeong' ? courtsData : []);
 
         const schedules = clubConfig.cleaningSchedules || [];
-        
-        // 💡 현재 시각 기준 10초 뒤의 'HH:MM' 계산 (청소 종료 10초 전 사전 알림용)
-        const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-        const after10SecKr = new Date(nowKr.getTime() + 10000);
-        const future10SecHHMM = String(after10SecKr.getHours()).padStart(2, '0') + ':' + String(after10SecKr.getMinutes()).padStart(2, '0');
 
         // 💡 빈 스케줄("")은 제외하고 현재 시각에 해당하는 스케줄의 인덱스(0~3)를 탐색
         const activeIdx = schedules.findIndex(s => {
@@ -1872,17 +1872,15 @@ setInterval(() => {
         // 1) 해당 클럽의 청소 시작 시점 감지
         if (activeSchedule && !club.isCleaningTime) {
             club.isCleaningTime = true;
-            club.cleaningEndAlertSent = false; // 💡 종료 10초 전 알림 발송 여부 초기화
-            const slotNum = activeSchedule.slot || (activeIdx + 1); // 1 ~ 4번 슬롯 번호
-            club.activeCleaningSlot = slotNum; // 💡 종료 시점에도 동일한 슬롯 번호의 멘트를 쓰기 위해 기억
+            club.cleaningEndAlertSent = false;
+            const slotNum = activeSchedule.slot || (activeIdx + 1);
+            club.activeCleaningSlot = slotNum;
 
-            // 💡 슬롯별 저장된 커스텀 시작 멘트를 최우선으로 조회
             const customStartMsg = (clubConfig[`cleaningStartMsg_${slotNum}`] && clubConfig[`cleaningStartMsg_${slotNum}`].trim()) ||
                                    (activeSchedule.startMsg && activeSchedule.startMsg.trim()) ||
                                    (clubConfig.cleaningStartMsg && clubConfig.cleaningStartMsg.trim());
             const startMsg = customStartMsg || '구장 청소 및 정비 시간입니다. 잠시 코트 이용을 중단해 주시기 바랍니다.';
            
-            // 💡 구장별 독립 음성 큐로 전송
             pushVoiceAnnouncement(cId, {
                 clubId: cId,
                 matchType: '공지',
@@ -1890,10 +1888,8 @@ setInterval(() => {
                 message: startMsg
             });
 
-            // 해당 클럽 룸에 토스트 팝업 전송
             io.to(`club_${cId}`).emit('toastAlert', `🧹 ${startMsg}`);
 
-            // 💡 TV 룸 이름 하이픈(-) / 언더바(_) 모두 호환되도록 동시 전송 (2분 = 120000ms 노출)
             const startAlertPayload = {
                 clubId: cId,
                 type: 'start',
@@ -1908,7 +1904,7 @@ setInterval(() => {
             }
         }
 
-        // 1-2) 💡 청소 종료 10초 전 시점 감지 (종료 타이머 10초 전에 미리 팝업 및 음성 안내 발송)
+        // 1-2) 청소 종료 10초 전 시점 감지
         if (club.isCleaningTime && !club.cleaningEndAlertSent && activeAfter10SecIdx === -1) {
             club.cleaningEndAlertSent = true;
             const endedSlotNum = club.activeCleaningSlot || 1;
@@ -1933,7 +1929,7 @@ setInterval(() => {
                 type: 'end',
                 title: '🏸 구장 청소 완료 안내',
                 message: endMsg,
-                duration: 10000 // 종료 시점까지 10초 동안 노출
+                duration: 10000
             };
             io.to(`tv-room_${cId}`).to(`tv-room-${cId}`).emit('tvCleaningAlert', endAlertPayload);
 
@@ -1942,7 +1938,7 @@ setInterval(() => {
             }
         }
 
-        // 2) 해당 클럽의 실제 청소 종료 시점 감지 (정각에 청소 상태 해제)
+        // 2) 해당 클럽의 실제 청소 종료 시점 감지
         if (!activeSchedule && club.isCleaningTime) {
             club.isCleaningTime = false;
             club.activeCleaningSlot = null;
@@ -1972,11 +1968,11 @@ setInterval(() => {
             if (typeof broadcastState === 'function') {
                 broadcastState(cId);
             }
-            return; // 이 클럽의 이번 틱은 청소로 인해 대기/진행 타이머 동결
+            return;
         }
 
         // -------------------------------------------------------------
-        // 아래부터는 기존의 게임 및 난타 대기열/코트 타이머 루프 로직 그대로 유지
+        // 아래부터는 기존의 게임 및 난타 대기열/코트 타이머 루프 로직
         // -------------------------------------------------------------
 
         // 1. 게임 코트 및 게임 대기열 처리
@@ -1994,7 +1990,7 @@ setInterval(() => {
                 }
                 
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
-                slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
+                slot.remainingSeconds = Math.max(0, entryTimeoutSec - elapsed);
 
                 const validPlayers = getValidPlayers(slot.players);
                 const memberNames = validPlayers.map(p => p.split('/')[0].trim());
@@ -2002,7 +1998,7 @@ setInterval(() => {
                 const targetCourt = emptyGameCourts[activeTimerCount - 1] || emptyGameCourts[0];
                 const courtNum = targetCourt ? targetCourt.id : '';
 
-                // 📱 [1단계: 0초 즉시] 스마트폰 전용 신호('mobileEntryAlert') 발송 -> TV는 절대 반응 안 함!
+                // 📱 [1단계: 0초 즉시] 스마트폰 전용 신호('mobileEntryAlert') 발송
                 if (!slot.mobileNotified) {
                     slot.mobileNotified = true;
                     io.to(`club_${cId}`).emit('mobileEntryAlert', {
@@ -2091,7 +2087,7 @@ setInterval(() => {
                 }
 
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
-                slot.remainingSeconds = Math.max(0, clubConfig.ENTRY_TIMEOUT_SEC - elapsed);
+                slot.remainingSeconds = Math.max(0, entryTimeoutSec - elapsed);
 
                 const validPlayers = getValidPlayers(slot.players);
                 const memberNames = validPlayers.map(p => p.split('/')[0].trim());
@@ -2109,7 +2105,7 @@ setInterval(() => {
                 const targetSlotInfo = availableSides[activeNantaTimerCount - 1] || availableSides[0];
                 const targetCourtNum = targetSlotInfo ? targetSlotInfo.courtId : '';
 
-                // 📱 [1단계: 0초 즉시] 스마트폰 전용 신호('mobileEntryAlert') 발송 -> TV는 절대 반응 안 함!
+                // 📱 [1단계: 0초 즉시] 스마트폰 전용 신호('mobileEntryAlert') 발송
                 if (!slot.mobileNotified) {
                     slot.mobileNotified = true;
                     io.to(`club_${cId}`).emit('mobileEntryAlert', {
@@ -2179,13 +2175,12 @@ setInterval(() => {
                 ['sideA', 'sideB'].forEach(side => {
                     if (court[side] && !court[side].isEmpty && court[side].startTime) {
                         const elapsed = Math.floor((now - court[side].startTime) / 1000);
-                        court[side].remainingSeconds = Math.max(0, clubConfig.NANTA_COURT_LIMIT_SEC - elapsed);
+                        court[side].remainingSeconds = Math.max(0, nantaLimitSec - elapsed);
                         
                         if (court[side].remainingSeconds === 60 && !court[side].warned1Min) {
                             court[side].warned1Min = true;
                             const sideName = (side === 'sideA') ? 'A면' : 'B면';
                             
-                            // 💡 수정 후: 구장별 독립 큐로 전송
                             pushVoiceAnnouncement(cId, {
                                 clubId: cId,
                                 courtNumber: court.id,
