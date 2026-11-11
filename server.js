@@ -3498,7 +3498,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행 (중복 저장 차단 포함)
+    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행 (저장자 실명 안내 및 중복 차단)
     if (!global._recentScoreLocks) global._recentScoreLocks = new Map();
 
     socket.on('saveMatchScore', (data, callback) => {
@@ -3511,31 +3511,33 @@ io.on('connection', (socket) => {
             const scoreA = parseInt(data.scoreA, 10) || 0;
             const scoreB = parseInt(data.scoreB, 10) || 0;
 
+            const normalizeName = (n) => String(n || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+            const saverName = normalizeName(data.saverName) || '다른 플레이어';
+
             if (teamA.length === 0 || teamB.length === 0) {
                 if (callback) callback({ success: false, message: 'A팀과 B팀 선수를 선택해 주세요.' });
                 return;
             }
 
-            // 🔒 [중복 입력 방지] 같은 클럽 + 같은 참가자 조합이 3분(180초) 이내에 중복 저장 시 차단
-            const normalizeName = (n) => String(n || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+            // 🔒 [중복 입력 방지] 같은 참가자 4명이 3분 이내에 중복 저장 시 먼저 저장한 회원명 안내
             const playersKey = [...teamA, ...teamB].map(normalizeName).filter(Boolean).sort().join('|');
             const lockKey = `${currentClubId}__${playersKey}`;
             const nowMs = Date.now();
-            const DUPLICATE_LIMIT_MS = 3 * 60 * 1000; // 3분 이내 중복 제출 차단
+            const DUPLICATE_LIMIT_MS = 3 * 60 * 1000;
 
             const prevLock = global._recentScoreLocks.get(lockKey);
             if (prevLock && (nowMs - prevLock.time) < DUPLICATE_LIMIT_MS) {
                 if (callback) {
                     callback({
                         success: false,
-                        message: '⚠️ 이미 다른 플레이어가 이 경기의 스코어를 먼저 등록했습니다.\n(먼저 저장된 기록만 반영됩니다.)'
+                        message: `⚠️ 이미 [${prevLock.saverName}] 회원이 이 경기의 스코어(${prevLock.scoreA} : ${prevLock.scoreB})를 먼저 등록했습니다.\n(먼저 저장된 기록만 반영됩니다.)`
                     });
                 }
                 return;
             }
 
-            // 가장 먼저 도착한 요청을 즉시 잠금 처리 (0.1초 차이 동시 클릭까지 방어)
-            global._recentScoreLocks.set(lockKey, { time: nowMs, courtNumber });
+            // 가장 먼저 도착한 요청 잠금 (저장자 이름과 점수 함께 보관)
+            global._recentScoreLocks.set(lockKey, { time: nowMs, courtNumber, saverName, scoreA, scoreB });
 
             let winnerTeam = 'DRAW';
             if (scoreA > scoreB) winnerTeam = 'A';
@@ -3573,15 +3575,25 @@ io.on('connection', (socket) => {
                 ],
                 function(err) {
                     if (err) {
-                        // DB 저장 에러 시 잠금 해제하여 재시도 가능하게 복구
                         global._recentScoreLocks.delete(lockKey);
                         console.error('❌ 경기 전적 저장 실패:', err.message);
                         if (callback) callback({ success: false, message: '전적 저장 중 오류가 발생했습니다.' });
                     } else {
-                        console.log(`🏆 [전적 저장 완료] 구장:${currentClubId}, 종목:${matchType}, ${teamA.join(',')} (${scoreA}) vs ${teamB.join(',')} (${scoreB})`);
+                        console.log(`🏆 [전적 저장 완료] 구장:${currentClubId}, 저장자:${saverName}, 종목:${matchType}, ${teamA.join(',')} (${scoreA}) vs ${teamB.join(',')} (${scoreB})`);
                         if (typeof addNotification === 'function') {
                             addNotification(`🏆 [전적 기록] ${courtNumber}번 코트 (${matchType}) ${teamA.join('·')} [${scoreA} : ${scoreB}] ${teamB.join('·')}`, currentClubId);
                         }
+
+                        // 같은 경기의 스코어 창을 열고 있는 다른 플레이어들에게 저장 완료 알림 전송
+                        socket.broadcast.emit('matchScoreSavedNotice', {
+                            clubId: currentClubId,
+                            courtId: courtNumber,
+                            playersKey: playersKey,
+                            saverName: saverName,
+                            scoreA: scoreA,
+                            scoreB: scoreB
+                        });
+
                         if (callback) callback({ success: true, recordId: this.lastID });
                     }
                 }

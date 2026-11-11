@@ -1987,7 +1987,7 @@ window.closeScoreModal = function() {
     if (modal) modal.remove();
 };
 
-// 💡 점수 서버 전송 함수
+// 💡 점수 서버 전송 함수 (저장자 이름 포함)
 window.submitMatchScore = function(courtId) {
     const matchType = document.getElementById('modal-match-type').value;
     const rawScoreA = document.getElementById('modal-score-a').value.trim();
@@ -2000,7 +2000,7 @@ window.submitMatchScore = function(courtId) {
 
     const scoreA = parseInt(rawScoreA, 10) || 0;
     const scoreB = parseInt(rawScoreB, 10) || 0;
-    
+
     const allCheckboxes = document.querySelectorAll('input[name="teamA_player"]');
     const teamA = Array.from(allCheckboxes).filter(cb => cb.checked).map(cb => cb.value);
     const teamB = Array.from(allCheckboxes).filter(cb => !cb.checked).map(cb => cb.value);
@@ -2013,6 +2013,10 @@ window.submitMatchScore = function(courtId) {
         alert('A팀과 B팀에 최소 1명 이상의 선수가 배정되어야 합니다.');
         return;
     }
+
+    // 현재 저장 버튼을 누른 본인 이름 추출
+    const meCb = document.querySelector('#modal-player-checkboxes input[name="teamA_player"][data-isme="1"]');
+    const saverName = (meCb && meCb.value) || window.myName || localStorage.getItem('myName') || localStorage.getItem('userName') || '다른 플레이어';
 
     const submitBtn = document.getElementById('btn-submit-match-score');
     if (submitBtn) {
@@ -2028,7 +2032,8 @@ window.submitMatchScore = function(courtId) {
             teamA: teamA,
             teamB: teamB,
             scoreA: scoreA,
-            scoreB: scoreB
+            scoreB: scoreB,
+            saverName: saverName
         }, (res) => {
             if (res && res.success) {
                 console.log('✅ 경기 전적 저장 완료');
@@ -2041,6 +2046,27 @@ window.submitMatchScore = function(courtId) {
         alert('서버 연결(socket)을 찾을 수 없습니다.');
     }
 };
+
+// 🔔 다른 플레이어가 먼저 스코어를 저장했을 때 안내창을 띄운 후 스코어 창 닫기
+if (typeof socket !== 'undefined' && !window._scoreSavedNoticeBound) {
+    window._scoreSavedNoticeBound = true;
+    socket.on('matchScoreSavedNotice', (notice) => {
+        const modal = document.getElementById('match-score-modal');
+        if (!modal || !notice) return;
+
+        const cleanName = (n) => String(n || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+        const modalPlayersKey = Array.from(modal.querySelectorAll('input[name="teamA_player"]'))
+            .map(cb => cleanName(cb.value))
+            .filter(Boolean)
+            .sort()
+            .join('|');
+
+        if (modalPlayersKey && modalPlayersKey === notice.playersKey) {
+            alert(`ℹ️ [${notice.saverName}] 회원이 방금 이 경기의 스코어(${notice.scoreA} : ${notice.scoreB})를 먼저 저장했습니다.\n\n[확인]을 누르면 스코어 입력창이 닫힙니다.`);
+            window.closeScoreModal();
+        }
+    });
+}
 
 // =========================================================================
 // 🏆 [3·4단계 통합] 전적 통계 대시보드 & 반짝이는 타이틀 생성기 & 공개 랭킹 보드
