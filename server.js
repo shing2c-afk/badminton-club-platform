@@ -3498,12 +3498,14 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행
+    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행 (중복 저장 차단 포함)
+    if (!global._recentScoreLocks) global._recentScoreLocks = new Map();
+
     socket.on('saveMatchScore', (data, callback) => {
         try {
             const currentClubId = data.clubId || socket.clubId || 'unjeong';
             const courtNumber = parseInt(data.courtId, 10) || 0;
-            const matchType = data.matchType || '자유';
+            const matchType = data.matchType || '자유복식';
             const teamA = Array.isArray(data.teamA) ? data.teamA : [];
             const teamB = Array.isArray(data.teamB) ? data.teamB : [];
             const scoreA = parseInt(data.scoreA, 10) || 0;
@@ -3513,6 +3515,27 @@ io.on('connection', (socket) => {
                 if (callback) callback({ success: false, message: 'A팀과 B팀 선수를 선택해 주세요.' });
                 return;
             }
+
+            // 🔒 [중복 입력 방지] 같은 클럽 + 같은 참가자 조합이 3분(180초) 이내에 중복 저장 시 차단
+            const normalizeName = (n) => String(n || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+            const playersKey = [...teamA, ...teamB].map(normalizeName).filter(Boolean).sort().join('|');
+            const lockKey = `${currentClubId}__${playersKey}`;
+            const nowMs = Date.now();
+            const DUPLICATE_LIMIT_MS = 3 * 60 * 1000; // 3분 이내 중복 제출 차단
+
+            const prevLock = global._recentScoreLocks.get(lockKey);
+            if (prevLock && (nowMs - prevLock.time) < DUPLICATE_LIMIT_MS) {
+                if (callback) {
+                    callback({
+                        success: false,
+                        message: '⚠️ 이미 다른 플레이어가 이 경기의 스코어를 먼저 등록했습니다.\n(먼저 저장된 기록만 반영됩니다.)'
+                    });
+                }
+                return;
+            }
+
+            // 가장 먼저 도착한 요청을 즉시 잠금 처리 (0.1초 차이 동시 클릭까지 방어)
+            global._recentScoreLocks.set(lockKey, { time: nowMs, courtNumber });
 
             let winnerTeam = 'DRAW';
             if (scoreA > scoreB) winnerTeam = 'A';
@@ -3550,6 +3573,8 @@ io.on('connection', (socket) => {
                 ],
                 function(err) {
                     if (err) {
+                        // DB 저장 에러 시 잠금 해제하여 재시도 가능하게 복구
+                        global._recentScoreLocks.delete(lockKey);
                         console.error('❌ 경기 전적 저장 실패:', err.message);
                         if (callback) callback({ success: false, message: '전적 저장 중 오류가 발생했습니다.' });
                     } else {
