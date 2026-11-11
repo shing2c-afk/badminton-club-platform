@@ -2800,6 +2800,14 @@ window.openMyStats = function(selectedPeriod = 'month') {
 
                         <!-- 본문 스크롤 영역 -->
                         <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
+                            <!-- 정회원 / 일일회원 색상 구분 안내 -->
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:8px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
+                                <span style="color:#94a3b8; font-weight:600;">선수 색상 안내</span>
+                                <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
+                                    <span style="color:#ffffff;">● 정회원(흰색)</span>
+                                    <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
+                                </div>
+                            </div>
                             ${(!myData || myData.games === 0) ? `
                                 <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:45px 15px;">
                                     <div style="color:#e2e8f0; font-size:14px; font-weight:700; margin-bottom:6px;">${currentPeriodLabel}에 기록된 게임 내역이 없습니다.</div>
