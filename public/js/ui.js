@@ -2799,12 +2799,11 @@ window.colorizePlayerName = function(rawText, membersList) {
 };
 
 // =========================================================================
-// 1. [나의 전적 보기] 개인 상세 전적 리포트 팝업 (다중 로그인 충돌 방지 및 통산/종목 전적 안정화)
+// 1. [나의 전적 보기] 개인 상세 전적 리포트 팝업 (카드 높이 압축 버그 수정 및 스크롤 최적화)
 // =========================================================================
 window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
     const cleanName = (s) => String(s || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').split('/')[0].trim();
 
-    // 1순위: 인자로 전달된 이름 -> 2순위: 현재 탭의 전역 변수(currentUser) -> 3순위: 화면 상단 표시 이름 -> 4순위: localStorage
     let myName = cleanName(explicitName);
     if (!myName && typeof currentUser !== 'undefined' && currentUser && currentUser.name) {
         myName = cleanName(currentUser.name);
@@ -2843,7 +2842,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
         }
         window.clubMembers = res.members || [];
 
-        // 2) 전체 누적(통산) 데이터만 1회 추가 확보 (선택 기간이 'all'이면 그대로 재사용)
+        // 2) 전체 누적(통산) 데이터 확보
         const getAllTimeData = (done) => {
             if (selectedPeriod === 'all') return done(res);
             socket.emit('getMatchStats', { clubId, period: 'all', minGames: 1 }, (allRes) => {
@@ -2870,7 +2869,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
             const myData = findMe(allPlayers) || { ...emptyStat };
             const myTotalData = findMe(totalPlayers) || (myData.games > 0 ? myData : { ...emptyStat });
 
-            // 이번 달 출석일/게임수 계산 (선택 탭이 'month'면 myData 사용, 아니면 recentMatches에서 이번 달 기록 직접 추출)
+            // 이번 달 출석일/게임수 계산
             const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
             const currentMonthPrefix = `${nowKr.getFullYear()}-${String(nowKr.getMonth() + 1).padStart(2, '0')}`;
 
@@ -2934,7 +2933,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                 return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
             };
 
-            // 전월 대비 승률 변화 (서버에서 내려주는 prevWinRate 활용)
+            // 전월 대비 승률 변화
             let growthHtml = '<span style="color:#64748b;">전월 비교 기록 없음 (신규 집계)</span>';
             if (myData && typeof myData.prevWinRate === 'number') {
                 const diff = (Number(myData.winRate || 0) - Number(myData.prevWinRate)).toFixed(1);
@@ -2985,7 +2984,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                 .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (a.games - b.games))
                 .slice(0, 5);
 
-            // 종목별 전적 계산 (선택한 기간의 myData.byType 또는 allMyMatches에서 직접 집계하여 누락 원천 방지)
+            // 종목별 전적 계산 (allMyMatches에서 직접 집계하여 정확도 보장)
             const typeCountMap = {
                 '남복': { games: 0, wins: 0, losses: 0 },
                 '여복': { games: 0, wins: 0, losses: 0 },
@@ -2993,16 +2992,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                 '자유복식': { games: 0, wins: 0, losses: 0 }
             };
 
-            if (myData && myData.byType) {
-                ['남복', '여복', '혼복', '자유복식'].forEach(k => {
-                    if (myData.byType[k]) {
-                        const g = Number(myData.byType[k].games) || 0;
-                        const w = Number(myData.byType[k].wins) || 0;
-                        const l = typeof myData.byType[k].losses === 'number' ? myData.byType[k].losses : Math.max(0, g - w);
-                        typeCountMap[k] = { games: g, wins: w, losses: l };
-                    }
-                });
-            } else {
+            if (allMyMatches.length > 0) {
                 allMyMatches.forEach(m => {
                     const t = m.match_type || '자유복식';
                     if (!typeCountMap[t]) typeCountMap[t] = { games: 0, wins: 0, losses: 0 };
@@ -3011,6 +3001,15 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                     const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
                     if (myWin) typeCountMap[t].wins += 1;
                     else if (m.winner_team === 'A' || m.winner_team === 'B') typeCountMap[t].losses += 1;
+                });
+            } else if (myData && myData.byType) {
+                ['남복', '여복', '혼복', '자유복식'].forEach(k => {
+                    if (myData.byType[k]) {
+                        const g = Number(myData.byType[k].games) || 0;
+                        const w = Number(myData.byType[k].wins) || 0;
+                        const l = typeof myData.byType[k].losses === 'number' ? myData.byType[k].losses : Math.max(0, g - w);
+                        typeCountMap[k] = { games: g, wins: w, losses: l };
+                    }
                 });
             }
 
@@ -3071,14 +3070,14 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                 <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(5, 8, 15, 0.88); display:flex; justify-content:center; align-items:center; z-index:99999; padding:10px; box-sizing:border-box;">
                     <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:460px; max-height:92vh; border-radius:14px; display:flex; flex-direction:column; border:1.5px solid #2563eb; box-shadow:0 15px 35px rgba(0,0,0,0.85); overflow:hidden;">
                         
-                        <!-- 1. 상단 헤더 -->
-                        <div style="padding:14px 18px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
+                        <!-- 1. 상단 헤더 (고정) -->
+                        <div style="padding:14px 18px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
                             <h3 style="margin:0; font-size:16px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">나의 전적 보기</h3>
                             <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:6px 14px; font-weight:700; cursor:pointer; font-size:12px;">닫기</button>
                         </div>
 
-                        <!-- 조회 기간 선택 탭 바 -->
-                        <div style="padding:10px 14px 6px 14px; background:#0f1420; border-bottom:1px solid #151c2c;">
+                        <!-- 조회 기간 선택 탭 바 (고정) -->
+                        <div style="padding:10px 14px 6px 14px; background:#0f1420; border-bottom:1px solid #151c2c; flex-shrink:0;">
                             <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">
                                 ${periodTabs.map(t => {
                                     const isActive = (selectedPeriod === t.key);
@@ -3090,11 +3089,11 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                             </div>
                         </div>
 
-                        <!-- 본문 스크롤 영역 -->
-                        <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
+                        <!-- 본문 스크롤 영역 (카드 압축 방지를 위해 display:block 및 flex-shrink:0 적용) -->
+                        <div style="padding:14px; overflow-y:auto; flex:1; display:block; -webkit-overflow-scrolling:touch;">
                             
                             <!-- 정회원 / 일일회원 색상 구분 및 내 공식 랭킹 자격 현황 안내 -->
-                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:7px; font-size:11.5px;">
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; margin-bottom:12px; display:flex; flex-direction:column; gap:7px; font-size:11.5px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <span style="color:#94a3b8; font-weight:600;">회원 색상 구분</span>
                                     <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
@@ -3109,8 +3108,8 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                             </div>
 
                             <!-- 2. 나의 전적 요약 (월 전적 1줄 + 나의 총 전적 1줄) -->
-                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
-                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; margin-bottom:12px;">
+                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; border-radius:9px 9px 0 0; display:flex; justify-content:space-between; align-items:center;">
                                     <span style="font-size:12.5px; font-weight:800; color:#ffffff;">나의 전적 요약</span>
                                     <span style="font-size:11.5px; font-weight:700;">${formatNameWithGrade(myCleanName)}</span>
                                 </div>
@@ -3134,15 +3133,15 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                                         </div>
                                     </div>
                                 </div>
-                                <div style="background:#111726; border-top:1px solid #1e293b; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
+                                <div style="background:#111726; border-top:1px solid #1e293b; border-radius:0 0 9px 9px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
                                     <span style="color:#94a3b8; font-weight:600;">전월 대비 승률 변화</span>
                                     <div>${growthHtml}</div>
                                 </div>
                             </div>
 
                             <!-- 3. 종목별 전적 카드 (남복/여복 · 혼복 · 자유복식) -->
-                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
-                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; margin-bottom:14px;">
+                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; border-radius:9px 9px 0 0; display:flex; justify-content:space-between; align-items:center;">
                                     <span style="font-size:12.5px; font-weight:800; color:#ffffff;">종목별 전적</span>
                                     <span style="font-size:11px; color:#94a3b8;">${currentPeriodLabel} 기준</span>
                                 </div>
@@ -3167,19 +3166,20 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                             </div>
 
                             <!-- 4. 나의 파트너 순위 TOP 5 -->
-                            <div>
+                            <div style="margin-bottom:14px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                                     <span style="font-size:13px; font-weight:800; color:#38bdf8;">나의 파트너 순위 (TOP 5)</span>
                                     <span style="font-size:11px; color:#64748b;">성별 무관 · 다승/승률 순</span>
                                 </div>
-                                <div style="background:#151c2c; border-radius:10px; border:1px solid #26334d; overflow:hidden;">
+                                <div style="background:#151c2c; border-radius:10px; border:1px solid #26334d;">
                                     ${top5Partners.length === 0 ? `
                                         <div style="padding:20px; text-align:center; color:#64748b; font-size:12px;">${currentPeriodLabel}에 집계된 파트너 기록이 없습니다.</div>
                                     ` : top5Partners.map((p, idx) => {
                                         const rankBg = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : '#1e293b';
                                         const rankColor = idx < 3 ? '#0f1420' : '#cbd5e1';
+                                        const isLast = (idx === top5Partners.length - 1);
                                         return `
-                                            <div style="display:grid; grid-template-columns:34px 1fr auto; align-items:center; padding:10px 12px; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
+                                            <div style="display:grid; grid-template-columns:34px 1fr auto; align-items:center; padding:10px 12px; ${!isLast ? 'border-bottom:1px solid #1e293b;' : ''} font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'}; ${idx === 0 ? 'border-radius:9px 9px 0 0;' : ''} ${isLast ? 'border-radius:0 0 9px 9px;' : ''}">
                                                 <div>
                                                     <span style="display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:5px; background:${rankBg}; color:${rankColor}; font-weight:800; font-size:11px;">${idx + 1}</span>
                                                 </div>
@@ -3199,7 +3199,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                             </div>
 
                             <!-- 5. 최신 게임 내역 (최근 5경기) -->
-                            <div>
+                            <div style="padding-bottom:6px;">
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                                     <span style="font-size:13px; font-weight:800; color:#38bdf8;">최신 게임 내역</span>
                                     <span style="font-size:11px; color:#64748b;">최근 5경기</span>
