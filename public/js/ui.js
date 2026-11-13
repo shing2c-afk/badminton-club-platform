@@ -2109,7 +2109,7 @@ if (typeof socket !== 'undefined' && !window._scoreSavedNoticeBound) {
 window.currentStatsAdminMode = false;
 
 // =========================================================================
-// 2. [랭킹 보드 - 사용자 화면] 최종 개편 (정회원 집계 + 이벤트 타이틀 상시 고정 + 환상 파트너 2줄 레이아웃)
+// 2. [랭킹 보드 - 사용자 화면] 공식 랭킹 선정 조건 및 부문별 정렬 적용
 // =========================================================================
 window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'month') {
     if (isAdminMode === true && typeof window.openAdminEventTitleManager === 'function') {
@@ -2118,7 +2118,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
 
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
 
-    socket.emit('getMatchStats', { clubId, period: selectedPeriod, minGames: 10 }, (res) => {
+    socket.emit('getMatchStats', { clubId, period: selectedPeriod, minGames: 15 }, (res) => {
         if (!res || !res.success) {
             alert('클럽 랭킹 보드 데이터를 불러오지 못했습니다.');
             return;
@@ -2167,21 +2167,41 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
         // 공식 랭킹 선정 조건 적용 (1. 월 5일 이상 출석 / 2. 월 15게임 이상 / 3. 파트너 월 3게임 이상)
         // 매월 1~5일(유예 기간)이거나 아직 조건 달성자가 없을 때는 보드 공백 방지를 위해 전체 표시
         const nowKrDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })).getDate();
-        const isCurrentMonthTab = (typeof period === 'undefined' || period === 'month');
+        const isCurrentMonthTab = (!selectedPeriod || selectedPeriod === 'month');
         const isGraceDays = isCurrentMonthTab && nowKrDate <= 5;
 
         const qualifiedPlayers = allPlayers.filter(p => (Number(p.attendDays) || 0) >= 5 && (Number(p.games) || 0) >= 15);
         const regularPlayers = (!isGraceDays && qualifiedPlayers.length > 0) ? qualifiedPlayers : allPlayers;
 
-        if (res && Array.isArray(res.pairStats)) {
-            const qualifiedPairs = res.pairStats.filter(pr => (Number(pr.games) || 0) >= 3);
-            if (!isGraceDays && qualifiedPairs.length > 0) {
-                res.pairStats.splice(0, res.pairStats.length, ...qualifiedPairs);
-            }
-        }
+        const qualifiedPairs = allPairs.filter(pr => (Number(pr.games) || 0) >= 3);
+        const targetPairs = (!isGraceDays && qualifiedPairs.length > 0) ? qualifiedPairs : allPairs;
+
+        // 공통 정렬 함수 1: 승률 우선 (승률 1순위 -> 다승 2순위 -> 득실차 3순위 -> 적은 경기수 4순위)
+        const sortByWinRateFirst = (a, b) => {
+            const rateA = a.games > 0 ? (a.wins / a.games) : 0;
+            const rateB = b.games > 0 ? (b.wins / b.games) : 0;
+            if (Math.abs(rateB - rateA) > 0.0001) return rateB - rateA;
+            if (b.wins !== a.wins) return b.wins - a.wins;
+            const diffA = Number(a.pointDiff) || 0;
+            const diffB = Number(b.pointDiff) || 0;
+            if (diffB !== diffA) return diffB - diffA;
+            return a.games - b.games;
+        };
+
+        // 공통 정렬 함수 2: 다승 우선 (다승 1순위 -> 승률(적은 패배) 2순위 -> 득실차 3순위)
+        const sortByWinsFirst = (a, b) => {
+            if (b.wins !== a.wins) return b.wins - a.wins;
+            const rateA = a.games > 0 ? (a.wins / a.games) : 0;
+            const rateB = b.games > 0 ? (b.wins / b.games) : 0;
+            if (Math.abs(rateB - rateA) > 0.0001) return rateB - rateA;
+            const diffA = Number(a.pointDiff) || 0;
+            const diffB = Number(b.pointDiff) || 0;
+            if (diffB !== diffA) return diffB - diffA;
+            return a.games - b.games;
+        };
 
         // -----------------------------------------------------------------
-        // ① 급수별 랭킹 데이터 산출 (정회원 기준)
+        // ① 급수별 랭킹 데이터 산출 (승률 우선 정렬)
         // -----------------------------------------------------------------
         const getTop5ByGrade = (targetGrade) => {
             let filtered = regularPlayers;
@@ -2192,9 +2212,9 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                     return g === target || g === (target + '조');
                 });
             }
-            return filtered
+            return [...filtered]
                 .filter(p => p.games > 0)
-                .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.games - a.games))
+                .sort(sortByWinRateFirst)
                 .slice(0, 5);
         };
 
@@ -2208,17 +2228,18 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
         };
 
         // -----------------------------------------------------------------
-        // ② 종목별 다승 순위 데이터 산출 (정회원 기준)
+        // ② 종목별 다승 순위 데이터 산출 (다승 우선 정렬)
         // -----------------------------------------------------------------
         const getTop5ByMatchType = (typeName) => {
             return regularPlayers
                 .map(p => {
-                    const tStat = (p.byType && p.byType[typeName]) ? p.byType[typeName] : { games: 0, wins: 0, losses: 0 };
+                    const tStat = (p.byType && p.byType[typeName]) ? p.byType[typeName] : { games: 0, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 };
                     const tWinRate = tStat.games > 0 ? Math.round((tStat.wins / tStat.games) * 100) : 0;
-                    return { name: p.name, games: tStat.games, wins: tStat.wins, losses: tStat.losses, winRate: tWinRate };
+                    const tPointDiff = (Number(tStat.pointsFor) || 0) - (Number(tStat.pointsAgainst) || 0);
+                    return { name: p.name, games: tStat.games, wins: tStat.wins, losses: tStat.losses, winRate: tWinRate, pointDiff: tPointDiff };
                 })
                 .filter(p => p.games > 0)
-                .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.games - a.games))
+                .sort(sortByWinsFirst)
                 .slice(0, 5);
         };
 
@@ -2229,52 +2250,36 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
         };
 
         // -----------------------------------------------------------------
-        // ③ 개인 및 파트너 부문 TOP 5 데이터 산출 (정회원 파트너만 필터링)
+        // ③ 개인 및 파트너 부문 TOP 5 데이터 산출
         // -----------------------------------------------------------------
         const top5MostWins = [...regularPlayers]
             .filter(p => p.games > 0)
-            .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.games - a.games))
+            .sort(sortByWinsFirst)
             .slice(0, 5);
 
-        const MIN_GAMES_FOR_RATE = 10;
-        const qualifiedRatePlayers = [...regularPlayers]
-            .filter(p => p.games >= MIN_GAMES_FOR_RATE)
-            .sort((a, b) => (b.winRate - a.winRate) || (b.wins - a.wins) || (b.games - a.games));
+        const top5WinRate = [...regularPlayers]
+            .filter(p => p.games > 0)
+            .sort(sortByWinRateFirst)
+            .slice(0, 5);
 
-        let top5WinRate = qualifiedRatePlayers.slice(0, 5);
-        let isRateFallbackUsed = false;
-        if (top5WinRate.length < 5) {
-            const underPlayers = [...regularPlayers]
-                .filter(p => p.games > 0 && p.games < MIN_GAMES_FOR_RATE)
-                .sort((a, b) => (b.games - a.games) || (b.winRate - a.winRate) || (b.wins - a.wins));
-            if (underPlayers.length > 0) {
-                isRateFallbackUsed = true;
-                top5WinRate = [...top5WinRate, ...underPlayers].slice(0, 5);
-            }
-        }
-
-        // 두 선수가 모두 정회원인 경우만 환상 파트너 후보로 인정
-        const regularNamesSet = new Set(regularPlayers.map(p => p.name));
-        const top5Pairs = [...allPairs]
-            .filter(pr => {
-                const p1 = pr.player1 || (pr.players && pr.players[0]) || '';
-                const p2 = pr.player2 || (pr.players && pr.players[1]) || '';
-                return pr.games > 0 && regularNamesSet.has(p1) && regularNamesSet.has(p2);
-            })
+        const top5Pairs = [...targetPairs]
+            .filter(pr => pr.games > 0)
             .map(pr => {
                 const p1 = pr.player1 || (pr.players && pr.players[0]) || '';
                 const p2 = pr.player2 || (pr.players && pr.players[1]) || '';
                 const losses = typeof pr.losses === 'number' ? pr.losses : Math.max(0, pr.games - pr.wins);
+                const pointDiff = (Number(pr.pointsFor) || 0) - (Number(pr.pointsAgainst) || 0);
                 return {
                     p1Formatted: formatNameWithGrade(p1),
                     p2Formatted: formatNameWithGrade(p2),
                     games: pr.games,
                     wins: pr.wins,
                     losses: losses,
-                    winRate: Math.round(pr.winRate || 0)
+                    pointDiff: pointDiff,
+                    winRate: Math.round(pr.winRate || (pr.games > 0 ? (pr.wins / pr.games) * 100 : 0))
                 };
             })
-            .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.games - a.games))
+            .sort(sortByWinRateFirst)
             .slice(0, 5);
 
         // 렌더링 헬퍼 함수 (일반 리스트용)
@@ -2307,7 +2312,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
             }).join('');
         };
 
-        // 💡 환상 파트너 전용 렌더링 함수 (스마트폰에서 2줄 레이아웃 적용으로 이름 잘림 원천 방지)
+        // 환상 파트너 전용 렌더링 함수 (2줄 레이아웃 적용)
         const renderPairsListHtml = (list, emptyMsg) => {
             if (!list || list.length === 0) {
                 return `<div style="padding:28px 12px; text-align:center; color:#64748b; font-size:12px;">${emptyMsg}</div>`;
@@ -2324,7 +2329,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                         </div>
                         <div style="display:flex; flex-direction:column; gap:3px; overflow:hidden;">
                             <div style="font-weight:700; color:#ffffff; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                <span style="color:#38bdf8;">${item.p1Formatted}</span> <span style="color:#64748b; font-weight:400;">&</span> <span style="color:#38bdf8;">${item.p2Formatted}</span>
+                                <span>${item.p1Formatted}</span> <span style="color:#64748b; font-weight:400;">&</span> <span>${item.p2Formatted}</span>
                             </div>
                             <div style="font-weight:600; font-size:11.5px; color:#cbd5e1;">
                                 <span>${item.games}전</span>
@@ -2362,7 +2367,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                     <!-- 본문 스크롤 영역 -->
                     <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
                         
-                       <!-- 회원 색상 구분 및 공식 랭킹 선정 조건 안내 -->
+                        <!-- 회원 색상 구분 및 공식 랭킹 선정 조건 안내 -->
                         <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; font-size:11.5px; line-height:1.45;">
                             <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:7px; border-bottom:1px solid #1e293b;">
                                 <span style="color:#94a3b8; font-weight:600;">회원 색상 구분</span>
@@ -2376,72 +2381,66 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                                     <span style="color:#38bdf8; font-weight:700; font-size:11.5px;">공식 랭킹 선정 조건</span>
                                     <span style="color:#cbd5e1; font-size:11px;">※ 공식 타이틀 및 포상은 <strong style="color:#f59e0b;">정회원 기준</strong> 선정</span>
                                 </div>
-                                <div>월 5일 이상 클럽 출석</div>
-                                <div>월 15게임 이상 진행</div>
-                                <div>환상 파트너는 동일 회원으로 월 3게임 이상 진행</div>
+                                <div>1. 월 5일 이상 클럽 출석</div>
+                                <div>2. 월 15게임 이상 진행</div>
+                                <div>3. 환상 파트너는 동일 회원으로 월 3게임 이상 진행</div>
                             </div>
                         </div>
                         
-                        <!-- ========================================================= -->
-<!-- ========================================================= -->
-<!-- [상단 구역] 이달의 이벤트 타이틀 (명칭 통일 및 깔끔한 테두리 적용) -->
-<!-- ========================================================= -->
-<div style="background:#151c2c; border:1.5px solid #f59e0b; border-radius:12px; overflow:hidden; flex-shrink:0;">
-    <div style="background:linear-gradient(90deg, rgba(245,158,11,0.18) 0%, rgba(21,28,44,0) 100%); padding:10px 14px; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:13.5px; font-weight:800; color:#f59e0b;">이달의 이벤트 타이틀</span>
-        <span style="font-size:11px; color:#94a3b8; font-weight:600;">클럽 이벤트 타이틀</span>
-    </div>
-    <div style="padding:12px; display:flex; flex-direction:column; gap:10px;">
-        ${customTitles.length === 0 ? `
-            <div style="padding:16px 10px; text-align:center;">
-                <div style="color:#e2e8f0; font-size:12.5px; font-weight:700; margin-bottom:3px;">이번 달 이벤트 타이틀을 준비 중입니다.</div>
-                <div style="color:#64748b; font-size:11px;">관리자가 이벤트 타이틀을 등록하면 이곳에 표시됩니다.</div>
-            </div>
-        ` : customTitles.map(ct => {
-            const isPublished = (ct.status === 'published') || (ct.winner && ct.winner !== '집계 중' && ct.winner !== '대상자 없음' && ct.status !== 'pending');
-            const descText = ct.description || '이벤트 타이틀 진행 중';
-            const prizeText = ct.prizeInfo ? `포상 상품: ${ct.prizeInfo}` : '';
+                        <!-- [상단 구역] 이달의 이벤트 타이틀 -->
+                        <div style="background:#151c2c; border:1.5px solid #f59e0b; border-radius:12px; overflow:hidden; flex-shrink:0;">
+                            <div style="background:linear-gradient(90deg, rgba(245,158,11,0.18) 0%, rgba(21,28,44,0) 100%); padding:10px 14px; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:13.5px; font-weight:800; color:#f59e0b;">이달의 이벤트 타이틀</span>
+                                <span style="font-size:11px; color:#94a3b8; font-weight:600;">클럽 이벤트 타이틀</span>
+                            </div>
+                            <div style="padding:12px; display:flex; flex-direction:column; gap:10px;">
+                                ${customTitles.length === 0 ? `
+                                    <div style="padding:16px 10px; text-align:center;">
+                                        <div style="color:#e2e8f0; font-size:12.5px; font-weight:700; margin-bottom:3px;">이번 달 이벤트 타이틀을 준비 중입니다.</div>
+                                        <div style="color:#64748b; font-size:11px;">관리자가 이벤트 타이틀을 등록하면 이곳에 표시됩니다.</div>
+                                    </div>
+                                ` : customTitles.map(ct => {
+                                    const isPublished = (ct.status === 'published') || (ct.winner && ct.winner !== '집계 중' && ct.winner !== '대상자 없음' && ct.status !== 'pending');
+                                    const descText = ct.description || '이벤트 타이틀 진행 중';
+                                    const prizeText = ct.prizeInfo ? `포상 상품: ${ct.prizeInfo}` : '';
 
-            return `
-                <div style="background:#0f1420; border:1px solid #26334d; border-radius:8px; padding:11px;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;">
-                        <div style="font-size:13.5px; font-weight:800; color:#ffffff; word-break:keep-all;">${ct.titleName}</div>
-                        <span style="background:${isPublished ? '#f59e0b' : '#1e293b'}; color:${isPublished ? '#0f1420' : '#38bdf8'}; border:1px solid ${isPublished ? '#f59e0b' : '#334155'}; font-size:10px; font-weight:800; padding:2px 7px; border-radius:4px; white-space:nowrap; flex-shrink:0;">
-                            ${isPublished ? '선정 완료' : '월말 발표'}
-                        </span>
-                    </div>
-                    <div style="font-size:11.5px; color:#cbd5e1; line-height:1.45; margin-bottom:7px; word-break:keep-all;">
-                        ${descText}
-                    </div>
-                    ${prizeText ? `
-                        <div style="font-size:11.5px; color:#fbbf24; font-weight:700; margin-bottom:8px; background:rgba(245,158,11,0.1); padding:6px 10px; border-radius:5px; border:1px dashed rgba(245,158,11,0.35); word-break:keep-all;">
-                            ${prizeText}
+                                    return `
+                                        <div style="background:#0f1420; border:1px solid #26334d; border-radius:8px; padding:11px;">
+                                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:6px; margin-bottom:5px;">
+                                                <div style="font-size:13.5px; font-weight:800; color:#ffffff; word-break:keep-all;">${ct.titleName}</div>
+                                                <span style="background:${isPublished ? '#f59e0b' : '#1e293b'}; color:${isPublished ? '#0f1420' : '#38bdf8'}; border:1px solid ${isPublished ? '#f59e0b' : '#334155'}; font-size:10px; font-weight:800; padding:2px 7px; border-radius:4px; white-space:nowrap; flex-shrink:0;">
+                                                    ${isPublished ? '선정 완료' : '월말 발표'}
+                                                </span>
+                                            </div>
+                                            <div style="font-size:11.5px; color:#cbd5e1; line-height:1.45; margin-bottom:7px; word-break:keep-all;">
+                                                ${descText}
+                                            </div>
+                                            ${prizeText ? `
+                                                <div style="font-size:11.5px; color:#fbbf24; font-weight:700; margin-bottom:8px; background:rgba(245,158,11,0.1); padding:6px 10px; border-radius:5px; border:1px dashed rgba(245,158,11,0.35); word-break:keep-all;">
+                                                    ${prizeText}
+                                                </div>
+                                            ` : ''}
+                                            <div style="background:#151c2c; border:1px solid ${isPublished ? 'rgba(245,158,11,0.4)' : '#1e293b'}; border-radius:6px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                                                <span style="font-size:11px; color:#94a3b8; font-weight:600; white-space:nowrap;">수상 대상자</span>
+                                                ${isPublished ? `
+                                                    <strong style="font-size:12px; color:#ffffff; font-weight:800; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.colorizePlayerName(ct.winner, res.members)}</strong>
+                                                ` : `
+                                                    <span style="font-size:11px; color:#64748b; font-weight:700; white-space:nowrap;">조건 달성 회원 집계 중</span>
+                                                `}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
                         </div>
-                    ` : ''}
-                    <div style="background:#151c2c; border:1px solid ${isPublished ? 'rgba(245,158,11,0.4)' : '#1e293b'}; border-radius:6px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <span style="font-size:11px; color:#94a3b8; font-weight:600; white-space:nowrap;">수상 대상자</span>
-                        ${isPublished ? `
-                            <strong style="font-size:12px; color:#ffffff; font-weight:800; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.colorizePlayerName(ct.winner, res.members)}</strong>
-                        ` : `
-                            <span style="font-size:11px; color:#64748b; font-weight:700; white-space:nowrap;">조건 달성 회원 집계 중</span>
-                        `}
-                    </div>
-                </div>
-            `;
-        }).join('')}
-    </div>
-</div>
 
-                        <!-- ========================================================= -->
-                        <!-- [하단 구역] 클럽 공식 랭킹 통계 (기간 선택 + 급수별/부문별 TOP 5) -->
-                        <!-- ========================================================= -->
+                        <!-- [하단 구역] 클럽 공식 랭킹 통계 -->
                         <div style="display:flex; flex-direction:column; gap:14px;">
                             
                             <!-- 조회 기간 선택 바 -->
                             <div style="background:#151c2c; padding:10px; border-radius:10px; border:1px solid #26334d;">
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding:0 2px;">
                                     <span style="font-size:13px; font-weight:800; color:#38bdf8;">클럽 공식 랭킹 통계</span>
-                                    <span style="font-size:11px; color:#94a3b8;">정회원 기준 집계</span>
                                 </div>
                                 <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">
                                     ${periodTabs.map(t => {
@@ -2465,7 +2464,6 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                                     <div style="padding:10px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; flex-direction:column; gap:8px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center;">
                                             <span style="font-size:12.5px; font-weight:800; color:#ffffff;">급수별 랭킹 (TOP 5)</span>
-                                            <span style="font-size:11px; color:#94a3b8;">정회원 기준 집계</span>
                                         </div>
                                         <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:4px;" id="grade-ranking-tabs">
                                             <button onclick="window.switchRankingSubTab('grade', 'ALL', this)" class="grade-tab-btn" style="padding:6px 2px; background:#2563eb; color:#ffffff; border:1px solid #3b82f6; border-radius:5px; font-size:11px; font-weight:800; cursor:pointer;">전체</button>
@@ -2522,7 +2520,6 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                                     <div style="padding:10px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; flex-direction:column; gap:8px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center;">
                                             <span style="font-size:12.5px; font-weight:800; color:#ffffff;">부문별 랭킹 (TOP 5)</span>
-                                            <span style="font-size:11px; color:#94a3b8;">정회원 기준 집계</span>
                                         </div>
                                         <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;" id="category-ranking-tabs">
                                             <button onclick="window.switchRankingSubTab('cat', 'wins', this)" class="cat-tab-btn" style="padding:7px 4px; background:#2563eb; color:#ffffff; border:1px solid #3b82f6; border-radius:6px; font-size:11.5px; font-weight:800; cursor:pointer;">개인 다승</button>
@@ -2536,11 +2533,7 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                                     </div>
                                     <div id="cat-ranking-rate" class="cat-ranking-panel" style="display:none;">
                                         ${renderTop5ListHtml(top5WinRate, '집계된 승률 기록이 없습니다.')}
-                                        <div style="padding:8px 12px; background:#111726; border-top:1px solid #1e293b; font-size:11px; color:#94a3b8; text-align:right;">
-                                            ※ 최소 ${MIN_GAMES_FOR_RATE}게임 이상 출전 기준${isRateFallbackUsed ? ' (달성자 5명 미만 시 다출전 순 우선 반영)' : ''}
-                                        </div>
                                     </div>
-                                    <!-- 💡 환상 파트너는 2줄 레이아웃 렌더러 호출 -->
                                     <div id="cat-ranking-pairs" class="cat-ranking-panel" style="display:none;">
                                         ${renderPairsListHtml(top5Pairs, '집계된 복식 파트너 기록이 없습니다.')}
                                     </div>
