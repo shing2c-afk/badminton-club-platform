@@ -1730,7 +1730,7 @@ function updateWifiRestrictedButtons() {
 }
 
 // =========================================================================
-// 🏆 [게임 종료 / 한게임 더] 스코어 및 전적 입력 팝업 UI
+// [게임 종료 / 한게임 더] 스코어 및 전적 입력 팝업 UI
 // =========================================================================
 
 window.showScoreInputPopup = function(data) {
@@ -1740,18 +1740,33 @@ window.showScoreInputPopup = function(data) {
     const players = data.players || [];
     if (players.length < 2) return;
 
-    const cleanName = (raw) => String(raw || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+    const cleanName = (raw) => String(raw || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').split('/')[0].trim();
 
-    // 1. 현재 로그인한 본인 이름 찾기
+    // 1. 현재 로그인한(버튼을 누른) 본인 이름 찾기
     const findMyName = () => {
+        // 화면 상단 헤더의 로그인 이름 추출 (다중 브라우저/탭 환경에서 가장 정확)
+        let domUserName = '';
+        const headerEl = document.getElementById('current-user-name') || document.querySelector('.user-name, #user-info, header');
+        if (headerEl && headerEl.innerText) {
+            const m = headerEl.innerText.match(/([가-힣a-zA-Z0-9]+)\s*님/);
+            if (m && m[1]) domUserName = m[1];
+        }
+        if (!domUserName && document.body && document.body.innerText) {
+            const bodyMatch = document.body.innerText.match(/([가-힣a-zA-Z0-9]{2,10})\s*님\s*(환영합니다|반갑습니다|로그인|출석)?/);
+            if (bodyMatch && bodyMatch[1]) domUserName = bodyMatch[1];
+        }
+
         const candidates = [
-            data.myName, data.userName, data.requester,
-            window.myName, window.currentUserName, window.loggedInUser,
+            data.myName, data.userName, data.requester, data.clickedBy,
             typeof currentUser !== 'undefined' ? (currentUser && (currentUser.name || currentUser)) : null,
+            window.myName, window.currentUserName, window.loggedInUser,
+            domUserName,
+            sessionStorage.getItem('myName'), sessionStorage.getItem('userName'),
             localStorage.getItem('myName'), localStorage.getItem('userName'),
-            localStorage.getItem('memberName'), localStorage.getItem('currentUser'),
-            sessionStorage.getItem('myName'), sessionStorage.getItem('userName')
+            localStorage.getItem('currentUserName'), localStorage.getItem('memberName'),
+            localStorage.getItem('currentUser')
         ];
+
         for (const c of candidates) {
             if (!c) continue;
             let str = c;
@@ -1767,9 +1782,7 @@ window.showScoreInputPopup = function(data) {
     };
 
     const myCleanName = findMyName();
-    let myIndex = players.findIndex(p => cleanName(p) === myCleanName);
-    // 본인 확인 시 본인을 기본 고정, 미확인(관리자 등) 시 첫 번째 선수를 기준
-    let partnerIndex = myIndex === 0 ? 1 : 0;
+    const myIndex = players.findIndex(p => cleanName(p) === myCleanName);
 
     // 2. 4명 성별 판별하여 기본 종목(남복/여복/혼복/자유복식) 계산하는 함수
     const normalizeGender = (g) => {
@@ -1844,8 +1857,8 @@ window.showScoreInputPopup = function(data) {
     const modalHtml = `
         <div id="match-score-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.78); display:flex; justify-content:center; align-items:center; z-index:99999; font-family:inherit;">
             <div style="background:#1f2937; color:#fff; width:92%; max-width:420px; padding:22px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.6); border:1px solid #374151;">
-                <h3 style="margin-top:0; margin-bottom:14px; font-size:18px; color:#38bdf8; text-align:center;">
-                    🏆 [${data.courtId}번 코트] 경기 스코어 기록
+                <h3 style="margin-top:0; margin-bottom:14px; font-size:18px; color:#38bdf8; text-align:center; font-weight:800;">
+                    [${data.courtId}번 코트] 경기 스코어 기록
                 </h3>
                 
                 <!-- 1. 경기 종목 선택 -->
@@ -1859,17 +1872,18 @@ window.showScoreInputPopup = function(data) {
                     </select>
                 </div>
 
-                <!-- 2. 선수 팀 배정 (본인 고정 + 파트너 1명만 선택) -->
+                <!-- 2. 선수 팀 배정 (본인 1명 기본 선택 + 파트너 1명 추가 선택) -->
                 <div style="margin-bottom:14px;">
                     <label style="font-size:12px; color:#9ca3af; display:block; margin-bottom:6px;">
-                        👉 <strong style="color:#38bdf8;">A팀 파트너 1명</strong>을 선택하세요 (나머지 2명은 자동 <strong style="color:#f43f5e;">B팀</strong>)
+                        <strong style="color:#38bdf8;">A팀 파트너 1명</strong>을 선택하세요 (나머지 2명은 자동 <strong style="color:#f43f5e;">B팀</strong>)
                     </label>
                     <div id="modal-player-checkboxes" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                         ${players.map((p, idx) => {
                             const isMe = (myIndex !== -1 && idx === myIndex);
-                            const isChecked = (myIndex !== -1) ? (isMe || idx === partnerIndex) : (idx < 2);
+                            // 버튼을 누른 본인 1명만 기본 체크 (본인 미확인 시 첫 번째 선수 1명만 체크)
+                            const isChecked = (myIndex !== -1) ? isMe : (idx === 0);
                             return `
-                                <label class="player-select-label" style="display:flex; align-items:center; background:#374151; padding:10px; border-radius:8px; cursor:pointer; border:2px solid ${isChecked ? '#38bdf8' : '#f43f5e'}; transition:0.2s;">
+                                <label class="player-select-label" style="display:flex; align-items:center; background:#374151; padding:10px; border-radius:8px; cursor:pointer; border:2px solid ${isChecked ? '#38bdf8' : '#4b5563'}; transition:0.2s;">
                                     <input type="checkbox" name="teamA_player" value="${p}" data-idx="${idx}" data-isme="${isMe ? '1' : '0'}" ${isChecked ? 'checked' : ''} style="margin-right:8px; width:16px; height:16px; accent-color:#38bdf8;" onchange="window.handleTeamASelect(this)">
                                     <span style="font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p}${isMe ? ' <small style="color:#38bdf8;">(나)</small>' : ''}</span>
                                 </label>
@@ -1883,11 +1897,11 @@ window.showScoreInputPopup = function(data) {
                 <!-- 3. 점수 입력 -->
                 <div style="display:flex; gap:12px; margin-bottom:20px;">
                     <div style="flex:1; text-align:center;">
-                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px; font-weight:bold;">🔵 A팀 점수</label>
+                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px; font-weight:bold;">A팀 점수</label>
                         <input type="number" id="modal-score-a" value="" placeholder="점수" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #38bdf8; border-radius:8px;">
                     </div>
                     <div style="flex:1; text-align:center;">
-                        <label style="font-size:12px; color:#f43f5e; display:block; margin-bottom:4px; font-weight:bold;">🔴 B팀 점수</label>
+                        <label style="font-size:12px; color:#f43f5e; display:block; margin-bottom:4px; font-weight:bold;">B팀 점수</label>
                         <input type="number" id="modal-score-b" value="" placeholder="점수" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #f43f5e; border-radius:8px;">
                     </div>
                 </div>
@@ -1895,7 +1909,7 @@ window.showScoreInputPopup = function(data) {
                 <!-- 4. 저장 / 건너뛰기 버튼 -->
                 <div style="display:flex; gap:8px;">
                     <button type="button" id="btn-submit-match-score" onclick="window.submitMatchScore('${data.courtId}')" style="flex:2; padding:12px; background:#0284c7; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:bold; cursor:pointer;">
-                        💾 점수 저장하기
+                        점수 저장하기
                     </button>
                     <button type="button" onclick="window.closeScoreModal()" style="flex:1; padding:12px; background:#4b5563; color:#fff; border:none; border-radius:8px; font-size:13px; cursor:pointer;">
                         기록 안함
@@ -1910,7 +1924,7 @@ window.showScoreInputPopup = function(data) {
 
     // 화면에 성별 정보가 부족할 경우 서버 명부에서 즉시 가져와 종목 자동 보정
     if (typeof socket !== 'undefined' && players.length >= 4) {
-        const clubId = (typeof currentClubId !== 'undefined' && currentClubId) ? currentClubId : (localStorage.getItem('clubId') || 'unjeong');
+        const clubId = window.currentClubId || (typeof currentClubId !== 'undefined' && currentClubId) || localStorage.getItem('selectedClubId') || localStorage.getItem('clubId') || 'unjeong';
         socket.emit('getMatchStats', { clubId, period: 'month', minGames: 1 }, (res) => {
             if (res && Array.isArray(res.members)) {
                 window.clubMembers = res.members;
@@ -1923,7 +1937,7 @@ window.showScoreInputPopup = function(data) {
     }
 };
 
-// 💡 본인은 A팀 고정 + 파트너는 1명만 선택되도록 제어하는 함수
+// 본인은 A팀 고정 + 파트너는 1명만 선택되도록 제어하는 함수
 window.handleTeamASelect = function(clickedCb) {
     const allCbs = Array.from(document.querySelectorAll('#modal-player-checkboxes input[name="teamA_player"]'));
     const meCb = allCbs.find(cb => cb.getAttribute('data-isme') === '1');
@@ -1954,7 +1968,7 @@ window.handleTeamASelect = function(clickedCb) {
     window.updateTeamBDisplay();
 };
 
-// 💡 체크박스 터치 시 A팀(파란 테두리)과 B팀(빨간 테두리)을 즉시 시각적으로 구분해 주는 함수
+// 체크박스 터치 시 A팀(파란 테두리)과 B팀(빨간 테두리)을 즉시 시각적으로 구분해 주는 함수
 window.updateTeamBDisplay = function() {
     const allLabels = document.querySelectorAll('#modal-player-checkboxes .player-select-label');
     const teamA = [];
@@ -1963,21 +1977,37 @@ window.updateTeamBDisplay = function() {
     allLabels.forEach(label => {
         const cb = label.querySelector('input[name="teamA_player"]');
         if (cb && cb.checked) {
-            label.style.borderColor = '#38bdf8';
             teamA.push(cb.value);
         } else if (cb) {
-            label.style.borderColor = '#f43f5e';
             teamB.push(cb.value);
+        }
+    });
+
+    // A팀 2명이 모두 선택되면 나머지 2명을 B팀(빨간 테두리)으로 확정하고, 파트너 선택 전(1명)이면 대기(회색 테두리)로 표시
+    const isTeamAComplete = (teamA.length >= 2);
+    allLabels.forEach(label => {
+        const cb = label.querySelector('input[name="teamA_player"]');
+        if (cb && cb.checked) {
+            label.style.borderColor = '#38bdf8';
+        } else if (cb) {
+            label.style.borderColor = isTeamAComplete ? '#f43f5e' : '#4b5563';
         }
     });
 
     const previewEl = document.getElementById('team-match-preview');
     if (previewEl) {
-        previewEl.innerHTML = `
-            <span style="color:#38bdf8; font-weight:bold;">🔵 A팀: ${teamA.join(', ') || '없음'}</span>
-            <span style="color:#9ca3af; margin:0 6px;">vs</span>
-            <span style="color:#f43f5e; font-weight:bold;">🔴 B팀: ${teamB.join(', ') || '없음'}</span>
-        `;
+        if (!isTeamAComplete) {
+            previewEl.innerHTML = `
+                <span style="color:#38bdf8; font-weight:bold;">A팀: ${teamA.join(', ') || '없음'}</span>
+                <span style="color:#9ca3af; margin-left:6px;">(파트너 1명을 선택해 주세요)</span>
+            `;
+        } else {
+            previewEl.innerHTML = `
+                <span style="color:#38bdf8; font-weight:bold;">A팀: ${teamA.join(', ')}</span>
+                <span style="color:#9ca3af; margin:0 6px;">vs</span>
+                <span style="color:#f43f5e; font-weight:bold;">B팀: ${teamB.join(', ')}</span>
+            `;
+        }
     }
 };
 
