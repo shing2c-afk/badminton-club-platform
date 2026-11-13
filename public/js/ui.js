@@ -2364,20 +2364,21 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                         
                        <!-- 회원 색상 구분 및 공식 랭킹 선정 조건 안내 -->
                         <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; font-size:11.5px; line-height:1.45;">
-                            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; padding-bottom:7px; border-bottom:1px solid #1e293b;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:7px; border-bottom:1px solid #1e293b;">
+                                <span style="color:#94a3b8; font-weight:600;">회원 색상 구분</span>
                                 <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
                                     <span style="color:#ffffff;">● 정회원(흰색)</span>
                                     <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
                                 </div>
-                                <div style="color:#cbd5e1; font-size:11px;">
-                                    ※ 공식 타이틀 및 포상은 <strong style="color:#f59e0b;">정회원 기준</strong> 선정
-                                </div>
                             </div>
                             <div style="display:flex; flex-direction:column; gap:2px; color:#cbd5e1; font-size:11px;">
-                                <div style="color:#38bdf8; font-weight:700; font-size:11.5px; margin-bottom:2px;">공식 랭킹 선정 조건</div>
-                                <div>1. 월 5일 이상 클럽 출석</div>
-                                <div>2. 월 15게임 이상 진행</div>
-                                <div>3. 환상 파트너는 동일 회원으로 월 3게임 이상 진행</div>
+                                <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px; margin-bottom:2px;">
+                                    <span style="color:#38bdf8; font-weight:700; font-size:11.5px;">공식 랭킹 선정 조건</span>
+                                    <span style="color:#cbd5e1; font-size:11px;">※ 공식 타이틀 및 포상은 <strong style="color:#f59e0b;">정회원 기준</strong> 선정</span>
+                                </div>
+                                <div>월 5일 이상 클럽 출석</div>
+                                <div>월 15게임 이상 진행</div>
+                                <div>환상 파트너는 동일 회원으로 월 3게임 이상 진행</div>
                             </div>
                         </div>
                         

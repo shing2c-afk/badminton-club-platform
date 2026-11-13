@@ -3514,11 +3514,11 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            // 🔒 [중복 입력 방지] 같은 참가자 4명이 3분 이내에 중복 저장 시 먼저 저장한 회원명 안내
+            // 🔒 [중복 입력 방지] 같은 참가자 4명이 1분 이내에 중복 저장 시 먼저 저장한 회원명 안내
             const playersKey = [...teamA, ...teamB].map(normalizeName).filter(Boolean).sort().join('|');
             const lockKey = `${currentClubId}__${playersKey}`;
             const nowMs = Date.now();
-            const DUPLICATE_LIMIT_MS = 3 * 60 * 1000;
+            const DUPLICATE_LIMIT_MS = 60 * 1000; // 1분(60초) 이내 중복 제출만 차단
 
             const prevLock = global._recentScoreLocks.get(lockKey);
             if (prevLock && (nowMs - prevLock.time) < DUPLICATE_LIMIT_MS) {
