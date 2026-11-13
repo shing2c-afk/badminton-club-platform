@@ -2842,11 +2842,19 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
         }
         window.clubMembers = res.members || [];
 
-        // 2) 전체 누적(통산) 데이터 확보
+        // 2) 전체 누적(통산) 및 지난달 데이터 확보
         const getAllTimeData = (done) => {
-            if (selectedPeriod === 'all') return done(res);
-            socket.emit('getMatchStats', { clubId, period: 'all', minGames: 1 }, (allRes) => {
-                done((allRes && allRes.success) ? allRes : res);
+            socket.emit('getMatchStats', { clubId, period: 'last_month', minGames: 1 }, (prevRes) => {
+                const prevPlayers = (prevRes && prevRes.success && Array.isArray(prevRes.playersStats)) ? prevRes.playersStats : [];
+                if (selectedPeriod === 'all') {
+                    res._prevPlayers = prevPlayers;
+                    return done(res);
+                }
+                socket.emit('getMatchStats', { clubId, period: 'all', minGames: 1 }, (allRes) => {
+                    const finalAll = (allRes && allRes.success) ? allRes : res;
+                    finalAll._prevPlayers = prevPlayers;
+                    done(finalAll);
+                });
             });
         };
 
@@ -2933,16 +2941,23 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                 return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
             };
 
-            // 전월 대비 승률 변화
+            // 전월 대비 승률 변화 (지난달 전적과 비교)
             let growthHtml = '<span style="color:#64748b;">전월 비교 기록 없음 (신규 집계)</span>';
-            if (myData && typeof myData.prevWinRate === 'number') {
-                const diff = (Number(myData.winRate || 0) - Number(myData.prevWinRate)).toFixed(1);
+            const prevMe = findMe(allTimeRes._prevPlayers);
+            const prevWinRate = (prevMe && prevMe.games > 0)
+                ? Number(prevMe.winRate)
+                : ((myData && typeof myData.prevWinRate === 'number') ? Number(myData.prevWinRate) : null);
+            const curGamesForGrowth = (selectedPeriod === 'month') ? mGames : (Number(myData.games) || 0);
+            const curRateForGrowth = (selectedPeriod === 'month') ? mWinRate : (Number(myData.winRate) || 0);
+
+            if (prevWinRate !== null && curGamesForGrowth > 0) {
+                const diff = (curRateForGrowth - prevWinRate).toFixed(1);
                 if (diff > 0) {
-                    growthHtml = `<strong style="color:#34d399;">+${diff}%p 상승</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${myData.prevWinRate}%)</span>`;
+                    growthHtml = `<strong style="color:#34d399;">+${diff}%p 상승</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${prevWinRate}%)</span>`;
                 } else if (diff < 0) {
-                    growthHtml = `<strong style="color:#f43f5e;">${diff}%p 하락</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${myData.prevWinRate}%)</span>`;
+                    growthHtml = `<strong style="color:#f43f5e;">${diff}%p 하락</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${prevWinRate}%)</span>`;
                 } else {
-                    growthHtml = `<strong style="color:#38bdf8;">0.0%p 유지</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${myData.prevWinRate}%)</span>`;
+                    growthHtml = `<strong style="color:#38bdf8;">0.0%p 유지</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${prevWinRate}%)</span>`;
                 }
             }
 
@@ -3107,34 +3122,32 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                                 </div>
                             </div>
 
-                            <!-- 2. 나의 전적 요약 (월 전적 1줄 + 나의 총 전적 1줄) -->
+                            <!-- 2. 요약 대시보드 (상단 월/선택기간 전적 + 하단 단색 소형 누적 전적) -->
                             <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; margin-bottom:12px;">
-                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; border-radius:9px 9px 0 0; display:flex; justify-content:space-between; align-items:center;">
-                                    <span style="font-size:12.5px; font-weight:800; color:#ffffff;">나의 전적 요약</span>
-                                    <span style="font-size:11.5px; font-weight:700;">${formatNameWithGrade(myCleanName)}</span>
-                                </div>
-                                <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
-                                    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; border-bottom:1px solid #1e293b;">
-                                        <span style="color:#38bdf8; font-weight:700; font-size:12px;">${firstRowLabel}</span>
-                                        <div style="font-weight:700; white-space:nowrap;">
-                                            <span style="color:#ffffff;">${firstRowGames}전</span>
-                                            <span style="color:#34d399; margin-left:4px;">${firstRowWins}승</span>
-                                            <span style="color:#f43f5e; margin-left:3px;">${firstRowLosses}패</span>
-                                            <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${firstRowRate}%)</span>
-                                        </div>
+                                <div style="padding:14px 6px; display:grid; grid-template-columns:repeat(4, 1fr); text-align:center;">
+                                    <div style="border-right:1px solid #1e293b; padding:0 2px;">
+                                        <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">총 출전</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#ffffff;">${firstRowGames.toLocaleString()}전</div>
+                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${totalGames.toLocaleString()}전</div>
                                     </div>
-                                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                                        <span style="color:#e2e8f0; font-weight:700; font-size:12px;">나의 총 전적 <span style="color:#64748b; font-weight:500; font-size:10.5px;">(누적)</span></span>
-                                        <div style="font-weight:700; white-space:nowrap;">
-                                            <span style="color:#ffffff;">${totalGames}전</span>
-                                            <span style="color:#34d399; margin-left:4px;">${totalWins}승</span>
-                                            <span style="color:#f43f5e; margin-left:3px;">${totalLosses}패</span>
-                                            <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${totalRate}%)</span>
-                                        </div>
+                                    <div style="border-right:1px solid #1e293b; padding:0 2px;">
+                                        <div style="font-size:11px; color:#34d399; margin-bottom:4px;">승리</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#34d399;">${firstRowWins.toLocaleString()}승</div>
+                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${totalWins.toLocaleString()}승</div>
+                                    </div>
+                                    <div style="border-right:1px solid #1e293b; padding:0 2px;">
+                                        <div style="font-size:11px; color:#f43f5e; margin-bottom:4px;">패배</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#f43f5e;">${firstRowLosses.toLocaleString()}패</div>
+                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${totalLosses.toLocaleString()}패</div>
+                                    </div>
+                                    <div style="padding:0 2px;">
+                                        <div style="font-size:11px; color:#f59e0b; margin-bottom:4px;">승률</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#f59e0b;">${Math.round(firstRowRate)}%</div>
+                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${Math.round(totalRate)}%</div>
                                     </div>
                                 </div>
-                                <div style="background:#111726; border-top:1px solid #1e293b; border-radius:0 0 9px 9px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
-                                    <span style="color:#94a3b8; font-weight:600;">전월 대비 승률 변화</span>
+                                <div style="background:#111726; border-top:1px solid #1e293b; border-radius:0 0 9px 9px; padding:9px 14px; display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+                                    <span style="color:#cbd5e1; font-weight:600;">전월 대비 성장률</span>
                                     <div>${growthHtml}</div>
                                 </div>
                             </div>
