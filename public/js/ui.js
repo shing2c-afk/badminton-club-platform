@@ -2164,8 +2164,21 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
             return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
         };
 
-        // 💡 정회원(흰색)과 일일회원(하늘색) 모두 클럽 랭킹 보드에 함께 표시
-        const regularPlayers = allPlayers;
+        // 공식 랭킹 선정 조건 적용 (1. 월 5일 이상 출석 / 2. 월 15게임 이상 / 3. 파트너 월 3게임 이상)
+        // 매월 1~5일(유예 기간)이거나 아직 조건 달성자가 없을 때는 보드 공백 방지를 위해 전체 표시
+        const nowKrDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })).getDate();
+        const isCurrentMonthTab = (typeof period === 'undefined' || period === 'month');
+        const isGraceDays = isCurrentMonthTab && nowKrDate <= 5;
+
+        const qualifiedPlayers = allPlayers.filter(p => (Number(p.attendDays) || 0) >= 5 && (Number(p.games) || 0) >= 15);
+        const regularPlayers = (!isGraceDays && qualifiedPlayers.length > 0) ? qualifiedPlayers : allPlayers;
+
+        if (res && Array.isArray(res.pairStats)) {
+            const qualifiedPairs = res.pairStats.filter(pr => (Number(pr.games) || 0) >= 3);
+            if (!isGraceDays && qualifiedPairs.length > 0) {
+                res.pairStats.splice(0, res.pairStats.length, ...qualifiedPairs);
+            }
+        }
 
         // -----------------------------------------------------------------
         // ① 급수별 랭킹 데이터 산출 (정회원 기준)
@@ -2349,14 +2362,22 @@ window.openStatsDashboard = function(isAdminMode = false, selectedPeriod = 'mont
                     <!-- 본문 스크롤 영역 -->
                     <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
                         
-                        <!-- 회원 색상 구분 및 정회원 포상 기준 안내 -->
-                        <div style="background:#151c2c; border:1px solid #26334d; border-radius:8px; padding:9px 12px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; font-size:11.5px;">
-                            <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
-                                <span style="color:#ffffff;">● 정회원(흰색)</span>
-                                <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
+                       <!-- 회원 색상 구분 및 공식 랭킹 선정 조건 안내 -->
+                        <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; font-size:11.5px; line-height:1.45;">
+                            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; padding-bottom:7px; border-bottom:1px solid #1e293b;">
+                                <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
+                                    <span style="color:#ffffff;">● 정회원(흰색)</span>
+                                    <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
+                                </div>
+                                <div style="color:#cbd5e1; font-size:11px;">
+                                    ※ 공식 타이틀 및 포상은 <strong style="color:#f59e0b;">정회원 기준</strong> 선정
+                                </div>
                             </div>
-                            <div style="color:#cbd5e1; font-size:11px;">
-                                ※ 공식 타이틀 및 포상은 <strong style="color:#f59e0b;">정회원 기준</strong>으로 선정됩니다.
+                            <div style="display:flex; flex-direction:column; gap:2px; color:#cbd5e1; font-size:11px;">
+                                <div style="color:#38bdf8; font-weight:700; font-size:11.5px; margin-bottom:2px;">공식 랭킹 선정 조건</div>
+                                <div>1. 월 5일 이상 클럽 출석</div>
+                                <div>2. 월 15게임 이상 진행</div>
+                                <div>3. 환상 파트너는 동일 회원으로 월 3게임 이상 진행</div>
                             </div>
                         </div>
                         
@@ -2991,13 +3012,54 @@ window.openMyStats = function(selectedPeriod = 'month') {
 
                         <!-- 본문 스크롤 영역 -->
                         <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
-                            <!-- 정회원 / 일일회원 색상 구분 안내 -->
-                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:8px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
-                                <span style="color:#94a3b8; font-weight:600;">선수 색상 안내</span>
-                                <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
-                                    <span style="color:#ffffff;">● 정회원(흰색)</span>
-                                    <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
+                            <!-- 정회원 / 일일회원 색상 구분 및 내 공식 랭킹 자격 현황 안내 -->
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:7px; font-size:11.5px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8; font-weight:600;">회원 색상 구분</span>
+                                    <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
+                                        <span style="color:#ffffff;">● 정회원(흰색)</span>
+                                        <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
+                                    </div>
                                 </div>
+                                ${(() => {
+                                    try {
+                                        const clean = (s) => String(s || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+                                        const myObj = (typeof myStat === 'object' && myStat) ? myStat
+                                            : ((typeof playerStat === 'object' && playerStat) ? playerStat
+                                            : ((typeof pStat === 'object' && pStat) ? pStat
+                                            : ((typeof userStat === 'object' && userStat) ? userStat : null)));
+                                        let target = myObj;
+                                        if (!target) {
+                                            const mName = clean(
+                                                (typeof targetName !== 'undefined' ? targetName : '') ||
+                                                (typeof myName !== 'undefined' ? myName : '') ||
+                                                window.myName || localStorage.getItem('myName') || localStorage.getItem('userName') || ''
+                                            );
+                                            const list = (typeof res === 'object' && res && Array.isArray(res.playersStats)) ? res.playersStats
+                                                : ((typeof allPlayers !== 'undefined' && Array.isArray(allPlayers)) ? allPlayers
+                                                : (window._adminTitleCache && Array.isArray(window._adminTitleCache.playersStats) ? window._adminTitleCache.playersStats : []));
+                                            if (mName && list.length > 0) {
+                                                target = list.find(p => clean(p.name) === mName) || null;
+                                            }
+                                        }
+                                        if (!target) return '';
+                                        const days = Number(target.attendDays) || 0;
+                                        const games = Number(target.games) || 0;
+                                        const isOk = days >= 5 && games >= 15;
+                                        const statusColor = isOk ? '#38bdf8' : '#f59e0b';
+                                        const statusText = isOk
+                                            ? '공식 랭킹 조건 달성'
+                                            : `달성까지 출석 ${Math.max(0, 5 - days)}일 · ${Math.max(0, 15 - games)}게임 남음`;
+                                        return `
+                                            <div style="padding-top:7px; border-top:1px solid #1e293b; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px; font-size:11px;">
+                                                <span style="color:#cbd5e1;">이달의 랭킹 조건: 출석 <strong style="color:#fff;">${days}</strong>/5일 · 진행 <strong style="color:#fff;">${games}</strong>/15게임</span>
+                                                <span style="color:${statusColor}; font-weight:700;">${statusText}</span>
+                                            </div>
+                                        `;
+                                    } catch (e) {
+                                        return '';
+                                    }
+                                })()}
                             </div>
                             ${(!myData || myData.games === 0) ? `
                                 <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:45px 15px;">

@@ -4000,7 +4000,7 @@ io.on('connection', (socket) => {
                 });
             };
 
-            // 경기 레코드 배열로부터 개인·파트너 통계를 생성하는 공통 함수
+            // 경기 레코드 배열로부터 개인·파트너 통계를 생성하는 공통 함수 (출석일 및 공식 랭킹 자격 판별 포함)
             const buildStatsFromRows = (matchRows, profileMap) => {
                 const playerMap = {};
                 const pairMap = {};
@@ -4023,6 +4023,7 @@ io.on('connection', (socket) => {
                             gender: (prof && prof.gender) || '',
                             ageGroup: (prof && prof.ageGroup) || '',
                             memberType: prof ? (prof.memberType || '정회원') : '일일회원',
+                            _dates: {},
                             ...createEmptyTypeStat(),
                             byType: {
                                 '남복': createEmptyTypeStat(),
@@ -4052,9 +4053,10 @@ io.on('connection', (socket) => {
                     }
                 };
 
-                const updatePlayerRecord = (name, isWin, isLoss, isDraw, myScore, oppScore, matchType) => {
+                const updatePlayerRecord = (name, isWin, isLoss, isDraw, myScore, oppScore, matchType, playDate) => {
                     const p = initPlayer(name);
                     if (!p) return;
+                    if (playDate) p._dates[playDate] = true;
                     applyStatUpdate(p, isWin, isLoss, isDraw, myScore, oppScore);
                     if (!p.byType[matchType]) p.byType[matchType] = createEmptyTypeStat();
                     applyStatUpdate(p.byType[matchType], isWin, isLoss, isDraw, myScore, oppScore);
@@ -4106,36 +4108,50 @@ io.on('connection', (socket) => {
                     const aWin = r.winner_team === 'A';
                     const bWin = r.winner_team === 'B';
                     const isDraw = r.winner_team === 'DRAW';
+                    const playDate = String(r.played_at || '').trim().slice(0, 10);
 
                     const teamA = [r.team_a_p1, r.team_a_p2].filter(Boolean);
                     const teamB = [r.team_b_p1, r.team_b_p2].filter(Boolean);
 
-                    teamA.forEach(p => updatePlayerRecord(p, aWin, bWin, isDraw, sA, sB, mType));
-                    teamB.forEach(p => updatePlayerRecord(p, bWin, aWin, isDraw, sB, sA, mType));
+                    teamA.forEach(p => updatePlayerRecord(p, aWin, bWin, isDraw, sA, sB, mType, playDate));
+                    teamB.forEach(p => updatePlayerRecord(p, bWin, aWin, isDraw, sB, sA, mType, playDate));
 
                     if (teamA.length === 2) updatePairRecord(teamA[0], teamA[1], aWin, bWin, isDraw, sA, sB, mType);
                     if (teamB.length === 2) updatePairRecord(teamB[0], teamB[1], bWin, aWin, isDraw, sB, sA, mType);
                 });
 
+                // 공식 랭킹 기본 정렬: 승률 1순위 -> 다승 2순위 -> 득실차 3순위 -> 총득점 4순위
                 const playersStats = Object.values(playerMap).map(p => {
                     const winRate = p.games > 0 ? Math.round((p.wins / p.games) * 1000) / 10 : 0;
                     const pointDiff = p.pointsFor - p.pointsAgainst;
-                    return { ...p, winRate, pointDiff };
-                }).sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.pointDiff - a.pointDiff));
+                    const attendDays = Object.keys(p._dates || {}).length;
+                    const isQualified = (attendDays >= 5 && p.games >= 15);
+                    const { _dates, ...rest } = p;
+                    return { ...rest, winRate, pointDiff, attendDays, isQualified };
+                }).sort((a, b) => (b.winRate - a.winRate) || (b.wins - a.wins) || (b.pointDiff - a.pointDiff) || (b.pointsFor - a.pointsFor));
 
                 const pairStats = Object.values(pairMap).map(pair => {
                     const winRate = pair.games > 0 ? Math.round((pair.wins / pair.games) * 1000) / 10 : 0;
                     const pointDiff = pair.pointsFor - pair.pointsAgainst;
-                    return { ...pair, winRate, pointDiff };
-                }).sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (b.games - a.games));
+                    const isQualified = (pair.games >= 3);
+                    return { ...pair, winRate, pointDiff, isQualified };
+                }).sort((a, b) => (b.winRate - a.winRate) || (b.wins - a.wins) || (b.pointDiff - a.pointDiff) || (b.pointsFor - a.pointsFor));
 
                 const isRegular = (mType) => {
                     const u = String(mType || '정회원').toUpperCase();
                     return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
                 };
 
-                const regularPlayers = playersStats.filter(p => isRegular(p.memberType));
-                const regularPairs = pairStats.filter(pr => isRegular(pr.p1Type) && isRegular(pr.p2Type));
+                const nowKrDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })).getDate();
+                const isGraceDays = nowKrDate <= 5;
+
+                const allRegPlayers = playersStats.filter(p => isRegular(p.memberType));
+                const qualifiedRegPlayers = allRegPlayers.filter(p => p.isQualified);
+                const regularPlayers = (!isGraceDays && qualifiedRegPlayers.length > 0) ? qualifiedRegPlayers : allRegPlayers;
+
+                const allRegPairs = pairStats.filter(pr => isRegular(pr.p1Type) && isRegular(pr.p2Type));
+                const qualifiedRegPairs = allRegPairs.filter(pr => pr.isQualified);
+                const regularPairs = (!isGraceDays && qualifiedRegPairs.length > 0) ? qualifiedRegPairs : allRegPairs;
 
                 return { playersStats, pairStats, regularPlayers, regularPairs };
             };
