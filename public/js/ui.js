@@ -3122,28 +3122,33 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                                 </div>
                             </div>
 
-                            <!-- 2. 요약 대시보드 (상단 월/선택기간 전적 + 하단 단색 소형 누적 전적) -->
+                            <!-- 2. 요약 대시보드 (월 / 누적 비교 표) -->
                             <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; margin-bottom:12px;">
-                                <div style="padding:14px 6px; display:grid; grid-template-columns:repeat(4, 1fr); text-align:center;">
-                                    <div style="border-right:1px solid #1e293b; padding:0 2px;">
-                                        <div style="font-size:11px; color:#94a3b8; margin-bottom:4px;">총 출전</div>
-                                        <div style="font-size:15.5px; font-weight:800; color:#ffffff;">${firstRowGames.toLocaleString()}전</div>
-                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${totalGames.toLocaleString()}전</div>
+                                <!-- [수정 후: 모바일 천단위 최적화] -->
+                                <div style="padding:12px 8px 10px 8px;">
+                                    <!-- 상단 항목 헤더 -->
+                                    <div style="display:grid; grid-template-columns:32px repeat(4, minmax(0, 1fr)); text-align:center; align-items:center; padding-bottom:7px; border-bottom:1px solid #1e293b; font-size:11px; font-weight:700; white-space:nowrap;">
+                                        <div></div>
+                                        <div style="color:#94a3b8;">총게임</div>
+                                        <div style="color:#34d399;">승</div>
+                                        <div style="color:#f43f5e;">패</div>
+                                        <div style="color:#f59e0b;">승률</div>
                                     </div>
-                                    <div style="border-right:1px solid #1e293b; padding:0 2px;">
-                                        <div style="font-size:11px; color:#34d399; margin-bottom:4px;">승리</div>
-                                        <div style="font-size:15.5px; font-weight:800; color:#34d399;">${firstRowWins.toLocaleString()}승</div>
-                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${totalWins.toLocaleString()}승</div>
+                                    <!-- 1행: 월 전적 (큰 글씨, 항목별 색상 강조) -->
+                                    <div style="display:grid; grid-template-columns:32px repeat(4, minmax(0, 1fr)); text-align:center; align-items:center; padding:9px 0 4px 0; white-space:nowrap; font-variant-numeric:tabular-nums;">
+                                        <div style="font-size:11.5px; font-weight:800; color:#e2e8f0;">월</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#ffffff; letter-spacing:-0.3px;">${firstRowGames.toLocaleString()}</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#34d399; letter-spacing:-0.3px;">${firstRowWins.toLocaleString()}</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#f43f5e; letter-spacing:-0.3px;">${firstRowLosses.toLocaleString()}</div>
+                                        <div style="font-size:15.5px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">${Math.round(firstRowRate)}%</div>
                                     </div>
-                                    <div style="border-right:1px solid #1e293b; padding:0 2px;">
-                                        <div style="font-size:11px; color:#f43f5e; margin-bottom:4px;">패배</div>
-                                        <div style="font-size:15.5px; font-weight:800; color:#f43f5e;">${firstRowLosses.toLocaleString()}패</div>
-                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${totalLosses.toLocaleString()}패</div>
-                                    </div>
-                                    <div style="padding:0 2px;">
-                                        <div style="font-size:11px; color:#f59e0b; margin-bottom:4px;">승률</div>
-                                        <div style="font-size:15.5px; font-weight:800; color:#f59e0b;">${Math.round(firstRowRate)}%</div>
-                                        <div style="font-size:10px; color:#94a3b8; font-weight:600; margin-top:4px; white-space:nowrap; letter-spacing:-0.3px;">누적 ${Math.round(totalRate)}%</div>
+                                    <!-- 2행: 누적 전적 (천단위 대응 소형 글씨, 단색 통일) -->
+                                    <div style="display:grid; grid-template-columns:32px repeat(4, minmax(0, 1fr)); text-align:center; align-items:center; padding:2px 0; font-size:10.5px; font-weight:600; color:#94a3b8; letter-spacing:-0.5px; white-space:nowrap; font-variant-numeric:tabular-nums;">
+                                        <div style="font-size:10.5px; font-weight:700; color:#64748b; letter-spacing:-0.3px;">누적</div>
+                                        <div>${totalGames.toLocaleString()}</div>
+                                        <div>${totalWins.toLocaleString()}</div>
+                                        <div>${totalLosses.toLocaleString()}</div>
+                                        <div>${Math.round(totalRate)}%</div>
                                     </div>
                                 </div>
                                 <div style="background:#111726; border-top:1px solid #1e293b; border-radius:0 0 9px 9px; padding:9px 14px; display:flex; justify-content:space-between; align-items:center; font-size:12px;">
