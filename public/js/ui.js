@@ -2799,26 +2799,40 @@ window.colorizePlayerName = function(rawText, membersList) {
 };
 
 // =========================================================================
-// 1. [나의 전적 보기] 개인 상세 전적 리포트 팝업 (이번 달/총 전적 및 종목별 전적 포함)
+// 1. [나의 전적 보기] 개인 상세 전적 리포트 팝업 (다중 로그인 충돌 방지 및 통산/종목 전적 안정화)
 // =========================================================================
-window.openMyStats = function(selectedPeriod = 'month') {
-    let myName = '';
-    if (typeof currentUser !== 'undefined' && currentUser && currentUser.name) {
-        myName = currentUser.name;
-    } else if (localStorage.getItem('userName') || localStorage.getItem('currentUserName')) {
-        myName = localStorage.getItem('userName') || localStorage.getItem('currentUserName');
-    } else {
-        const headerText = document.body.innerText.match(/([가-힣a-zA-Z0-9]+)님\s/);
-        if (headerText && headerText[1]) myName = headerText[1].trim();
-    }
+window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
+    const cleanName = (s) => String(s || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').split('/')[0].trim();
 
+    // 1순위: 인자로 전달된 이름 -> 2순위: 현재 탭의 전역 변수(currentUser) -> 3순위: 화면 상단 표시 이름 -> 4순위: localStorage
+    let myName = cleanName(explicitName);
+    if (!myName && typeof currentUser !== 'undefined' && currentUser && currentUser.name) {
+        myName = cleanName(currentUser.name);
+    }
+    if (!myName && window.myName) {
+        myName = cleanName(window.myName);
+    }
     if (!myName) {
-        myName = prompt('조회할 회원 이름을 입력해 주세요:');
+        const headerEl = document.getElementById('current-user-name') || document.querySelector('.user-name, #user-info, header');
+        if (headerEl && headerEl.innerText) {
+            const m = headerEl.innerText.match(/([가-힣a-zA-Z0-9]+)\s*님/);
+            if (m && m[1]) myName = cleanName(m[1]);
+        }
+    }
+    if (!myName) {
+        const bodyMatch = (document.body.innerText || '').match(/([가-힣a-zA-Z0-9]{2,10})\s*님\s*(환영합니다|반갑습니다|로그인|출석)?/);
+        if (bodyMatch && bodyMatch[1]) myName = cleanName(bodyMatch[1]);
+    }
+    if (!myName) {
+        myName = cleanName(localStorage.getItem('userName') || localStorage.getItem('currentUserName') || localStorage.getItem('myName') || '');
+    }
+    if (!myName) {
+        const input = prompt('조회할 회원 이름을 입력해 주세요:');
+        myName = cleanName(input);
     }
     if (!myName) return;
 
-    const cleanName = (s) => String(s || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
-    const myCleanName = cleanName(myName);
+    const myCleanName = myName;
     const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
 
     // 1) 선택한 기간 데이터 요청
@@ -2829,435 +2843,412 @@ window.openMyStats = function(selectedPeriod = 'month') {
         }
         window.clubMembers = res.members || [];
 
-        // 2) 전월 대비 성장률용 '지난달' 데이터 요청
-        socket.emit('getMatchStats', { clubId, period: 'last_month', minGames: 1 }, (prevRes) => {
-            // 3) 기간 무관 '나의 총 전적(통산)' 데이터 확보 (선택 기간이 'all'이면 재요청 생략)
-            const fetchAllStats = (cb) => {
-                if (selectedPeriod === 'all') return cb(res);
-                socket.emit('getMatchStats', { clubId, period: 'all', minGames: 1 }, (allRes) => cb(allRes || res));
+        // 2) 전체 누적(통산) 데이터만 1회 추가 확보 (선택 기간이 'all'이면 그대로 재사용)
+        const getAllTimeData = (done) => {
+            if (selectedPeriod === 'all') return done(res);
+            socket.emit('getMatchStats', { clubId, period: 'all', minGames: 1 }, (allRes) => {
+                done((allRes && allRes.success) ? allRes : res);
+            });
+        };
+
+        getAllTimeData((allTimeRes) => {
+            const allPlayers = res.playersStats || [];
+            const totalPlayers = (allTimeRes && allTimeRes.playersStats) ? allTimeRes.playersStats : allPlayers;
+
+            const findMe = (list) => (Array.isArray(list) ? list.find(p => cleanName(p.name) === myCleanName) : null);
+
+            const emptyStat = {
+                name: myCleanName, games: 0, wins: 0, losses: 0, draws: 0, winRate: 0, attendDays: 0,
+                byType: {
+                    '남복': { games: 0, wins: 0, losses: 0 },
+                    '여복': { games: 0, wins: 0, losses: 0 },
+                    '혼복': { games: 0, wins: 0, losses: 0 },
+                    '자유복식': { games: 0, wins: 0, losses: 0 }
+                }
             };
-            // 4) '이번 달' 고정 전적 및 랭킹 조건용 데이터 확보 (선택 기간이 'month'이면 재요청 생략)
-            const fetchMonthStats = (cb) => {
-                if (selectedPeriod === 'month') return cb(res);
-                socket.emit('getMatchStats', { clubId, period: 'month', minGames: 1 }, (mRes) => cb(mRes || res));
+
+            const myData = findMe(allPlayers) || { ...emptyStat };
+            const myTotalData = findMe(totalPlayers) || (myData.games > 0 ? myData : { ...emptyStat });
+
+            // 이번 달 출석일/게임수 계산 (선택 탭이 'month'면 myData 사용, 아니면 recentMatches에서 이번 달 기록 직접 추출)
+            const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+            const currentMonthPrefix = `${nowKr.getFullYear()}-${String(nowKr.getMonth() + 1).padStart(2, '0')}`;
+
+            let mDays = Number(myData.attendDays) || 0;
+            let mGames = Number(myData.games) || 0;
+            let mWins = Number(myData.wins) || 0;
+            let mLosses = Number(myData.losses) || 0;
+
+            if (selectedPeriod !== 'month') {
+                const sourceMatches = (allTimeRes && Array.isArray(allTimeRes.recentMatches)) ? allTimeRes.recentMatches : (res.recentMatches || []);
+                const myMonthMatches = sourceMatches.filter(r => {
+                    const pAt = String(r.played_at || '').trim();
+                    if (!pAt.startsWith(currentMonthPrefix)) return false;
+                    return cleanName(r.team_a_p1) === myCleanName ||
+                           cleanName(r.team_a_p2) === myCleanName ||
+                           cleanName(r.team_b_p1) === myCleanName ||
+                           cleanName(r.team_b_p2) === myCleanName;
+                });
+                const dateSet = new Set();
+                mGames = 0; mWins = 0; mLosses = 0;
+                myMonthMatches.forEach(m => {
+                    const d = String(m.played_at || '').trim().slice(0, 10);
+                    if (d) dateSet.add(d);
+                    mGames += 1;
+                    const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
+                    const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
+                    if (myWin) mWins += 1;
+                    else if (m.winner_team === 'A' || m.winner_team === 'B') mLosses += 1;
+                });
+                mDays = dateSet.size;
+            }
+            const mWinRate = mGames > 0 ? Math.round((mWins / mGames) * 1000) / 10 : 0;
+
+            // 정회원/일일회원 DB에서 급수 및 성별 매핑
+            const gradeMap = {};
+            const genderMap = {};
+            const registerMemberMeta = (name, rawGrade, rawGender) => {
+                if (!name) return;
+                const cName = cleanName(name);
+                if (rawGrade) {
+                    let g = String(rawGrade).trim().toUpperCase();
+                    if (g && g !== '-' && g !== '미정' && g !== 'NULL' && g !== 'UNDEFINED') {
+                        if (g !== '초심' && !g.endsWith('조')) g += '조';
+                        gradeMap[cName] = g;
+                    }
+                }
+                if (rawGender) {
+                    genderMap[cName] = String(rawGender).trim();
+                }
             };
 
-            fetchAllStats((allTimeRes) => {
-                fetchMonthStats((monthRes) => {
-                    const allPlayers = res.playersStats || [];
-                    const findMe = (list) => (Array.isArray(list) ? list.find(p => cleanName(p.name) === myCleanName) : null);
+            if (Array.isArray(res.members)) res.members.forEach(m => registerMemberMeta(m.name, m.grade || m.level, m.gender));
+            allPlayers.forEach(p => registerMemberMeta(p.name, p.grade || p.level, p.gender));
+            totalPlayers.forEach(p => registerMemberMeta(p.name, p.grade || p.level, p.gender));
 
-                    const myData = findMe(allPlayers);
-                    const myMonthData = findMe(monthRes && monthRes.playersStats) || { games: 0, wins: 0, losses: 0, winRate: 0, attendDays: 0 };
-                    const myTotalData = findMe(allTimeRes && allTimeRes.playersStats) || myData || { games: 0, wins: 0, losses: 0, winRate: 0 };
+            const formatNameWithGrade = (name) => {
+                if (!name) return '';
+                const clean = cleanName(name);
+                const g = gradeMap[clean];
+                const label = g ? `${clean}(${g})` : clean;
+                return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
+            };
 
-                    // 정회원/일일회원 DB 및 화면 데이터에서 급수(초심~S조) 및 성별 매핑
-                    const gradeMap = {};
-                    const genderMap = {};
-                    const registerMemberMeta = (name, rawGrade, rawGender) => {
-                        if (!name) return;
-                        const cName = cleanName(name);
-                        if (rawGrade) {
-                            let g = String(rawGrade).trim().toUpperCase();
-                            if (g && g !== '-' && g !== '미정' && g !== 'NULL' && g !== 'UNDEFINED') {
-                                if (g !== '초심' && !g.endsWith('조')) g += '조';
-                                gradeMap[cName] = g;
-                            }
-                        }
-                        if (rawGender) {
-                            genderMap[cName] = String(rawGender).trim();
-                        }
-                    };
+            // 전월 대비 승률 변화 (서버에서 내려주는 prevWinRate 활용)
+            let growthHtml = '<span style="color:#64748b;">전월 비교 기록 없음 (신규 집계)</span>';
+            if (myData && typeof myData.prevWinRate === 'number') {
+                const diff = (Number(myData.winRate || 0) - Number(myData.prevWinRate)).toFixed(1);
+                if (diff > 0) {
+                    growthHtml = `<strong style="color:#34d399;">+${diff}%p 상승</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${myData.prevWinRate}%)</span>`;
+                } else if (diff < 0) {
+                    growthHtml = `<strong style="color:#f43f5e;">${diff}%p 하락</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${myData.prevWinRate}%)</span>`;
+                } else {
+                    growthHtml = `<strong style="color:#38bdf8;">0.0%p 유지</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${myData.prevWinRate}%)</span>`;
+                }
+            }
 
-                    if (Array.isArray(res.members)) res.members.forEach(m => registerMemberMeta(m.name, m.grade || m.level, m.gender));
-                    allPlayers.forEach(p => registerMemberMeta(p.name, p.grade || p.level, p.gender));
-                    if (prevRes && Array.isArray(prevRes.playersStats)) {
-                        prevRes.playersStats.forEach(p => registerMemberMeta(p.name, p.grade || p.level, p.gender));
+            // 선택한 기간의 내 출전 경기 목록
+            const allMyMatches = (res.recentMatches || []).filter(r =>
+                cleanName(r.team_a_p1) === myCleanName ||
+                cleanName(r.team_a_p2) === myCleanName ||
+                cleanName(r.team_b_p1) === myCleanName ||
+                cleanName(r.team_b_p2) === myCleanName
+            );
+            const recent5Matches = allMyMatches.slice(0, 5);
+
+            // 나의 파트너 순위 TOP 5 (다승 1순위 -> 승률 2순위 -> 적은 경기수 3순위)
+            const partnerStatsMap = {};
+            allMyMatches.forEach(m => {
+                const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
+                const rawPartner = isTeamA
+                    ? (cleanName(m.team_a_p1) === myCleanName ? m.team_a_p2 : m.team_a_p1)
+                    : (cleanName(m.team_b_p1) === myCleanName ? m.team_b_p2 : m.team_b_p1);
+
+                const partnerName = cleanName(rawPartner);
+                if (!partnerName) return;
+
+                if (!partnerStatsMap[partnerName]) {
+                    partnerStatsMap[partnerName] = { name: partnerName, games: 0, wins: 0, losses: 0 };
+                }
+                partnerStatsMap[partnerName].games += 1;
+
+                const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
+                if (myWin) partnerStatsMap[partnerName].wins += 1;
+                else if (m.winner_team === 'A' || m.winner_team === 'B') partnerStatsMap[partnerName].losses += 1;
+            });
+
+            const top5Partners = Object.values(partnerStatsMap)
+                .map(p => ({
+                    ...p,
+                    winRate: p.games > 0 ? Math.round((p.wins / p.games) * 100) : 0
+                }))
+                .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (a.games - b.games))
+                .slice(0, 5);
+
+            // 종목별 전적 계산 (선택한 기간의 myData.byType 또는 allMyMatches에서 직접 집계하여 누락 원천 방지)
+            const typeCountMap = {
+                '남복': { games: 0, wins: 0, losses: 0 },
+                '여복': { games: 0, wins: 0, losses: 0 },
+                '혼복': { games: 0, wins: 0, losses: 0 },
+                '자유복식': { games: 0, wins: 0, losses: 0 }
+            };
+
+            if (myData && myData.byType) {
+                ['남복', '여복', '혼복', '자유복식'].forEach(k => {
+                    if (myData.byType[k]) {
+                        const g = Number(myData.byType[k].games) || 0;
+                        const w = Number(myData.byType[k].wins) || 0;
+                        const l = typeof myData.byType[k].losses === 'number' ? myData.byType[k].losses : Math.max(0, g - w);
+                        typeCountMap[k] = { games: g, wins: w, losses: l };
                     }
-                    if (allTimeRes && Array.isArray(allTimeRes.playersStats)) {
-                        allTimeRes.playersStats.forEach(p => registerMemberMeta(p.name, p.grade || p.level, p.gender));
-                    }
+                });
+            } else {
+                allMyMatches.forEach(m => {
+                    const t = m.match_type || '자유복식';
+                    if (!typeCountMap[t]) typeCountMap[t] = { games: 0, wins: 0, losses: 0 };
+                    typeCountMap[t].games += 1;
+                    const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
+                    const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
+                    if (myWin) typeCountMap[t].wins += 1;
+                    else if (m.winner_team === 'A' || m.winner_team === 'B') typeCountMap[t].losses += 1;
+                });
+            }
 
-                    const globalPools = [
-                        window.members, window.clubMembers, window.allMembers,
-                        window.regularMembers, window.dailyMembers, window.players, window.waitingList
-                    ];
-                    globalPools.forEach(pool => {
-                        if (Array.isArray(pool)) {
-                            pool.forEach(item => {
-                                if (item && typeof item === 'object') {
-                                    registerMemberMeta(item.name || item.userName || item.playerName, item.grade || item.level || item.rank, item.gender);
-                                }
-                            });
-                        }
-                    });
+            const makeTypeRow = (label, obj) => ({
+                label,
+                games: obj.games,
+                wins: obj.wins,
+                losses: obj.losses,
+                winRate: obj.games > 0 ? Math.round((obj.wins / obj.games) * 100) : 0
+            });
 
-                    try {
-                        ['members', 'clubMembers', 'waitingList', 'registeredMembers'].forEach(key => {
-                            const parsed = JSON.parse(localStorage.getItem(key) || 'null');
-                            if (Array.isArray(parsed)) {
-                                parsed.forEach(item => {
-                                    if (item && typeof item === 'object') {
-                                        registerMemberMeta(item.name || item.userName, item.grade || item.level, item.gender);
-                                    }
-                                });
-                            }
-                        });
-                    } catch (e) {}
+            const myGender = String(genderMap[myCleanName] || myData.gender || myTotalData.gender || '').trim();
+            const menRow = makeTypeRow('남복', typeCountMap['남복']);
+            const womenRow = makeTypeRow('여복', typeCountMap['여복']);
+            const mixRow = makeTypeRow('혼복', typeCountMap['혼복']);
+            const freeRow = makeTypeRow('자유복식', typeCountMap['자유복식']);
 
-                    try {
-                        const bodyText = document.body.innerText || '';
-                        const regex = /([가-힣a-zA-Z0-9]{2,10})\s*\/\s*([남여])\s*\/\s*\d+대\s*\/\s*(초심|[SABCD]조?)/g;
-                        let match;
-                        while ((match = regex.exec(bodyText)) !== null) {
-                            registerMemberMeta(match[1], match[3], match[2]);
-                        }
-                    } catch (e) {}
+            const typeRows = [];
+            if (myGender.startsWith('여') || (womenRow.games > 0 && menRow.games === 0)) {
+                typeRows.push(womenRow);
+                if (menRow.games > 0) typeRows.push(menRow);
+            } else {
+                typeRows.push(menRow);
+                if (womenRow.games > 0) typeRows.push(womenRow);
+            }
+            typeRows.push(mixRow, freeRow);
 
-                    const formatNameWithGrade = (name) => {
-                        if (!name) return '';
-                        const clean = cleanName(name);
-                        const g = gradeMap[clean];
-                        const label = g ? `${clean}(${g})` : clean;
-                        return window.colorizePlayerName ? window.colorizePlayerName(label, res.members) : label;
-                    };
+            const periodTabs = [
+                { key: 'month', label: '이번 달' },
+                { key: 'last_month', label: '지난달' },
+                { key: '3months', label: '최근 3개월' },
+                { key: 'all', label: '전체 누적' }
+            ];
+            const currentPeriodLabel = (periodTabs.find(t => t.key === selectedPeriod) || { label: '이번 달' }).label;
 
-                    // 전월 대비 승률 성장률 계산 (이번 달 vs 지난달 기준)
-                    let growthHtml = '<span style="color:#64748b;">전월 비교 기록 없음 (신규 집계)</span>';
-                    const baseTarget = (selectedPeriod === 'month') ? myMonthData : myData;
-                    if (baseTarget && baseTarget.games > 0) {
-                        let prevWinRate = (typeof baseTarget.prevWinRate === 'number') ? baseTarget.prevWinRate : null;
-                        if (prevWinRate === null && prevRes && prevRes.success && Array.isArray(prevRes.playersStats)) {
-                            const prevMe = findMe(prevRes.playersStats);
-                            if (prevMe && prevMe.games > 0) prevWinRate = prevMe.winRate;
-                        }
-                        if (prevWinRate !== null) {
-                            const diff = (Number(baseTarget.winRate) - Number(prevWinRate)).toFixed(1);
-                            if (diff > 0) {
-                                growthHtml = `<strong style="color:#34d399;">+${diff}%p 상승</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${prevWinRate}%)</span>`;
-                            } else if (diff < 0) {
-                                growthHtml = `<strong style="color:#f43f5e;">${diff}%p 하락</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${prevWinRate}%)</span>`;
-                            } else {
-                                growthHtml = `<strong style="color:#38bdf8;">0.0%p 유지</strong> <span style="color:#94a3b8; font-size:11px;">(전월 ${prevWinRate}%)</span>`;
-                            }
-                        }
-                    }
+            const isQualifiedMonth = (mDays >= 5 && mGames >= 15);
+            const statusColor = isQualifiedMonth ? '#38bdf8' : '#f59e0b';
+            const statusText = isQualifiedMonth
+                ? '공식 랭킹 조건 달성'
+                : `달성까지 출석 ${Math.max(0, 5 - mDays)}일 · ${Math.max(0, 15 - mGames)}게임 남음`;
 
-                    // 본인 출전 경기 필터링 (이름에 급수 괄호가 섞여 있어도 정확히 매칭)
-                    const allMyMatches = (res.recentMatches || []).filter(r =>
-                        cleanName(r.team_a_p1) === myCleanName ||
-                        cleanName(r.team_a_p2) === myCleanName ||
-                        cleanName(r.team_b_p1) === myCleanName ||
-                        cleanName(r.team_b_p2) === myCleanName
-                    );
-                    const recent5Matches = allMyMatches.slice(0, 5);
+            // 1줄: 선택 기간(기본 이번 달) 전적 / 2줄: 나의 총 전적(통산)
+            const firstRowLabel = (selectedPeriod === 'month') ? '이번 달 전적' : `${currentPeriodLabel} 전적`;
+            const firstRowGames = (selectedPeriod === 'month') ? mGames : (Number(myData.games) || 0);
+            const firstRowWins = (selectedPeriod === 'month') ? mWins : (Number(myData.wins) || 0);
+            const firstRowLosses = (selectedPeriod === 'month') ? mLosses : (Number(myData.losses) || 0);
+            const firstRowRate = (selectedPeriod === 'month') ? mWinRate : (firstRowGames > 0 ? Math.round((firstRowWins / firstRowGames) * 1000) / 10 : 0);
 
-                    // 나의 파트너 순위 TOP 5 집계 (1순위: 다승 -> 2순위: 승률(적은 패배) -> 3순위: 적은 경기수)
-                    const partnerStatsMap = {};
-                    allMyMatches.forEach(m => {
-                        const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
-                        const rawPartner = isTeamA
-                            ? (cleanName(m.team_a_p1) === myCleanName ? m.team_a_p2 : m.team_a_p1)
-                            : (cleanName(m.team_b_p1) === myCleanName ? m.team_b_p2 : m.team_b_p1);
+            const totalGames = Number(myTotalData.games) || 0;
+            const totalWins = Number(myTotalData.wins) || 0;
+            const totalLosses = Number(myTotalData.losses) || 0;
+            const totalRate = totalGames > 0 ? Math.round((totalWins / totalGames) * 1000) / 10 : 0;
 
-                        const partnerName = cleanName(rawPartner);
-                        if (!partnerName) return;
+            const existing = document.getElementById('my-stats-modal');
+            if (existing) existing.remove();
 
-                        if (!partnerStatsMap[partnerName]) {
-                            partnerStatsMap[partnerName] = { name: partnerName, games: 0, wins: 0, losses: 0 };
-                        }
-                        partnerStatsMap[partnerName].games += 1;
+            const modalHtml = `
+                <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(5, 8, 15, 0.88); display:flex; justify-content:center; align-items:center; z-index:99999; padding:10px; box-sizing:border-box;">
+                    <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:460px; max-height:92vh; border-radius:14px; display:flex; flex-direction:column; border:1.5px solid #2563eb; box-shadow:0 15px 35px rgba(0,0,0,0.85); overflow:hidden;">
+                        
+                        <!-- 1. 상단 헤더 -->
+                        <div style="padding:14px 18px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
+                            <h3 style="margin:0; font-size:16px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">나의 전적 보기</h3>
+                            <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:6px 14px; font-weight:700; cursor:pointer; font-size:12px;">닫기</button>
+                        </div>
 
-                        const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
-                        if (myWin) {
-                            partnerStatsMap[partnerName].wins += 1;
-                        } else if (m.winner_team === 'A' || m.winner_team === 'B') {
-                            partnerStatsMap[partnerName].losses += 1;
-                        }
-                    });
+                        <!-- 조회 기간 선택 탭 바 -->
+                        <div style="padding:10px 14px 6px 14px; background:#0f1420; border-bottom:1px solid #151c2c;">
+                            <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">
+                                ${periodTabs.map(t => {
+                                    const isActive = (selectedPeriod === t.key);
+                                    const btnBg = isActive ? 'linear-gradient(135deg, #ff7b00 0%, #ea580c 100%)' : '#151c2c';
+                                    const btnBorder = isActive ? '#f97316' : '#26334d';
+                                    const btnColor = isActive ? '#ffffff' : '#94a3b8';
+                                    return `<button onclick="window.openMyStats('${t.key}', '${myCleanName}')" style="padding:8px 4px; background:${btnBg}; color:${btnColor}; border:1px solid ${btnBorder}; border-radius:7px; font-size:12px; font-weight:${isActive ? '800' : '600'}; cursor:pointer; white-space:nowrap;">${t.label}</button>`;
+                                }).join('')}
+                            </div>
+                        </div>
 
-                    const pairSource = res.pairsStats || res.pairStats || [];
-                    if (Array.isArray(pairSource)) {
-                        pairSource.forEach(pair => {
-                            const p1 = cleanName(pair.player1 || (pair.players && pair.players[0]));
-                            const p2 = cleanName(pair.player2 || (pair.players && pair.players[1]));
-                            if (p1 === myCleanName || p2 === myCleanName) {
-                                const pName = p1 === myCleanName ? p2 : p1;
-                                if (pName && !partnerStatsMap[pName]) {
-                                    const w = Number(pair.wins) || 0;
-                                    const g = Number(pair.games) || 0;
-                                    const l = typeof pair.losses === 'number' ? pair.losses : Math.max(0, g - w);
-                                    partnerStatsMap[pName] = { name: pName, games: g || (w + l), wins: w, losses: l };
-                                }
-                            }
-                        });
-                    }
-
-                    const top5Partners = Object.values(partnerStatsMap)
-                        .map(p => ({
-                            ...p,
-                            winRate: p.games > 0 ? Math.round((p.wins / p.games) * 100) : 0
-                        }))
-                        .sort((a, b) => (b.wins - a.wins) || (b.winRate - a.winRate) || (a.games - b.games))
-                        .slice(0, 5);
-
-                    // 종목별 전적 추출 (남복/여복 자동 판별 + 혼복 + 자유복식)
-                    const activeDataForType = (myData && myData.games > 0) ? myData : myTotalData;
-                    const byTypeObj = (activeDataForType && activeDataForType.byType) ? activeDataForType.byType : {};
-                    const getTypeStat = (tKey) => {
-                        const s = byTypeObj[tKey] || { games: 0, wins: 0, losses: 0 };
-                        const g = Number(s.games) || 0;
-                        const w = Number(s.wins) || 0;
-                        const l = typeof s.losses === 'number' ? s.losses : Math.max(0, g - w);
-                        const r = g > 0 ? Math.round((w / g) * 100) : 0;
-                        return { label: tKey, games: g, wins: w, losses: l, winRate: r };
-                    };
-
-                    const myGender = String(genderMap[myCleanName] || (myData && myData.gender) || '').trim();
-                    const menStat = getTypeStat('남복');
-                    const womenStat = getTypeStat('여복');
-                    const mixStat = getTypeStat('혼복');
-                    const freeStat = getTypeStat('자유복식');
-
-                    let typeRows = [];
-                    if (myGender.startsWith('여') || (womenStat.games > 0 && menStat.games === 0)) {
-                        typeRows.push(womenStat);
-                        if (menStat.games > 0) typeRows.push(menStat);
-                    } else if (myGender.startsWith('남') || (menStat.games > 0 && womenStat.games === 0)) {
-                        typeRows.push(menStat);
-                        if (womenStat.games > 0) typeRows.push(womenStat);
-                    } else {
-                        typeRows.push({
-                            label: '남복/여복',
-                            games: menStat.games + womenStat.games,
-                            wins: menStat.wins + womenStat.wins,
-                            losses: menStat.losses + womenStat.losses,
-                            winRate: (menStat.games + womenStat.games) > 0
-                                ? Math.round(((menStat.wins + womenStat.wins) / (menStat.games + womenStat.games)) * 100)
-                                : 0
-                        });
-                    }
-                    typeRows.push(mixStat, freeStat);
-
-                    const existing = document.getElementById('my-stats-modal');
-                    if (existing) existing.remove();
-
-                    const periodTabs = [
-                        { key: 'month', label: '이번 달' },
-                        { key: 'last_month', label: '지난달' },
-                        { key: '3months', label: '최근 3개월' },
-                        { key: 'all', label: '전체 누적' }
-                    ];
-                    const currentPeriodLabel = (periodTabs.find(t => t.key === selectedPeriod) || { label: '선택한 기간' }).label;
-
-                    // 이달의 공식 랭킹 자격 현황 (항상 이번 달 데이터 기준)
-                    const mDays = Number(myMonthData.attendDays) || 0;
-                    const mGames = Number(myMonthData.games) || 0;
-                    const isQualifiedMonth = (mDays >= 5 && mGames >= 15);
-                    const statusColor = isQualifiedMonth ? '#38bdf8' : '#f59e0b';
-                    const statusText = isQualifiedMonth
-                        ? '공식 랭킹 조건 달성'
-                        : `달성까지 출석 ${Math.max(0, 5 - mDays)}일 · ${Math.max(0, 15 - mGames)}게임 남음`;
-
-                    // 상단 비교 카드에 들어갈 1줄(월 전적 또는 선택 기간 전적) & 2줄(나의 총 전적)
-                    const firstRowLabel = (selectedPeriod === 'month' || selectedPeriod === 'all') ? '이번 달 전적' : `${currentPeriodLabel} 전적`;
-                    const firstRowStat = (selectedPeriod === 'month' || selectedPeriod === 'all') ? myMonthData : (myData || { games: 0, wins: 0, losses: 0, winRate: 0 });
-                    const firstRowRate = firstRowStat.games > 0 ? Math.round((firstRowStat.wins / firstRowStat.games) * 1000) / 10 : 0;
-                    const totalRate = myTotalData.games > 0 ? Math.round((myTotalData.wins / myTotalData.games) * 1000) / 10 : 0;
-
-                    const modalHtml = `
-                        <div id="my-stats-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(5, 8, 15, 0.88); display:flex; justify-content:center; align-items:center; z-index:99999; padding:10px; box-sizing:border-box;">
-                            <div style="background:#0f1420; color:#f8fafc; width:100%; max-width:460px; max-height:92vh; border-radius:14px; display:flex; flex-direction:column; border:1.5px solid #2563eb; box-shadow:0 15px 35px rgba(0,0,0,0.85); overflow:hidden;">
-                                
-                                <!-- 1. 상단 헤더 -->
-                                <div style="padding:14px 18px; background:#151c2c; border-bottom:1px solid #1e293b; display:flex; justify-content:space-between; align-items:center;">
-                                    <h3 style="margin:0; font-size:16px; font-weight:800; color:#f59e0b; letter-spacing:-0.3px;">나의 전적 보기</h3>
-                                    <button onclick="document.getElementById('my-stats-modal').remove()" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:8px; padding:6px 14px; font-weight:700; cursor:pointer; font-size:12px;">닫기</button>
-                                </div>
-
-                                <!-- 조회 기간 선택 탭 바 -->
-                                <div style="padding:10px 14px 6px 14px; background:#0f1420; border-bottom:1px solid #151c2c;">
-                                    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">
-                                        ${periodTabs.map(t => {
-                                            const isActive = (selectedPeriod === t.key);
-                                            const btnBg = isActive ? 'linear-gradient(135deg, #ff7b00 0%, #ea580c 100%)' : '#151c2c';
-                                            const btnBorder = isActive ? '#f97316' : '#26334d';
-                                            const btnColor = isActive ? '#ffffff' : '#94a3b8';
-                                            return `<button onclick="window.openMyStats('${t.key}')" style="padding:8px 4px; background:${btnBg}; color:${btnColor}; border:1px solid ${btnBorder}; border-radius:7px; font-size:12px; font-weight:${isActive ? '800' : '600'}; cursor:pointer; white-space:nowrap;">${t.label}</button>`;
-                                        }).join('')}
+                        <!-- 본문 스크롤 영역 -->
+                        <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
+                            
+                            <!-- 정회원 / 일일회원 색상 구분 및 내 공식 랭킹 자격 현황 안내 -->
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:7px; font-size:11.5px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="color:#94a3b8; font-weight:600;">회원 색상 구분</span>
+                                    <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
+                                        <span style="color:#ffffff;">● 정회원(흰색)</span>
+                                        <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
                                     </div>
                                 </div>
+                                <div style="padding-top:7px; border-top:1px solid #1e293b; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px; font-size:11px;">
+                                    <span style="color:#cbd5e1;">이달의 랭킹 조건: 출석 <strong style="color:#fff;">${mDays}</strong>/5일 · 진행 <strong style="color:#fff;">${mGames}</strong>/15게임</span>
+                                    <span style="color:${statusColor}; font-weight:700;">${statusText}</span>
+                                </div>
+                            </div>
 
-                                <!-- 본문 스크롤 영역 -->
-                                <div style="padding:14px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:14px;">
-                                    
-                                    <!-- 정회원 / 일일회원 색상 구분 및 내 공식 랭킹 자격 현황 안내 -->
-                                    <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:7px; font-size:11.5px;">
-                                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                                            <span style="color:#94a3b8; font-weight:600;">회원 색상 구분</span>
-                                            <div style="display:flex; align-items:center; gap:10px; font-weight:700;">
-                                                <span style="color:#ffffff;">● 정회원(흰색)</span>
-                                                <span style="color:#38bdf8;">● 일일회원(하늘색)</span>
-                                            </div>
-                                        </div>
-                                        <div style="padding-top:7px; border-top:1px solid #1e293b; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px; font-size:11px;">
-                                            <span style="color:#cbd5e1;">이달의 랭킹 조건: 출석 <strong style="color:#fff;">${mDays}</strong>/5일 · 진행 <strong style="color:#fff;">${mGames}</strong>/15게임</span>
-                                            <span style="color:${statusColor}; font-weight:700;">${statusText}</span>
+                            <!-- 2. 나의 전적 요약 (월 전적 1줄 + 나의 총 전적 1줄) -->
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
+                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-size:12.5px; font-weight:800; color:#ffffff;">나의 전적 요약</span>
+                                    <span style="font-size:11.5px; font-weight:700;">${formatNameWithGrade(myCleanName)}</span>
+                                </div>
+                                <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; border-bottom:1px solid #1e293b;">
+                                        <span style="color:#38bdf8; font-weight:700; font-size:12px;">${firstRowLabel}</span>
+                                        <div style="font-weight:700; white-space:nowrap;">
+                                            <span style="color:#ffffff;">${firstRowGames}전</span>
+                                            <span style="color:#34d399; margin-left:4px;">${firstRowWins}승</span>
+                                            <span style="color:#f43f5e; margin-left:3px;">${firstRowLosses}패</span>
+                                            <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${firstRowRate}%)</span>
                                         </div>
                                     </div>
-
-                                    <!-- 2. 나의 전적 요약 (월 전적 1줄 + 나의 총 전적 1줄) -->
-                                    <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
-                                        <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
-                                            <span style="font-size:12.5px; font-weight:800; color:#ffffff;">나의 전적 요약</span>
-                                            <span style="font-size:11px; color:#94a3b8;">${formatNameWithGrade(myCleanName)}</span>
-                                        </div>
-                                        <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px; font-size:12.5px;">
-                                            <!-- 1줄: 이번 달(또는 선택 기간) 전적 -->
-                                            <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:8px; border-bottom:1px solid #1e293b;">
-                                                <span style="color:#38bdf8; font-weight:700; font-size:12px;">${firstRowLabel}</span>
-                                                <div style="font-weight:700; white-space:nowrap;">
-                                                    <span style="color:#ffffff;">${firstRowStat.games || 0}전</span>
-                                                    <span style="color:#34d399; margin-left:4px;">${firstRowStat.wins || 0}승</span>
-                                                    <span style="color:#f43f5e; margin-left:3px;">${firstRowStat.losses || 0}패</span>
-                                                    <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${firstRowRate}%)</span>
-                                                </div>
-                                            </div>
-                                            <!-- 2줄: 기간 무관 나의 총 전적 (통산 누적) -->
-                                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                                <span style="color:#e2e8f0; font-weight:700; font-size:12px;">나의 총 전적 <span style="color:#64748b; font-weight:500; font-size:10.5px;">(통산)</span></span>
-                                                <div style="font-weight:700; white-space:nowrap;">
-                                                    <span style="color:#ffffff;">${myTotalData.games || 0}전</span>
-                                                    <span style="color:#34d399; margin-left:4px;">${myTotalData.wins || 0}승</span>
-                                                    <span style="color:#f43f5e; margin-left:3px;">${myTotalData.losses || 0}패</span>
-                                                    <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${totalRate}%)</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div style="background:#111726; border-top:1px solid #1e293b; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
-                                            <span style="color:#94a3b8; font-weight:600;">전월 대비 승률 변화</span>
-                                            <div>${growthHtml}</div>
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="color:#e2e8f0; font-weight:700; font-size:12px;">나의 총 전적 <span style="color:#64748b; font-weight:500; font-size:10.5px;">(누적)</span></span>
+                                        <div style="font-weight:700; white-space:nowrap;">
+                                            <span style="color:#ffffff;">${totalGames}전</span>
+                                            <span style="color:#34d399; margin-left:4px;">${totalWins}승</span>
+                                            <span style="color:#f43f5e; margin-left:3px;">${totalLosses}패</span>
+                                            <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${totalRate}%)</span>
                                         </div>
                                     </div>
+                                </div>
+                                <div style="background:#111726; border-top:1px solid #1e293b; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
+                                    <span style="color:#94a3b8; font-weight:600;">전월 대비 승률 변화</span>
+                                    <div>${growthHtml}</div>
+                                </div>
+                            </div>
 
-                                    <!-- 3. 종목별 전적 카드 (남복/여복 · 혼복 · 자유복식) -->
-                                    <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
-                                        <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
-                                            <span style="font-size:12.5px; font-weight:800; color:#ffffff;">종목별 전적</span>
-                                            <span style="font-size:11px; color:#94a3b8;">${(myData && myData.games > 0) ? currentPeriodLabel : '전체 누적'} 기준</span>
+                            <!-- 3. 종목별 전적 카드 (남복/여복 · 혼복 · 자유복식) -->
+                            <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; overflow:hidden;">
+                                <div style="padding:9px 12px; background:#1a2438; border-bottom:1px solid #26334d; display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-size:12.5px; font-weight:800; color:#ffffff;">종목별 전적</span>
+                                    <span style="font-size:11px; color:#94a3b8;">${currentPeriodLabel} 기준</span>
+                                </div>
+                                <div style="padding:8px 12px; display:flex; flex-direction:column;">
+                                    ${typeRows.map((tr, idx) => `
+                                        <div style="padding:7px 0; ${idx < typeRows.length - 1 ? 'border-bottom:1px solid #1e293b;' : ''} display:flex; flex-direction:column; gap:5px;">
+                                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+                                                <span style="color:#cbd5e1; font-weight:700;">${tr.label}</span>
+                                                <div style="font-weight:600; white-space:nowrap;">
+                                                    <span style="color:#ffffff;">${tr.games}전</span>
+                                                    <span style="color:#34d399; margin-left:4px;">${tr.wins}승</span>
+                                                    <span style="color:#f43f5e; margin-left:3px;">${tr.losses}패</span>
+                                                    <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(승률 ${tr.winRate}%)</span>
+                                                </div>
+                                            </div>
+                                            <div style="width:100%; height:4px; background:#0f1420; border-radius:3px; overflow:hidden;">
+                                                <div style="width:${tr.winRate}%; height:100%; background:linear-gradient(90deg, #38bdf8, #2563eb); border-radius:3px;"></div>
+                                            </div>
                                         </div>
-                                        <div style="padding:8px 12px; display:flex; flex-direction:column;">
-                                            ${typeRows.map((tr, idx) => `
-                                                <div style="padding:7px 0; ${idx < typeRows.length - 1 ? 'border-bottom:1px solid #1e293b;' : ''} display:flex; flex-direction:column; gap:5px;">
-                                                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
-                                                        <span style="color:#cbd5e1; font-weight:700;">${tr.label}</span>
-                                                        <div style="font-weight:600; white-space:nowrap;">
-                                                            <span style="color:#ffffff;">${tr.games}전</span>
-                                                            <span style="color:#34d399; margin-left:4px;">${tr.wins}승</span>
-                                                            <span style="color:#f43f5e; margin-left:3px;">${tr.losses}패</span>
-                                                            <span style="color:#f59e0b; font-weight:800; margin-left:5px;">(${tr.winRate}%)</span>
-                                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 4. 나의 파트너 순위 TOP 5 -->
+                            <div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                    <span style="font-size:13px; font-weight:800; color:#38bdf8;">나의 파트너 순위 (TOP 5)</span>
+                                    <span style="font-size:11px; color:#64748b;">성별 무관 · 다승/승률 순</span>
+                                </div>
+                                <div style="background:#151c2c; border-radius:10px; border:1px solid #26334d; overflow:hidden;">
+                                    ${top5Partners.length === 0 ? `
+                                        <div style="padding:20px; text-align:center; color:#64748b; font-size:12px;">${currentPeriodLabel}에 집계된 파트너 기록이 없습니다.</div>
+                                    ` : top5Partners.map((p, idx) => {
+                                        const rankBg = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : '#1e293b';
+                                        const rankColor = idx < 3 ? '#0f1420' : '#cbd5e1';
+                                        return `
+                                            <div style="display:grid; grid-template-columns:34px 1fr auto; align-items:center; padding:10px 12px; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
+                                                <div>
+                                                    <span style="display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:5px; background:${rankBg}; color:${rankColor}; font-weight:800; font-size:11px;">${idx + 1}</span>
+                                                </div>
+                                                <div style="overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-right:8px; font-weight:700; color:#ffffff;">
+                                                    ${formatNameWithGrade(p.name)}
+                                                </div>
+                                                <div style="text-align:right; white-space:nowrap; font-weight:600;">
+                                                    <span style="color:#cbd5e1;">${p.games}전</span>
+                                                    <span style="color:#34d399; margin-left:3px;">${p.wins}승</span>
+                                                    <span style="color:#f43f5e; margin-left:2px;">${p.losses}패</span>
+                                                    <span style="color:#f59e0b; font-weight:800; margin-left:4px;">(${p.winRate}%)</span>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 5. 최신 게임 내역 (최근 5경기) -->
+                            <div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                    <span style="font-size:13px; font-weight:800; color:#38bdf8;">최신 게임 내역</span>
+                                    <span style="font-size:11px; color:#64748b;">최근 5경기</span>
+                                </div>
+                                <div style="display:flex; flex-direction:column; gap:6px;">
+                                    ${recent5Matches.length === 0 ? `
+                                        <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:20px; text-align:center; color:#64748b; font-size:12px;">${currentPeriodLabel}에 기록된 경기 내역이 없습니다.</div>
+                                    ` : recent5Matches.map(m => {
+                                        const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
+                                        const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
+                                        const badgeBg = myWin ? '#2563eb' : (m.winner_team === 'DRAW' ? '#475569' : '#e11d48');
+                                        const resTxt = myWin ? '승리' : (m.winner_team === 'DRAW' ? '무승부' : '패배');
+
+                                        const aP1 = formatNameWithGrade(m.team_a_p1);
+                                        const aP2 = m.team_a_p2 ? formatNameWithGrade(m.team_a_p2) : '';
+                                        const bP1 = formatNameWithGrade(m.team_b_p1);
+                                        const bP2 = m.team_b_p2 ? formatNameWithGrade(m.team_b_p2) : '';
+
+                                        const ourTeam = isTeamA ? `${aP1}${aP2 ? ' · ' + aP2 : ''}` : `${bP1}${bP2 ? ' · ' + bP2 : ''}`;
+                                        const oppTeam = isTeamA ? `${bP1}${bP2 ? ' · ' + bP2 : ''}` : `${aP1}${aP2 ? ' · ' + aP2 : ''}`;
+                                        const ourScore = isTeamA ? m.score_a : m.score_b;
+                                        const oppScore = isTeamA ? m.score_b : m.score_a;
+
+                                        return `
+                                            <div style="background:#151c2c; padding:10px 12px; border-radius:8px; border:1px solid #26334d; display:flex; flex-direction:column; gap:6px;">
+                                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                                    <span style="background:#0f1420; color:#94a3b8; border:1px solid #1e293b; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:4px;">${m.match_type || '복식'}</span>
+                                                    <div style="display:flex; align-items:center; gap:8px;">
+                                                        <strong style="color:#ffffff; font-size:13px; letter-spacing:0.5px;">
+                                                            <span style="color:${myWin ? '#34d399' : '#cbd5e1'};">${ourScore}</span> : <span style="color:${!myWin ? '#f43f5e' : '#cbd5e1'};">${oppScore}</span>
+                                                        </strong>
+                                                        <span style="background:${badgeBg}; color:#ffffff; font-weight:800; font-size:11px; padding:2px 8px; border-radius:4px;">${resTxt}</span>
                                                     </div>
-                                                    <div style="width:100%; height:4px; background:#0f1420; border-radius:3px; overflow:hidden;">
-                                                        <div style="width:${tr.winRate}%; height:100%; background:linear-gradient(90deg, #38bdf8, #2563eb); border-radius:3px;"></div>
-                                                    </div>
                                                 </div>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-
-                                    ${(!myData || myData.games === 0) ? `
-                                        <div style="background:#151c2c; border:1px solid #1e293b; border-radius:10px; text-align:center; padding:26px 15px;">
-                                            <div style="color:#e2e8f0; font-size:13px; font-weight:700; margin-bottom:4px;">${currentPeriodLabel}에 기록된 게임 내역이 없습니다.</div>
-                                            <div style="font-size:11px; color:#64748b;">게임 종료 후 스코어를 등록하면 파트너 및 최근 경기 내역이 표시됩니다.</div>
-                                        </div>
-                                    ` : `
-                                        <!-- 4. 나의 파트너 순위 TOP 5 -->
-                                        <div>
-                                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                                                <span style="font-size:13px; font-weight:800; color:#38bdf8;">나의 파트너 순위 (TOP 5)</span>
-                                                <span style="font-size:11px; color:#64748b;">성별 무관 · 다승/승률 순</span>
+                                                <div style="display:flex; align-items:center; justify-content:space-between; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                                    <span style="color:#ffffff; font-weight:700; overflow:hidden; text-overflow:ellipsis;">${ourTeam}</span>
+                                                    <span style="color:#f59e0b; font-weight:800; font-size:10.5px; margin:0 6px; flex-shrink:0;">VS</span>
+                                                    <span style="color:#94a3b8; font-weight:600; overflow:hidden; text-overflow:ellipsis; text-align:right;">${oppTeam}</span>
+                                                </div>
                                             </div>
-                                            <div style="background:#151c2c; border-radius:10px; border:1px solid #26334d; overflow:hidden;">
-                                                ${top5Partners.length === 0 ? `
-                                                    <div style="padding:20px; text-align:center; color:#64748b; font-size:12px;">집계된 복식 파트너 기록이 없습니다.</div>
-                                                ` : top5Partners.map((p, idx) => {
-                                                    const rankBg = idx === 0 ? '#f59e0b' : idx === 1 ? '#94a3b8' : idx === 2 ? '#b45309' : '#1e293b';
-                                                    const rankColor = idx < 3 ? '#0f1420' : '#cbd5e1';
-                                                    return `
-                                                        <div style="display:grid; grid-template-columns:34px 1fr auto; align-items:center; padding:10px 12px; border-bottom:1px solid #1e293b; font-size:12.5px; background:${idx % 2 === 0 ? '#151c2c' : '#111726'};">
-                                                            <div>
-                                                                <span style="display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:5px; background:${rankBg}; color:${rankColor}; font-weight:800; font-size:11px;">${idx + 1}</span>
-                                                            </div>
-                                                            <div style="overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-right:8px; font-weight:700; color:#ffffff;">
-                                                                ${formatNameWithGrade(p.name)}
-                                                            </div>
-                                                            <div style="text-align:right; white-space:nowrap; font-weight:600;">
-                                                                <span style="color:#cbd5e1;">${p.games}전</span>
-                                                                <span style="color:#34d399; margin-left:3px;">${p.wins}승</span>
-                                                                <span style="color:#f43f5e; margin-left:2px;">${p.losses}패</span>
-                                                                <span style="color:#f59e0b; font-weight:800; margin-left:4px;">(${p.winRate}%)</span>
-                                                            </div>
-                                                        </div>
-                                                    `;
-                                                }).join('')}
-                                            </div>
-                                        </div>
-
-                                        <!-- 5. 최신 게임 내역 (최근 5경기) -->
-                                        <div>
-                                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                                                <span style="font-size:13px; font-weight:800; color:#38bdf8;">최신 게임 내역</span>
-                                                <span style="font-size:11px; color:#64748b;">최근 5경기</span>
-                                            </div>
-                                            <div style="display:flex; flex-direction:column; gap:6px;">
-                                                ${recent5Matches.length === 0 ? `
-                                                    <div style="background:#151c2c; border:1px solid #26334d; border-radius:10px; padding:20px; text-align:center; color:#64748b; font-size:12px;">최근 경기 내역이 없습니다.</div>
-                                                ` : recent5Matches.map(m => {
-                                                    const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
-                                                    const myWin = (isTeamA && m.winner_team === 'A') || (!isTeamA && m.winner_team === 'B');
-                                                    const badgeBg = myWin ? '#2563eb' : (m.winner_team === 'DRAW' ? '#475569' : '#e11d48');
-                                                    const resTxt = myWin ? '승리' : (m.winner_team === 'DRAW' ? '무승부' : '패배');
-
-                                                    const aP1 = formatNameWithGrade(m.team_a_p1);
-                                                    const aP2 = m.team_a_p2 ? formatNameWithGrade(m.team_a_p2) : '';
-                                                    const bP1 = formatNameWithGrade(m.team_b_p1);
-                                                    const bP2 = m.team_b_p2 ? formatNameWithGrade(m.team_b_p2) : '';
-
-                                                    const ourTeam = isTeamA ? `${aP1}${aP2 ? ' · ' + aP2 : ''}` : `${bP1}${bP2 ? ' · ' + bP2 : ''}`;
-                                                    const oppTeam = isTeamA ? `${bP1}${bP2 ? ' · ' + bP2 : ''}` : `${aP1}${aP2 ? ' · ' + aP2 : ''}`;
-                                                    const ourScore = isTeamA ? m.score_a : m.score_b;
-                                                    const oppScore = isTeamA ? m.score_b : m.score_a;
-
-                                                    return `
-                                                        <div style="background:#151c2c; padding:10px 12px; border-radius:8px; border:1px solid #26334d; display:flex; flex-direction:column; gap:6px;">
-                                                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                                                <span style="background:#0f1420; color:#94a3b8; border:1px solid #1e293b; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:4px;">${m.match_type || '복식'}</span>
-                                                                <div style="display:flex; align-items:center; gap:8px;">
-                                                                    <strong style="color:#ffffff; font-size:13px; letter-spacing:0.5px;">
-                                                                        <span style="color:${myWin ? '#34d399' : '#cbd5e1'};">${ourScore}</span> : <span style="color:${!myWin ? '#f43f5e' : '#cbd5e1'};">${oppScore}</span>
-                                                                    </strong>
-                                                                    <span style="background:${badgeBg}; color:#ffffff; font-weight:800; font-size:11px; padding:2px 8px; border-radius:4px;">${resTxt}</span>
-                                                                </div>
-                                                            </div>
-                                                            <div style="display:flex; align-items:center; justify-content:space-between; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                                                <span style="color:#ffffff; font-weight:700; overflow:hidden; text-overflow:ellipsis;">${ourTeam}</span>
-                                                                <span style="color:#f59e0b; font-weight:800; font-size:10.5px; margin:0 6px; flex-shrink:0;">VS</span>
-                                                                <span style="color:#94a3b8; font-weight:600; overflow:hidden; text-overflow:ellipsis; text-align:right;">${oppTeam}</span>
-                                                            </div>
-                                                        </div>
-                                                    `;
-                                                }).join('')}
-                                            </div>
-                                        </div>
-                                    `}
+                                        `;
+                                    }).join('')}
                                 </div>
                             </div>
                         </div>
-                    `;
-                    document.body.insertAdjacentHTML('beforeend', modalHtml);
-                });
-            });
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
         });
     });
 };
