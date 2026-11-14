@@ -509,6 +509,26 @@ function renderGameQueue() {
         } catch (e) {}
     }
 
+    const queueCacheKey = `cached_gameQueue_${clubId}`;
+    const isSocketLive = (typeof socket !== 'undefined' && socket && socket.connected);
+    if (!isSocketLive) {
+        if (Array.isArray(gameQueue) && gameQueue.length === 0) {
+            try {
+                const rawCache = localStorage.getItem(queueCacheKey);
+                if (rawCache) {
+                    const parsed = JSON.parse(rawCache);
+                    if (parsed && Array.isArray(parsed.data) && (Date.now() - (parsed.ts || 0) < 30 * 60 * 1000)) {
+                        gameQueue.push(...parsed.data);
+                    }
+                }
+            } catch (e) {}
+        }
+    } else if (Array.isArray(gameQueue)) {
+        try {
+            localStorage.setItem(queueCacheKey, JSON.stringify({ ts: Date.now(), data: gameQueue }));
+        } catch (e) {}
+    }
+
     function formatPlayerText(playerStr) {
         if (!playerStr) return '';
         // 💡 화면 출력 시 숨김 마커(|guest)를 깨끗하게 제거
@@ -704,6 +724,15 @@ function renderGameQueue() {
     }
 }
 
+// 새로고침 시 서버 소켓 응답을 기다리지 않고 대기열을 즉시 1차 표시
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof renderGameQueue === 'function') renderGameQueue();
+    });
+} else {
+    if (typeof renderGameQueue === 'function') renderGameQueue();
+}
+
 function mergeGameSlot(slotId) {
     // 💡 [Wi-Fi 검사 통일] 구장 전용 안내창 호출 및 미연결 시 통합 메뉴 오픈 차단
     if (!checkGymWifiOrAlert()) return;
@@ -789,6 +818,26 @@ function renderNantaQueue() {
     if (savedUser) {
         try {
             currentUser = JSON.parse(savedUser);
+        } catch (e) {}
+    }
+
+    const nantaCacheKey = `cached_nantaQueue_${clubId}`;
+    const isSocketLive = (typeof socket !== 'undefined' && socket && socket.connected);
+    if (!isSocketLive) {
+        if (Array.isArray(nantaQueue) && nantaQueue.length === 0) {
+            try {
+                const rawCache = localStorage.getItem(nantaCacheKey);
+                if (rawCache) {
+                    const parsed = JSON.parse(rawCache);
+                    if (parsed && Array.isArray(parsed.data) && (Date.now() - (parsed.ts || 0) < 30 * 60 * 1000)) {
+                        nantaQueue.push(...parsed.data);
+                    }
+                }
+            } catch (e) {}
+        }
+    } else if (Array.isArray(nantaQueue)) {
+        try {
+            localStorage.setItem(nantaCacheKey, JSON.stringify({ ts: Date.now(), data: nantaQueue }));
         } catch (e) {}
     }
 
@@ -918,6 +967,15 @@ function renderNantaQueue() {
     });
 
     container.innerHTML = allNantaSlotsHtml.join('');
+}
+
+// 새로고침 시 서버 소켓 응답을 기다리지 않고 난타 대기열을 즉시 1차 표시
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof renderNantaQueue === 'function') renderNantaQueue();
+    });
+} else {
+    if (typeof renderNantaQueue === 'function') renderNantaQueue();
 }
 
 function updateAvailableCourtCounts() {
