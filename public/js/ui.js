@@ -4621,3 +4621,43 @@ window.exportRegularMemberStatsCSV = function() {
         URL.revokeObjectURL(url);
     });
 };
+
+// =========================================================================
+// [중복 로그인 방지] 다른 기기/브라우저에서 동일 회원 로그인 시 자동 로그아웃 처리
+// =========================================================================
+(function setupForceLogoutListener() {
+    const attachListener = () => {
+        if (typeof socket === 'undefined' || !socket) {
+            setTimeout(attachListener, 500);
+            return;
+        }
+        socket.off('forceLogout').on('forceLogout', (data) => {
+            try {
+                const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
+                const removeKeys = [
+                    'currentUser', `currentUser_${clubId}`,
+                    'myName', 'userName', 'currentUserName', 'memberName',
+                    `myName_${clubId}`, `userName_${clubId}`
+                ];
+                removeKeys.forEach(k => {
+                    localStorage.removeItem(k);
+                    sessionStorage.removeItem(k);
+                });
+
+                Object.keys(localStorage).forEach(k => {
+                    if (k.includes('currentUser') || k.includes('loggedInUser')) {
+                        localStorage.removeItem(k);
+                    }
+                });
+
+                if (typeof socket.disconnect === 'function') {
+                    socket.disconnect();
+                }
+            } catch (e) {}
+
+            alert((data && data.message) || '다른 기기 또는 브라우저에서 로그인하여 자동 로그아웃되었습니다.');
+            window.location.reload();
+        });
+    };
+    attachListener();
+})();
