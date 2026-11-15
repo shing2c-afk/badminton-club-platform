@@ -451,7 +451,7 @@ if (!socket.hasListeners('connect')) {
     });
 }
 
-// [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리
+// [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리 (handleLogout과 동일한 완전 정리 적용)
 const handleForceLogout = (data) => {
     const urlClubId = new URLSearchParams(window.location.search).get('club');
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId)
@@ -461,14 +461,15 @@ const handleForceLogout = (data) => {
         || localStorage.getItem('selectedClubId')
         || 'unjeong';
 
-    const clubUserStorageKey = (typeof getClubStorageKey === 'function')
+    const storageKey = (typeof getClubStorageKey === 'function')
         ? getClubStorageKey('currentUser')
         : `currentUser_${clubId}`;
 
     // 1. 현재 브라우저에 로그인된 유저 정보 정확히 파싱
     let myName = '';
     let myPhone = '';
-    const rawUser = localStorage.getItem(clubUserStorageKey)
+    let userData = null;
+    const rawUser = localStorage.getItem(storageKey)
         || localStorage.getItem(`currentUser_${clubId}`)
         || localStorage.getItem("currentUser")
         || localStorage.getItem("user");
@@ -476,11 +477,13 @@ const handleForceLogout = (data) => {
     if (rawUser) {
         try {
             const parsed = JSON.parse(rawUser);
+            userData = parsed;
             if (parsed && typeof parsed === 'object') {
                 myName = String(parsed.name || parsed.username || '').replace(/님$/, '').split('/')[0].trim();
                 myPhone = String(parsed.phone || parsed.id || '').replace(/[^0-9]/g, '');
             }
         } catch (e) {
+            userData = rawUser;
             myName = String(rawUser).replace(/님$/, '').split('/')[0].trim();
         }
     }
@@ -506,20 +509,16 @@ const handleForceLogout = (data) => {
         if (!isMe) return;
     }
 
+    // 이미 로그아웃 처리 중이면 중복 실행 차단
+    if (window.isLoggingOutInProgress) return;
+    window.isLoggingOutInProgress = true;
+    window.isLoggingOut = true; // 새로고침 직전 재저장 및 소켓 재연결 방지
+
     console.warn("세션 만료/강제 로그아웃 수신:", data);
 
-    // 2. 자동 재로그인 및 핑퐁 루프 차단을 위해 소켓 연결 즉시 중단
+    // 2. 브라우저에 남아있는 모든 로그인 정보 즉시 삭제
     try {
-        if (typeof socket !== 'undefined' && socket) {
-            socket.off('forceLogout');
-            socket.off('forceSessionExpire');
-            socket.disconnect();
-        }
-    } catch (e) {}
-
-    // 3. 브라우저에 남아있는 모든 로그인 정보 완벽 삭제 (멀티테넌트 키 포함)
-    try {
-        localStorage.removeItem(clubUserStorageKey);
+        localStorage.removeItem(storageKey);
         localStorage.removeItem(`currentUser_${clubId}`);
         localStorage.removeItem("currentUser");
         localStorage.removeItem("user");
@@ -543,21 +542,39 @@ const handleForceLogout = (data) => {
         sessionStorage.clear();
     } catch (e) {}
 
-    // 4. 안내 메시지 표시 후 초기 로그인 화면으로 새로고침
+    // 3. 서버에 명시적 로그아웃(explicitLogout) 전송 후 소켓 종료 및 새로고침
     const alertMsg = (data && data.message)
         ? data.message
-        : "동일 구장에 다른 기기 또는 브라우저에서 로그인하여 로그아웃되었습니다.";
+        : "동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.";
 
-    const isNativeAlert = typeof window.alert === 'function' && window.alert.toString().includes('[native code]');
-    if (isNativeAlert) {
-        window.alert(alertMsg);
-        window.location.reload();
-    } else {
-        // 커스텀 비동기 알림창인 경우 메시지를 확인한 뒤 새로고침되도록 지연 처리
+    const activeSocket = window.socket || (typeof socket !== 'undefined' ? socket : null);
+    const logoutPayload = (userData && typeof userData === 'object')
+        ? { ...userData, clubId, isForcedLogout: true }
+        : { name: myName, phone: myPhone, clubId, isForcedLogout: true };
+
+    let isFinished = false;
+    const finishForceLogout = () => {
+        if (isFinished) return;
+        isFinished = true;
+        try {
+            if (activeSocket) {
+                activeSocket.off('forceLogout');
+                activeSocket.off('forceSessionExpire');
+                activeSocket.disconnect();
+            }
+        } catch (e) {}
+
         alert(alertMsg);
-        setTimeout(() => {
-            window.location.reload();
-        }, 2500);
+        window.location.reload();
+    };
+
+    if (activeSocket && activeSocket.connected) {
+        activeSocket.emit('explicitLogout', logoutPayload, () => {
+            finishForceLogout();
+        });
+        setTimeout(finishForceLogout, 400);
+    } else {
+        finishForceLogout();
     }
 };
 
