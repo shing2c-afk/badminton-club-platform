@@ -451,7 +451,7 @@ if (!socket.hasListeners('connect')) {
     });
 }
 
-// [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리 (handleLogout과 동일한 완전 정리 적용)
+// [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리 (모든 로그인 키·메모리 완전 초기화)
 const handleForceLogout = (data) => {
     const urlClubId = new URLSearchParams(window.location.search).get('club');
     const clubId = (typeof currentClubId !== 'undefined' && currentClubId)
@@ -488,7 +488,11 @@ const handleForceLogout = (data) => {
         }
     }
     if (!myName) {
-        myName = String(localStorage.getItem("userName") || localStorage.getItem("username") || "").replace(/님$/, '').split('/')[0].trim();
+        myName = String(
+            window.myName || window.currentUserName || window.loggedInUser ||
+            localStorage.getItem("myName") || localStorage.getItem("memberName") ||
+            localStorage.getItem("userName") || localStorage.getItem("username") || ""
+        ).replace(/님$/, '').split('/')[0].trim();
     }
     if (!myPhone) {
         myPhone = String(localStorage.getItem("userPhone") || localStorage.getItem("phone") || "").replace(/[^0-9]/g, '');
@@ -512,37 +516,57 @@ const handleForceLogout = (data) => {
     // 이미 로그아웃 처리 중이면 중복 실행 차단
     if (window.isLoggingOutInProgress) return;
     window.isLoggingOutInProgress = true;
-    window.isLoggingOut = true; // 새로고침 직전 재저장 및 소켓 재연결 방지
+    window.isLoggingOut = true;
 
     console.warn("세션 만료/강제 로그아웃 수신:", data);
 
-    // 2. 브라우저에 남아있는 모든 로그인 정보 즉시 삭제
-    try {
-        localStorage.removeItem(storageKey);
-        localStorage.removeItem(`currentUser_${clubId}`);
-        localStorage.removeItem("currentUser");
-        localStorage.removeItem("user");
-        localStorage.removeItem("username");
-        localStorage.removeItem("userName");
-        localStorage.removeItem("phone");
-        localStorage.removeItem("userPhone");
-        localStorage.removeItem("userKey");
+    // 2. 메모리 변수 및 브라우저 저장소의 모든 로그인 흔적 완전 삭제 함수
+    const clearAllUserSessionData = () => {
+        try {
+            if (typeof currentUser !== 'undefined') currentUser = null;
+            window.currentUser = null;
+            window.myName = null;
+            window.currentUserName = null;
+            window.loggedInUser = null;
+            window.currentUserId = null;
 
-        Object.keys(localStorage).forEach((k) => {
-            if (
-                k.includes('currentUser') ||
-                k.includes('loggedInUser') ||
-                k.includes('userName') ||
-                k.includes('userPhone') ||
-                k.includes('userKey')
-            ) {
-                localStorage.removeItem(k);
-            }
-        });
-        sessionStorage.clear();
-    } catch (e) {}
+            const exactKeys = [
+                storageKey, `currentUser_${clubId}`,
+                'currentUser', 'user', 'username', 'userName',
+                'myName', 'memberName', 'currentUserName', 'loggedInUser',
+                'savedUser', 'phone', 'userPhone', 'userKey', 'userId',
+                'autoLogin', 'loginUser', 'memberInfo'
+            ];
+            exactKeys.forEach((k) => {
+                if (k) {
+                    localStorage.removeItem(k);
+                    sessionStorage.removeItem(k);
+                }
+            });
 
-    // 3. 서버에 명시적 로그아웃(explicitLogout) 전송 후 소켓 종료 및 새로고침
+            Object.keys(localStorage).forEach((k) => {
+                const lower = k.toLowerCase();
+                if (
+                    lower.includes('user') ||
+                    lower.includes('myname') ||
+                    lower.includes('membername') ||
+                    lower.includes('memberinfo') ||
+                    lower.includes('login') ||
+                    lower.includes('phone') ||
+                    lower.includes('auth') ||
+                    lower.includes('session')
+                ) {
+                    localStorage.removeItem(k);
+                }
+            });
+            sessionStorage.clear();
+        } catch (e) {}
+    };
+
+    // 1차 즉시 삭제
+    clearAllUserSessionData();
+
+    // 3. 서버에 명시적 로그아웃 전송 후 소켓 종료 및 새로고침 직전 2차 삭제
     const alertMsg = (data && data.message)
         ? data.message
         : "동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.";
@@ -563,6 +587,9 @@ const handleForceLogout = (data) => {
                 activeSocket.disconnect();
             }
         } catch (e) {}
+
+        // 새로고침 직전에 한 번 더 완전 삭제 (대기 시간 중 재저장 원천 차단)
+        clearAllUserSessionData();
 
         alert(alertMsg);
         window.location.reload();

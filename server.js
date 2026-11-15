@@ -4505,6 +4505,7 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
     // =================================================================
     socket.on('explicitLogout', async (userData, callback) => {
         socket.isExplicitLogout = true; // 유예시간 작동 방지 꼬리표
+        const isForcedLogout = Boolean(userData && userData.isForcedLogout);
         const targetClubId = (userData && userData.clubId) || socket.clubId || clientClubId || 'unjeong';
 
         let rawName = socket.finalName || socket.username;
@@ -4527,25 +4528,39 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                 } catch (e) {}
             }
 
-            console.log(`🚪 [명시적 로그아웃] [${targetClubId}] 유저(${cleanUsername}) 즉시 대기방 삭제 및 모든 타이머 초기화!`);
-
-            // 1. 매니저의 1단계/2단계 타이머 및 상태 즉시 제거 (로그인 창 팝업 원천 차단)
-            if (typeof gymSessionManager !== 'undefined' && typeof gymSessionManager.clearUserImmediately === 'function') {
-                gymSessionManager.clearUserImmediately(cleanUsername, targetClubId);
+            // 현재 소켓이 activeUserSockets에 등록된 경우에만 매핑 제거 (새 기기 소켓 보호)
+            if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
+                const clubUserKey = `${targetClubId}_${cleanUsername}`;
+                if (activeUserSockets.get(clubUserKey) === socket.id) {
+                    activeUserSockets.delete(clubUserKey);
+                }
             }
 
-            // 2. 구형 타이머 잔재 제거
-            if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
-                clearTimeout(disconnectTimers[cleanUsername]);
-                delete disconnectTimers[cleanUsername];
-            }
+            if (!isForcedLogout) {
+                console.log(`🚪 [명시적 로그아웃] [${targetClubId}] 유저(${cleanUsername}) 즉시 대기방 삭제 및 모든 타이머 초기화!`);
 
-            // 3. 즉시 대기방 폭파 (클럽 ID 포함)
-            if (typeof cleanupUser === 'function') {
-                await cleanupUser(cleanUsername, targetClubId);
+                // 1. 매니저의 1단계/2단계 타이머 및 상태 즉시 제거
+                if (typeof gymSessionManager !== 'undefined' && typeof gymSessionManager.clearUserImmediately === 'function') {
+                    gymSessionManager.clearUserImmediately(cleanUsername, targetClubId);
+                }
+
+                // 2. 구형 타이머 잔재 제거
+                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
+                    clearTimeout(disconnectTimers[cleanUsername]);
+                    delete disconnectTimers[cleanUsername];
+                }
+
+                // 3. 즉시 대기방 폭파 (클럽 ID 포함)
+                if (typeof cleanupUser === 'function') {
+                    await cleanupUser(cleanUsername, targetClubId);
+                }
+            } else {
+                console.log(`🚪 [중복 로그인 퇴출 완료] [${targetClubId}] 유저(${cleanUsername}) 기존 소켓(${socket.id})만 정리`);
             }
         }
 
+        socket.username = null;
+        socket.finalName = null;
         if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
         if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(targetClubId);
 
