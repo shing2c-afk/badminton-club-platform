@@ -451,14 +451,28 @@ if (!socket.hasListeners('connect')) {
     });
 }
 
-// 🚨 [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리
+// [필수 유지] 세션 만료 및 중복 로그인 시 자동 로그아웃 통합 처리
 const handleForceLogout = (data) => {
-    const clubId = window.currentClubId || localStorage.getItem('preferredClubId') || 'unjeong';
+    const urlClubId = new URLSearchParams(window.location.search).get('club');
+    const clubId = (typeof currentClubId !== 'undefined' && currentClubId)
+        || window.currentClubId
+        || urlClubId
+        || localStorage.getItem('preferredClubId')
+        || localStorage.getItem('selectedClubId')
+        || 'unjeong';
+
+    const clubUserStorageKey = (typeof getClubStorageKey === 'function')
+        ? getClubStorageKey('currentUser')
+        : `currentUser_${clubId}`;
 
     // 1. 현재 브라우저에 로그인된 유저 정보 정확히 파싱
     let myName = '';
     let myPhone = '';
-    const rawUser = localStorage.getItem(`currentUser_${clubId}`) || localStorage.getItem("currentUser") || localStorage.getItem("user");
+    const rawUser = localStorage.getItem(clubUserStorageKey)
+        || localStorage.getItem(`currentUser_${clubId}`)
+        || localStorage.getItem("currentUser")
+        || localStorage.getItem("user");
+
     if (rawUser) {
         try {
             const parsed = JSON.parse(rawUser);
@@ -477,13 +491,13 @@ const handleForceLogout = (data) => {
         myPhone = String(localStorage.getItem("userPhone") || localStorage.getItem("phone") || "").replace(/[^0-9]/g, '');
     }
 
-    // 🛡️ [방어막 1] 현재 로그인되어 있지 않은 상태(로그인 페이지 대기 중)라면 팝업을 절대 띄우지 않고 무시!
+    // [방어막 1] 현재 로그인되어 있지 않은 상태(로그인 페이지 대기 중)라면 팝업을 띄우지 않고 무시
     if (!myName && !myPhone) return;
 
-    // 🛡️ [방어막 2] 다른 클럽에서 발생한 신호라면 무시
+    // [방어막 2] 다른 클럽에서 발생한 신호라면 무시
     if (data && data.clubId && data.clubId !== clubId) return;
 
-    // 🛡️ [방어막 3] 특정 타겟 유저가 지정된 신호인 경우, 내 이름이나 전화번호와 일치할 때만 실행
+    // [방어막 3] 특정 타겟 유저가 지정된 신호인 경우, 내 이름이나 전화번호와 일치할 때만 실행
     const targetUser = data && (data.targetUser || data.username);
     const targetPhone = data && data.targetPhone ? String(data.targetPhone).replace(/[^0-9]/g, '') : '';
     if (targetUser || targetPhone) {
@@ -492,24 +506,59 @@ const handleForceLogout = (data) => {
         if (!isMe) return;
     }
 
-    console.warn("⚠️ 세션 만료/강제 로그아웃 수신:", data);
-    
-    // 2. 브라우저에 남아있는 로그인 정보 완벽 삭제
-    localStorage.removeItem(`currentUser_${clubId}`);
-    localStorage.removeItem("currentUser");
-    localStorage.removeItem("user");
-    localStorage.removeItem("username");
-    localStorage.removeItem("userName");
-    localStorage.removeItem("phone");
-    localStorage.removeItem("userPhone");
-    localStorage.removeItem("userKey");
-    sessionStorage.clear(); 
-    
-    // 3. 만료 안내 알림창 표시 후 현재 클럽 로그인 화면으로 새로고침
-    const alertMsg = (data && data.message) ? data.message : "장시간 미접속으로 세션이 만료되었습니다. 다시 로그인해 주세요.";
-    alert(alertMsg);
-    
-    window.location.reload(); 
+    console.warn("세션 만료/강제 로그아웃 수신:", data);
+
+    // 2. 자동 재로그인 및 핑퐁 루프 차단을 위해 소켓 연결 즉시 중단
+    try {
+        if (typeof socket !== 'undefined' && socket) {
+            socket.off('forceLogout');
+            socket.off('forceSessionExpire');
+            socket.disconnect();
+        }
+    } catch (e) {}
+
+    // 3. 브라우저에 남아있는 모든 로그인 정보 완벽 삭제 (멀티테넌트 키 포함)
+    try {
+        localStorage.removeItem(clubUserStorageKey);
+        localStorage.removeItem(`currentUser_${clubId}`);
+        localStorage.removeItem("currentUser");
+        localStorage.removeItem("user");
+        localStorage.removeItem("username");
+        localStorage.removeItem("userName");
+        localStorage.removeItem("phone");
+        localStorage.removeItem("userPhone");
+        localStorage.removeItem("userKey");
+
+        Object.keys(localStorage).forEach((k) => {
+            if (
+                k.includes('currentUser') ||
+                k.includes('loggedInUser') ||
+                k.includes('userName') ||
+                k.includes('userPhone') ||
+                k.includes('userKey')
+            ) {
+                localStorage.removeItem(k);
+            }
+        });
+        sessionStorage.clear();
+    } catch (e) {}
+
+    // 4. 안내 메시지 표시 후 초기 로그인 화면으로 새로고침
+    const alertMsg = (data && data.message)
+        ? data.message
+        : "동일 구장에 다른 기기 또는 브라우저에서 로그인하여 로그아웃되었습니다.";
+
+    const isNativeAlert = typeof window.alert === 'function' && window.alert.toString().includes('[native code]');
+    if (isNativeAlert) {
+        window.alert(alertMsg);
+        window.location.reload();
+    } else {
+        // 커스텀 비동기 알림창인 경우 메시지를 확인한 뒤 새로고침되도록 지연 처리
+        alert(alertMsg);
+        setTimeout(() => {
+            window.location.reload();
+        }, 2500);
+    }
 };
 
 // 기존 로그인 처리/중복 로그인 시 서버가 보내는 신호
