@@ -2280,70 +2280,12 @@ io.on('connection', (socket) => {
         return true;
     };
 
-    // [수정 후]
-    // =================================================================
-    // 🔒 [신규] 동일 회원 중복 로그인 방지 (기존 접속 브라우저 자동 로그아웃)
-    // =================================================================
-    const kickDuplicateUserSockets = (currentSocket, cleanUsername, clubId) => {
-        if (!cleanUsername || cleanUsername === '0100' || cleanUsername === '관리자') return;
-        const targetClubId = clubId || currentSocket.clubId || clientClubId || 'unjeong';
-
-        io.sockets.sockets.forEach((s) => {
-            if (s.id === currentSocket.id) return;
-            const sClub = s.clubId || (typeof userSockets !== 'undefined' && userSockets[s.id] && userSockets[s.id].clubId) || 'unjeong';
-            const sUser = s.username || s.finalName || (typeof userSockets !== 'undefined' && userSockets[s.id] && userSockets[s.id].username);
-
-            if (sClub === targetClubId && sUser === cleanUsername) {
-                console.log(`[중복 로그인 차단] [${targetClubId}] ${cleanUsername} 회원의 기존 접속(${s.id})을 자동 로그아웃 처리합니다.`);
-                if (typeof userSockets !== 'undefined' && userSockets[s.id]) {
-                    delete userSockets[s.id];
-                }
-                s.username = null;
-                s.finalName = null;
-                s.emit('forceLogout', {
-                    username: cleanUsername,
-                    message: '다른 기기 또는 브라우저에서 로그인하여 자동 로그아웃되었습니다.'
-                });
-            }
-        });
-    };
-
-    // =================================================================
-    // 🔒 [신규] 동일 회원 중복 로그인 방지 (기존 접속 브라우저 자동 로그아웃)
-    // =================================================================
-    const kickDuplicateUserSockets = (currentSocket, cleanUsername, clubId) => {
-        if (!cleanUsername || cleanUsername === '0100' || cleanUsername === '관리자') return;
-        const targetClubId = clubId || currentSocket.clubId || clientClubId || 'unjeong';
-
-        io.sockets.sockets.forEach((s) => {
-            if (s.id === currentSocket.id) return;
-            const sClub = s.clubId || (typeof userSockets !== 'undefined' && userSockets[s.id] && userSockets[s.id].clubId) || 'unjeong';
-            const sUser = s.username || s.finalName || (typeof userSockets !== 'undefined' && userSockets[s.id] && userSockets[s.id].username);
-
-            if (sClub === targetClubId && sUser === cleanUsername) {
-                console.log(`[중복 로그인 차단] [${targetClubId}] ${cleanUsername} 회원의 기존 접속(${s.id})을 자동 로그아웃 처리합니다.`);
-                if (typeof userSockets !== 'undefined' && userSockets[s.id]) {
-                    delete userSockets[s.id];
-                }
-                s.username = null;
-                s.finalName = null;
-                s.emit('forceLogout', {
-                    username: cleanUsername,
-                    message: '다른 기기 또는 브라우저에서 로그인하여 자동 로그아웃되었습니다.'
-                });
-            }
-        });
-    };
-
     // =================================================================
     // ⏱️ [신규] Wi-Fi 상태 기반 타이머 통합 제어 (유예 & 만료 동시 작동)
     // =================================================================
     const applyWifiTimerLogic = (socket, cleanUsername, clubId) => {
         if (!cleanUsername || cleanUsername === '0100') return;
         const targetClubId = clubId || socket.clubId || clientClubId || 'unjeong';
-
-        // 동일 회원의 기존 다른 브라우저 접속이 있으면 먼저 로그아웃 처리
-        kickDuplicateUserSockets(socket, cleanUsername, targetClubId);
 
         socket.finalName = cleanUsername;
         socket.username = cleanUsername;
@@ -2382,7 +2324,6 @@ io.on('connection', (socket) => {
     if (candidateUser) {
         const cleanCandidate = String(candidateUser).replace(/님$/, '').split('/')[0].split('|')[0].trim();
         if (cleanCandidate && cleanCandidate !== '0100') {
-            kickDuplicateUserSockets(socket, cleanCandidate, clientClubId);
             socket.username = cleanCandidate;
             if (typeof userSockets !== 'undefined') {
                 userSockets[socket.id] = { username: cleanCandidate, clubId: clientClubId };
@@ -2514,11 +2455,29 @@ io.on('connection', (socket) => {
             socket.finalName = cleanUsername;
             socket.clubId = targetClubId;
 
+            // [수정 후]
             if (typeof userSockets !== 'undefined') {
                 userSockets[socket.id] = { username: cleanUsername, clubId: targetClubId };
             }
             if (typeof activeUserSockets !== 'undefined' && activeUserSockets.set) {
-                activeUserSockets.set(`${targetClubId}_${cleanUsername}`, socket.id);
+                const clubUserKey = `${targetClubId}_${cleanUsername}`;
+                const isAutoRestore = Boolean(userData.isAutoRestore || userData.autoRestore);
+
+                // 동일 구장 내 중복 로그인 감지 (망 전환 자동 재연결일 때는 제외)
+                if (!isAutoRestore && activeUserSockets.has(clubUserKey)) {
+                    const oldSocketId = activeUserSockets.get(clubUserKey);
+                    if (oldSocketId && oldSocketId !== socket.id) {
+                        console.log(`🚪 [중복 로그인 감지] [${targetClubId}] ${cleanUsername} 기존 세션(${oldSocketId}) 종료 전송`);
+                        io.to(oldSocketId).emit('forceLogout', {
+                            username: cleanUsername,
+                            clubId: targetClubId,
+                            reason: 'duplicate_login',
+                            message: '동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.'
+                        });
+                    }
+                }
+
+                activeUserSockets.set(clubUserKey, socket.id);
             }
             
             console.log(`👤 [소켓 등록/복귀] 유저(${cleanUsername}), 구장(${targetClubId}), 소켓ID(${socket.id})`);
