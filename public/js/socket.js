@@ -984,49 +984,6 @@ window.requestClearNantaCourt = async function(courtId, side) {
     }
 };
 
-// 강제 로그아웃 처리
-if (typeof socket !== 'undefined' && socket) {
-    socket.off('forceLogout').on('forceLogout', (data) => {
-        const savedUser = localStorage.getItem("currentUser");
-        let targetMatch = false;
-
-        const targetUser = (data.username || '').split('/')[0].trim();
-
-        if (savedUser) {
-            try {
-                const parsedUser = JSON.parse(savedUser);
-                const localName = (parsedUser.name || parsedUser.username || parsedUser.id || '').split('/')[0].trim();
-                const localPhone = (parsedUser.phone || '').trim();
-
-                if (localName === targetUser || localPhone === targetUser || parsedUser.username === targetUser) {
-                    targetMatch = true;
-                }
-            } catch (e) {
-                const rawClean = savedUser.split('/')[0].trim();
-                if (rawClean === targetUser) {
-                    targetMatch = true;
-                }
-            }
-        } else {
-            targetMatch = true;
-        }
-
-        if (targetMatch) {
-            console.warn('⚠️ [강제 로그아웃]', data.reason || '세션 만료');
-            
-            localStorage.removeItem("currentUser");
-            localStorage.removeItem("username");
-            localStorage.removeItem("userName");
-            sessionStorage.clear();
-            
-            const alertText = data.message || '다른 기기 또는 브라우저에서 로그인되어 현재 연결이 종료되었습니다.';
-            alert(alertText);
-            
-            window.location.reload(); 
-        }
-    });
-}
-
 // =================================================================
 // 📶 [실시간 와이파이 상태 감시기 & 세션 만료 수신기]
 // =================================================================
