@@ -2425,7 +2425,7 @@ io.on('connection', (socket) => {
         useWifiRestriction: initialUseWifiRestriction 
     });
 
-    // 🔔 로그인 사용자 소켓 등록 처리 및 복귀(Reconnect) 라이프사이클 연결
+   // 🔔 로그인 사용자 소켓 등록 처리 및 복귀(Reconnect) 라이프사이클 연결
     socket.on('registerUser', async (userData) => {
         if (userData && (userData.phone || userData.name || userData.username)) {
             const rawName = userData.name || userData.username || userData.phone;
@@ -2455,34 +2455,19 @@ io.on('connection', (socket) => {
             socket.finalName = cleanUsername;
             socket.clubId = targetClubId;
 
-            // [수정 후]
             if (typeof userSockets !== 'undefined') {
                 userSockets[socket.id] = { username: cleanUsername, clubId: targetClubId };
             }
+            // 중복 로그인 퇴출은 registerUserSession에서만 단일 처리 (신규 로그인 기기 자가 퇴출 방지)
             if (typeof activeUserSockets !== 'undefined' && activeUserSockets.set) {
                 const clubUserKey = `${targetClubId}_${cleanUsername}`;
-                const isAutoRestore = Boolean(userData.isAutoRestore || userData.autoRestore);
-
-                // 동일 구장 내 중복 로그인 감지 (망 전환 자동 재연결일 때는 제외)
-                if (!isAutoRestore && activeUserSockets.has(clubUserKey)) {
-                    const oldSocketId = activeUserSockets.get(clubUserKey);
-                    if (oldSocketId && oldSocketId !== socket.id) {
-                        console.log(`🚪 [중복 로그인 감지] [${targetClubId}] ${cleanUsername} 기존 세션(${oldSocketId}) 종료 전송`);
-                        io.to(oldSocketId).emit('forceLogout', {
-                            username: cleanUsername,
-                            clubId: targetClubId,
-                            reason: 'duplicate_login',
-                            message: '동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.'
-                        });
-                    }
+                if (!activeUserSockets.has(clubUserKey)) {
+                    activeUserSockets.set(clubUserKey, socket.id);
                 }
-
-                activeUserSockets.set(clubUserKey, socket.id);
             }
-            
+
             console.log(`👤 [소켓 등록/복귀] 유저(${cleanUsername}), 구장(${targetClubId}), 소켓ID(${socket.id})`);
 
-            // 🟢 Wi-Fi 일치 여부에 따른 즉각 타이머 제어 (일치면 초기화, 불일치면 유예&만료 동시 시작)
             applyWifiTimerLogic(socket, cleanUsername, targetClubId);
 
             if (typeof broadcastOnlineCount === 'function') {
@@ -2490,6 +2475,7 @@ io.on('connection', (socket) => {
             }
         }
     });
+
 
     // 💡 사용자가 세션을 등록할 때 (자동 복귀 검증 및 신규 로그인 승인)
     socket.on('registerUserSession', async (data) => {
@@ -2510,7 +2496,6 @@ io.on('connection', (socket) => {
 
         const incomingClubId = (typeof data === 'object' && data.clubId) || socket.clubId || clientClubId || 'unjeong';
 
-        // 💡 전화번호(010-...)로 들어온 경우 DB에서 진짜 이름(예: 신윤채)으로 변환하여 이름표 완벽 통일!
         if (/^[0-9\-]+$/.test(cleanUsername) && typeof db !== 'undefined') {
             const digits = cleanUsername.replace(/[^0-9]/g, '');
             const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
@@ -2529,13 +2514,12 @@ io.on('connection', (socket) => {
         // 🚨 [세션 만료 검증 분기]
         if (isExpiredInManager || isExpiredLegacy) {
             if (isAutoRestore) {
-                // 💡 깨어나는 순간 연속으로 들어오는 소켓 이벤트까지 모두 차단하기 위해 3초 후 만료 기록 삭제
                 setTimeout(() => {
                     if (typeof gymSessionManager !== 'undefined' && gymSessionManager.expiredUsers) gymSessionManager.expiredUsers.delete(managerUserKey);
                     if (typeof expiredUsers !== 'undefined') delete expiredUsers[cleanUsername];
                 }, 3000);
                 console.log(`[접속 차단] 유저(${cleanUsername})는 세션이 완전 만료되어 자동 복귀를 차단하고 강제 로그아웃 신호를 전송합니다.`);
-                
+
                 socket.emit('forceSessionExpire', {
                     targetUser: cleanUsername,
                     clubId: incomingClubId,
@@ -2551,16 +2535,26 @@ io.on('connection', (socket) => {
 
         const clubUserKey = `${incomingClubId}_${cleanUsername}`;
 
-        // 🚪 동일 구장 내 중복 로그인 감지 (단, 망 전환으로 인한 내 폰의 자동 재연결 isAutoRestore일 때는 내 폰을 튕겨내지 않음!)
+        // 🚪 동일 구장 내 중복 로그인 감지 (기존 기기 소켓에만 1회 퇴출 신호 전송)
         if (!isAutoRestore && activeUserSockets.has(clubUserKey)) {
             const oldSocketId = activeUserSockets.get(clubUserKey);
-            if (oldSocketId !== socket.id) {
-                io.to(oldSocketId).emit('forceLogout', {
-                    username: cleanUsername,
-                    clubId: incomingClubId,
-                    reason: 'duplicate_login',
-                    message: '동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.'
-                });
+            if (oldSocketId && oldSocketId !== socket.id) {
+                const oldSocket = io.sockets.sockets.get(oldSocketId);
+                const sameBrowserReconnect = oldSocket
+                    && oldSocket.handshake.headers['user-agent'] === socket.handshake.headers['user-agent']
+                    && oldSocket.handshake.address === socket.handshake.address
+                    && (Date.now() - (oldSocket.connectedAt || 0) < 3000);
+
+                if (!sameBrowserReconnect && (!oldSocket || !oldSocket.isKicked)) {
+                    if (oldSocket) oldSocket.isKicked = true;
+                    console.log(`🚪 [중복 로그인 감지] [${incomingClubId}] ${cleanUsername} 기존 세션(${oldSocketId}) 종료 전송`);
+                    io.to(oldSocketId).emit('forceLogout', {
+                        username: cleanUsername,
+                        clubId: incomingClubId,
+                        reason: 'duplicate_login',
+                        message: '동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.'
+                    });
+                }
             }
         }
 
@@ -2589,6 +2583,7 @@ io.on('connection', (socket) => {
         }
 
         // 💾 구장별 세션 키 및 진짜 이름으로 소켓 완벽 등록
+        socket.connectedAt = Date.now();
         activeUserSockets.set(clubUserKey, socket.id);
         socket.username = cleanUsername;
         socket.finalName = cleanUsername;
@@ -2600,9 +2595,6 @@ io.on('connection', (socket) => {
             userSockets[socket.id] = { username: cleanUsername, clubId: incomingClubId };
         }
 
-        // 💡 [핵심] 세션 등록 즉시 현재 Wi-Fi 일치 여부를 판별하여:
-        // - 일치하면 타이머 초기화 & inGym=true
-        // - 불일치하면 유예/만료 타이머 동시 가동 & inGracePeriod=true (운동중 카운트 보존)
         applyWifiTimerLogic(socket, cleanUsername, incomingClubId);
 
         if (typeof broadcastOnlineCount === 'function') {

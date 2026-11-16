@@ -498,7 +498,7 @@ const handleForceLogout = (data) => {
         myPhone = String(localStorage.getItem("userPhone") || localStorage.getItem("phone") || "").replace(/[^0-9]/g, '');
     }
 
-    // [방어막 1] 현재 로그인되어 있지 않은 상태(로그인 페이지 대기 중)라면 팝업을 띄우지 않고 무시
+    // [방어막 1] 현재 로그인되어 있지 않은 상태(로그인 페이지 대기 중)라면 무시
     if (!myName && !myPhone) return;
 
     // [방어막 2] 다른 클럽에서 발생한 신호라면 무시
@@ -553,14 +553,18 @@ const handleForceLogout = (data) => {
             sessionStorage.clear();
 
             // 새로고침 직후 auth.js가 세션을 자동 복구하지 못하도록 차단 표식 기록
-            localStorage.setItem(`forceLoggedOut_${clubId}`, String(Date.now()));
+            const nowStr = String(Date.now());
+            localStorage.setItem(`forceLoggedOut_${clubId}`, nowStr);
+            if (window.currentClubId) {
+                localStorage.setItem(`forceLoggedOut_${window.currentClubId}`, nowStr);
+            }
         } catch (e) {}
     };
 
-    // 1차 즉시 삭제
+    // 1차 즉시 삭제 (알림창이 떠 있는 동안에도 저장소는 이미 비워진 상태 유지)
     clearAllUserSessionData();
 
-    // 3. 서버에 명시적 로그아웃 전송 후 소켓 종료 및 새로고침 직전 2차 삭제
+    // 3. 서버에 명시적 로그아웃 전송 후 소켓 종료 및 새로고침
     const alertMsg = (data && data.message)
         ? data.message
         : "동일 구장에 다른 기기 또는 브라우저에서 로그인하여 이전 창이 종료되었습니다.";
@@ -582,9 +586,7 @@ const handleForceLogout = (data) => {
             }
         } catch (e) {}
 
-        // 새로고침 직전에 한 번 더 완전 삭제
         clearAllUserSessionData();
-
         alert(alertMsg);
         window.location.reload();
     };
@@ -599,14 +601,18 @@ const handleForceLogout = (data) => {
     }
 };
 
-// 기존 로그인 처리/중복 로그인 시 서버가 보내는 신호
-if (!socket.hasListeners('forceLogout')) {
-    socket.on('forceLogout', handleForceLogout);
-}
+// 다른 파일이나 위쪽 코드에 먼저 등록된 구형 리스너를 제거하고 통합 함수로 강제 교체
+const bindForceLogoutListeners = (targetSocket) => {
+    if (!targetSocket || typeof targetSocket.on !== 'function') return;
+    targetSocket.off('forceLogout');
+    targetSocket.on('forceLogout', handleForceLogout);
+    targetSocket.off('forceSessionExpire');
+    targetSocket.on('forceSessionExpire', handleForceLogout);
+};
 
-// 💡 Wi-Fi 이탈 후 세션 만료 타이머가 끝났을 때 서버가 쏘는 퇴출 신호 수신
-if (!socket.hasListeners('forceSessionExpire')) {
-    socket.on('forceSessionExpire', handleForceLogout);
+if (typeof socket !== 'undefined') bindForceLogoutListeners(socket);
+if (typeof window !== 'undefined' && window.socket && window.socket !== socket) {
+    bindForceLogoutListeners(window.socket);
 }
 
 // ==========================================
