@@ -175,6 +175,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // 🔑 [수정] 현재 구장 전용 키로 조회
   let savedUser = localStorage.getItem(getClubStorageKey("currentUser"));
 
+  // 🚨 강제 로그아웃 직후 새로고침인 경우 세션 자동 복구 원천 차단
+  const forcedAt = Number(localStorage.getItem(`forceLoggedOut_${window.currentClubId}`) || 0);
+  if (forcedAt && (Date.now() - forcedAt < 30000)) {
+    localStorage.removeItem(`forceLoggedOut_${window.currentClubId}`);
+    localStorage.removeItem(getClubStorageKey("currentUser"));
+    localStorage.removeItem(`currentUser_${window.currentClubId}`);
+    localStorage.removeItem("currentUser");
+    localStorage.removeItem("username");
+    localStorage.removeItem("myName");
+    localStorage.removeItem("memberName");
+    sessionStorage.clear();
+    savedUser = null;
+  } else if (forcedAt) {
+    localStorage.removeItem(`forceLoggedOut_${window.currentClubId}`);
+  }
+
   if (savedUser) {
     try {
       let u = JSON.parse(savedUser);

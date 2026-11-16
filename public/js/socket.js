@@ -465,7 +465,7 @@ const handleForceLogout = (data) => {
         ? getClubStorageKey('currentUser')
         : `currentUser_${clubId}`;
 
-    // 1. 현재 브라우저에 로그인된 유저 정보 정확히 파싱
+    // 1. 현재 브라우저에 로그인된 유저 정보 확인
     let myName = '';
     let myPhone = '';
     let userData = null;
@@ -503,15 +503,6 @@ const handleForceLogout = (data) => {
 
     // [방어막 2] 다른 클럽에서 발생한 신호라면 무시
     if (data && data.clubId && data.clubId !== clubId) return;
-
-    // [방어막 3] 특정 타겟 유저가 지정된 신호인 경우, 내 이름이나 전화번호와 일치할 때만 실행
-    const targetUser = data && (data.targetUser || data.username);
-    const targetPhone = data && data.targetPhone ? String(data.targetPhone).replace(/[^0-9]/g, '') : '';
-    if (targetUser || targetPhone) {
-        const cleanTargetName = targetUser ? String(targetUser).replace(/님$/, '').split('/')[0].trim() : '';
-        const isMe = (myName && cleanTargetName === myName) || (myPhone && targetPhone && myPhone === targetPhone);
-        if (!isMe) return;
-    }
 
     // 이미 로그아웃 처리 중이면 중복 실행 차단
     if (window.isLoggingOutInProgress) return;
@@ -560,6 +551,9 @@ const handleForceLogout = (data) => {
                 }
             });
             sessionStorage.clear();
+
+            // 새로고침 직후 auth.js가 세션을 자동 복구하지 못하도록 차단 표식 기록
+            localStorage.setItem(`forceLoggedOut_${clubId}`, String(Date.now()));
         } catch (e) {}
     };
 
@@ -588,7 +582,7 @@ const handleForceLogout = (data) => {
             }
         } catch (e) {}
 
-        // 새로고침 직전에 한 번 더 완전 삭제 (대기 시간 중 재저장 원천 차단)
+        // 새로고침 직전에 한 번 더 완전 삭제
         clearAllUserSessionData();
 
         alert(alertMsg);
