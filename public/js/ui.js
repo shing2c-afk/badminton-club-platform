@@ -605,21 +605,24 @@ function renderGameQueue() {
                     : '';
                 const hasPlayerStyle = styleBadgeHtml !== '';
                 const styleClickAttr = hasPlayerStyle
-                    ? `onclick="openPlayerStyleView('${escapeHtml(cleanMemberName)}')" style="cursor: pointer;"`
+                    ? `onclick="openPlayerStyleView('${escapeHtml(cleanMemberName)}')"`
                     : '';
 
                 // [퇴장 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
+                const playerInfoStyle = `${hasPlayerStyle ? 'cursor:pointer; ' : ''}display:flex; align-items:center; flex:1; min-width:0; font-size:11.5px; letter-spacing:-0.5px; white-space:nowrap; overflow:hidden;`;
+                const innerTextHtml = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${displayPlayerHtml}</span>${styleBadgeHtml}`;
+
                 if (isMe) {
                     playerCellsHtml += `
-                        <div class="player-cell">
-                            <span class="player-info ${guestClass}" ${styleClickAttr}>${displayPlayerHtml}${styleBadgeHtml}</span>
-                            <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button>
+                        <div class="player-cell" style="gap: 4px; padding-left: 7px; padding-right: 7px;">
+                            <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
+                            <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})" style="white-space:nowrap; flex-shrink:0; padding:4px 6px; font-size:11px;">퇴장</button>
                         </div>`;
                 } else {
                     playerCellsHtml += `
-                        <div class="player-cell">
-                            <span class="player-info ${guestClass}" ${styleClickAttr}>${displayPlayerHtml}${styleBadgeHtml}</span>
-                            <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button>
+                        <div class="player-cell" style="gap: 4px; padding-left: 7px; padding-right: 7px;">
+                            <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
+                            <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed; white-space:nowrap; flex-shrink:0; padding:4px 6px; font-size:11px;">퇴장</button>
                         </div>`;
                 }
             } else {
