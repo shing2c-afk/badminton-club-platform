@@ -608,19 +608,37 @@ function renderGameQueue() {
                     ? `onclick="openPlayerStyleView('${escapeHtml(cleanMemberName)}')"`
                     : '';
 
+                // 📋 2줄 압축 구성: 윗줄(이름 + 💬), 아랫줄(성별 · 연령대 · 급수)로 정보 잘림 원천 차단
+                const playerParts = formattedPlayer.split('/').map(s => s.trim()).filter(Boolean);
+                let innerTextHtml = '';
+                if (playerParts.length >= 2) {
+                    const rawPName = escapeHtml(playerParts[0]);
+                    const nameColorStyle = isPenaltyUser ? 'color: #fb923c !important;' : '';
+                    const subInfoText = escapeHtml(playerParts.slice(1).join(' · '));
+                    const subInfoColor = isGuestUser ? 'opacity: 0.85;' : 'color: #94a3b8;';
+                    innerTextHtml = `
+                        <div style="display:flex; flex-direction:column; justify-content:center; min-width:0; line-height:1.25;">
+                            <div style="display:flex; align-items:center; min-width:0;">
+                                <span style="font-size:12.5px; font-weight:700; ${nameColorStyle} white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${rawPName}</span>${styleBadgeHtml}
+                            </div>
+                            <div style="font-size:10.5px; font-weight:500; ${subInfoColor} white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px;">${subInfoText}</div>
+                        </div>`;
+                } else {
+                    innerTextHtml = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${displayPlayerHtml}</span>${styleBadgeHtml}`;
+                }
+
                 // [퇴장 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
-                const playerInfoStyle = `${hasPlayerStyle ? 'cursor:pointer; ' : ''}display:flex; align-items:center; flex:1; min-width:0; font-size:11.5px; letter-spacing:-0.5px; white-space:nowrap; overflow:hidden;`;
-                const innerTextHtml = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${displayPlayerHtml}</span>${styleBadgeHtml}`;
+                const playerInfoStyle = `${hasPlayerStyle ? 'cursor:pointer; ' : ''}display:flex; align-items:center; flex:1; min-width:0; overflow:hidden;`;
 
                 if (isMe) {
                     playerCellsHtml += `
-                        <div class="player-cell" style="min-width: 0; overflow: hidden; gap: 3px; padding-left: 6px; padding-right: 6px;">
+                        <div class="player-cell" style="min-width: 0; overflow: hidden; gap: 4px; padding: 5px 7px;">
                             <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
                             <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})" style="white-space:nowrap; flex-shrink:0; padding:4px 6px; font-size:11px;">퇴장</button>
                         </div>`;
                 } else {
                     playerCellsHtml += `
-                        <div class="player-cell" style="min-width: 0; overflow: hidden; gap: 3px; padding-left: 6px; padding-right: 6px;">
+                        <div class="player-cell" style="min-width: 0; overflow: hidden; gap: 4px; padding: 5px 7px;">
                             <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
                             <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed; white-space:nowrap; flex-shrink:0; padding:4px 6px; font-size:11px;">퇴장</button>
                         </div>`;
