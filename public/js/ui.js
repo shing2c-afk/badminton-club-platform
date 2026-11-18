@@ -598,17 +598,27 @@ function renderGameQueue() {
                     displayPlayerHtml = `<span style="color: #fb923c !important; font-weight: 800;" title="연속 게임 제한 시간 내 참여 (순위 조정됨)">${playerName}</span>${playerRest}`;
                 }
 
+                // 🏷️ 회원 게임 성향 말풍선 뱃지 및 클릭 이벤트 연결
+                const cleanMemberName = p.replace('|guest', '').split('/')[0].replace(/\(일일\)/g, '').trim();
+                const styleBadgeHtml = (typeof window.getPlayerStyleBadgeHtml === 'function')
+                    ? window.getPlayerStyleBadgeHtml(cleanMemberName)
+                    : '';
+                const hasPlayerStyle = styleBadgeHtml !== '';
+                const styleClickAttr = hasPlayerStyle
+                    ? `onclick="openPlayerStyleView('${escapeHtml(cleanMemberName)}')" style="cursor: pointer;"`
+                    : '';
+
                 // [퇴장 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
                 if (isMe) {
                     playerCellsHtml += `
                         <div class="player-cell">
-                            <span class="player-info ${guestClass}">${displayPlayerHtml}</span>
+                            <span class="player-info ${guestClass}" ${styleClickAttr}>${displayPlayerHtml}${styleBadgeHtml}</span>
                             <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})">퇴장</button>
                         </div>`;
                 } else {
                     playerCellsHtml += `
                         <div class="player-cell">
-                            <span class="player-info ${guestClass}">${displayPlayerHtml}</span>
+                            <span class="player-info ${guestClass}" ${styleClickAttr}>${displayPlayerHtml}${styleBadgeHtml}</span>
                             <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button>
                         </div>`;
                 }
@@ -1599,6 +1609,20 @@ function applyUserProfile() {
                 }
             }
             
+            // 🏷️ 화면에 요소가 발견되면 이름 및 색상 반영
+            if (headerUserEl) {
+                headerUserEl.textContent = `${cleanName}님`;
+                if (isGuest) {
+                    headerUserEl.style.color = '#38bdf8';
+                    headerUserEl.classList.add('guest-text');
+                } else {
+                    headerUserEl.style.color = '';
+                    headerUserEl.classList.remove('guest-text');
+                }
+            }
+            const styleEditIcon = document.getElementById('user-style-edit-icon');
+            if (styleEditIcon) styleEditIcon.style.display = 'inline-block';
+            
             // 🔒 [무한 루프 방지]: 이미 등록된 소켓 세션이면 반복해서 emit하지 않음
             const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
             // 💡 [수정] guest_ 임시 ID 대신 실명(cleanName)을 최우선 사용하여 접속자 중복 집계 방지
@@ -1619,6 +1643,8 @@ function applyUserProfile() {
                 headerUserEl.style.color = '';
                 headerUserEl.classList.remove('guest-text');
             }
+            const styleEditIcon = document.getElementById('user-style-edit-icon');
+            if (styleEditIcon) styleEditIcon.style.display = 'none';
         }
     } else {
         if (headerUserEl) {
@@ -1626,6 +1652,8 @@ function applyUserProfile() {
             headerUserEl.style.color = '';
             headerUserEl.classList.remove('guest-text');
         }
+        const styleEditIcon = document.getElementById('user-style-edit-icon');
+        if (styleEditIcon) styleEditIcon.style.display = 'none';
         window.__registeredSessionKey = null;
     }
 }

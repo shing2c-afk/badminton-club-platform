@@ -774,6 +774,20 @@ function initDatabase() {
             )
         `);
 
+        // =========================================================================
+        // 🏷️ 회원 게임 성향 테이블 (구장별·회원명별 독립 저장)
+        // =========================================================================
+        db.run(`
+            CREATE TABLE IF NOT EXISTS member_game_styles (
+                club_id TEXT NOT NULL,
+                member_name TEXT NOT NULL,
+                tags TEXT DEFAULT '[]',
+                memo TEXT DEFAULT '',
+                updated_at TEXT,
+                PRIMARY KEY (club_id, member_name)
+            )
+        `);
+
         // 기존 테이블 인덱스 점검 및 데이터 유실 없는 안전한 전환
         db.all(`PRAGMA index_list(regular_members)`, (err, indexes) => {
             const hasGlobalUnique = indexes && indexes.some(idx => idx.unique && idx.origin === 'u');
@@ -2599,6 +2613,73 @@ io.on('connection', (socket) => {
 
         if (typeof broadcastOnlineCount === 'function') {
             broadcastOnlineCount(incomingClubId);
+        }
+    });
+
+    // 🏷️ 구장별 회원 게임 성향 전체 조회
+    socket.on('getGameStyles', (data) => {
+        const targetClubId = (data && data.clubId) || socket.clubId || clientClubId || 'unjeong';
+        if (typeof db === 'undefined') return;
+
+        db.all(`SELECT member_name, tags, memo FROM member_game_styles WHERE club_id = ?`, [targetClubId], (err, rows) => {
+            if (err || !rows) return;
+            const stylesMap = {};
+            rows.forEach((r) => {
+                let parsedTags = [];
+                try { parsedTags = JSON.parse(r.tags || '[]'); } catch (e) {}
+                if ((Array.isArray(parsedTags) && parsedTags.length > 0) || (r.memo && r.memo.trim() !== '')) {
+                    stylesMap[r.member_name] = {
+                        tags: parsedTags,
+                        memo: r.memo || ''
+                    };
+                }
+            });
+            socket.emit('gameStylesUpdated', { clubId: targetClubId, styles: stylesMap });
+        });
+    });
+
+    // 🏷️ 내 게임 성향 저장/초기화 및 같은 구장 실시간 브로드캐스트
+    socket.on('saveGameStyle', (data, callback) => {
+        if (!data || !data.memberName || typeof db === 'undefined') {
+            if (typeof callback === 'function') callback({ ok: false });
+            return;
+        }
+        const targetClubId = data.clubId || socket.clubId || clientClubId || 'unjeong';
+        const cleanName = String(data.memberName).replace(/\(일일\)/g, '').replace(/님$/, '').trim();
+        const safeTags = Array.isArray(data.tags) ? data.tags.slice(0, 3).map(t => String(t).slice(0, 30)) : [];
+        const safeMemo = String(data.memo || '').trim().slice(0, 40);
+        const nowIso = new Date().toISOString();
+
+        const broadcastClubStyles = () => {
+            db.all(`SELECT member_name, tags, memo FROM member_game_styles WHERE club_id = ?`, [targetClubId], (err, rows) => {
+                if (!err && rows) {
+                    const stylesMap = {};
+                    rows.forEach((r) => {
+                        let parsedTags = [];
+                        try { parsedTags = JSON.parse(r.tags || '[]'); } catch (e) {}
+                        if ((Array.isArray(parsedTags) && parsedTags.length > 0) || (r.memo && r.memo.trim() !== '')) {
+                            stylesMap[r.member_name] = { tags: parsedTags, memo: r.memo || '' };
+                        }
+                    });
+                    io.to(`club_${targetClubId}`).emit('gameStylesUpdated', { clubId: targetClubId, styles: stylesMap });
+                }
+                if (typeof callback === 'function') callback({ ok: true });
+            });
+        };
+
+        if (safeTags.length === 0 && safeMemo === '') {
+            db.run(`DELETE FROM member_game_styles WHERE club_id = ? AND member_name = ?`, [targetClubId, cleanName], broadcastClubStyles);
+        } else {
+            db.run(
+                `INSERT INTO member_game_styles (club_id, member_name, tags, memo, updated_at)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(club_id, member_name) DO UPDATE SET
+                    tags = excluded.tags,
+                    memo = excluded.memo,
+                    updated_at = excluded.updated_at`,
+                [targetClubId, cleanName, JSON.stringify(safeTags), safeMemo, nowIso],
+                broadcastClubStyles
+            );
         }
     });
 
