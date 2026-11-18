@@ -614,13 +614,13 @@ function renderGameQueue() {
 
                 if (isMe) {
                     playerCellsHtml += `
-                        <div class="player-cell" style="gap: 4px; padding-left: 7px; padding-right: 7px;">
+                        <div class="player-cell" style="min-width: 0; overflow: hidden; gap: 3px; padding-left: 6px; padding-right: 6px;">
                             <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
                             <button class="btn-exit" onclick="exitGamePlayer('${slot.id}', ${i})" style="white-space:nowrap; flex-shrink:0; padding:4px 6px; font-size:11px;">퇴장</button>
                         </div>`;
                 } else {
                     playerCellsHtml += `
-                        <div class="player-cell" style="gap: 4px; padding-left: 7px; padding-right: 7px;">
+                        <div class="player-cell" style="min-width: 0; overflow: hidden; gap: 3px; padding-left: 6px; padding-right: 6px;">
                             <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
                             <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed; white-space:nowrap; flex-shrink:0; padding:4px 6px; font-size:11px;">퇴장</button>
                         </div>`;
@@ -717,7 +717,7 @@ function renderGameQueue() {
                     <span class="rank-badge">${rank}순위</span>
                     <span class="timer-badge ${timerClass}">${timerText}</span>
                 </div>
-                <div class="players-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">${playerCellsHtml}</div>
+                <div class="players-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;">${playerCellsHtml}</div>
                 <div class="slot-footer">
                     ${gameEnterBtnHtml}
                     ${gameMergeBtnHtml}
