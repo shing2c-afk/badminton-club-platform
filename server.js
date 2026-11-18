@@ -2646,7 +2646,7 @@ io.on('connection', (socket) => {
         }
         const targetClubId = data.clubId || socket.clubId || clientClubId || 'unjeong';
         const cleanName = String(data.memberName).replace(/\(일일\)/g, '').replace(/님$/, '').trim();
-        const safeTags = Array.isArray(data.tags) ? data.tags.slice(0, 3).map(t => String(t).slice(0, 30)) : [];
+        const safeTags = Array.isArray(data.tags) ? data.tags.slice(0, 2).map(t => String(t).slice(0, 30)) : [];
         const safeMemo = String(data.memo || '').trim().slice(0, 40);
         const nowIso = new Date().toISOString();
 

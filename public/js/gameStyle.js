@@ -90,9 +90,9 @@ window.openMyGameStyleModal = function() {
 
     const clubId = getStyleClubId();
     const existing = (window.clubGameStyles[clubId] && window.clubGameStyles[clubId][user.cleanName]) || { tags: [], memo: '' };
-    selectedStyleTags = Array.isArray(existing.tags) ? [...existing.tags] : [];
+    selectedStyleTags = Array.isArray(existing.tags) ? existing.tags.slice(0, 2) : [];
 
-    if (titleEl) titleEl.textContent = `${user.cleanName}님의 게임 성향`;
+    if (titleEl) titleEl.textContent = '나의 플레이 스타일 설정';
     memoInput.value = existing.memo || '';
 
     renderStyleTagChips();
@@ -123,8 +123,8 @@ window.toggleGameStyleTag = function(tag) {
     if (idx > -1) {
         selectedStyleTags.splice(idx, 1);
     } else {
-        if (selectedStyleTags.length >= 3) {
-            alert('게임 성향 태그는 최대 3개까지 선택할 수 있습니다.');
+        if (selectedStyleTags.length >= 2) {
+            alert('플레이 스타일 태그는 최대 2개까지 선택할 수 있습니다.');
             return;
         }
         selectedStyleTags.push(tag);
@@ -185,7 +185,7 @@ window.openPlayerStyleView = function(memberName) {
     const memoEl = document.getElementById('view-style-memo');
     if (!modal || !nameEl || !tagsEl || !memoEl) return;
 
-    nameEl.textContent = `${memberName}님의 게임 성향`;
+    nameEl.textContent = `${memberName}님의 플레이 스타일`;
     tagsEl.innerHTML = hasTags
         ? styleData.tags.map(t => `<span style="display:inline-block; padding:5px 10px; border-radius:16px; background:rgba(245,158,11,0.18); border:1px solid rgba(245,158,11,0.5); color:#fbbf24; font-size:12px; font-weight:700;">${t}</span>`).join('')
         : '';
