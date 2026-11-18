@@ -74,7 +74,7 @@ window.getPlayerStyleBadgeHtml = function(cleanMemberName) {
     const hasMemo = styleData.memo && styleData.memo.trim() !== '';
     if (!hasTags && !hasMemo) return '';
 
-    return `<span style="display:inline-flex; align-items:center; margin-left:3px; padding:0 4px; font-size:10px; background:rgba(245,158,11,0.16); border:1px solid rgba(245,158,11,0.45); color:#fbbf24; border-radius:8px; vertical-align:middle; line-height:1.2; flex-shrink:0;">💬</span>`;
+    return `<span style="display:inline-flex; align-items:center; flex-shrink:0; margin-left:7px; padding:1px 6px; font-size:10.5px; background:rgba(245,158,11,0.16); border:1px solid rgba(245,158,11,0.45); color:#fbbf24; border-radius:9px; line-height:1.2;">💬</span>`;
 };
 
 // 1. 내 게임 성향 설정 모달 열기 (상단 회원명 터치 시)
