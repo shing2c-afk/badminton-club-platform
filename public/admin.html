@@ -396,7 +396,11 @@ input:checked + .slider:before {
         <h1 id="adminHeaderTitle"> 클럽 관리자 모드</h1>
     </div>
 
-    <a href="/" class="btn-top-link">📱 사용자 화면으로 돌아가기 &rarr;</a>
+    <a href="/" id="backToUserLink" class="btn-top-link" onclick="
+        event.preventDefault();
+        const clubId = new URLSearchParams(window.location.search).get('club') || 'unjeong';
+        window.location.href = '/?club=' + encodeURIComponent(clubId);
+    ">📱 사용자 화면으로 돌아가기 &rarr;</a>
 
     <!-- 1. 제한시간 및 관리자 보안 설정 -->
     <div class="card setting-zone" id="card-setting">

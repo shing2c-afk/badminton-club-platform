@@ -78,6 +78,13 @@ db.serialize(() => {
         createdAt TEXT,
         club_id TEXT DEFAULT 'unjeong'
     )`);
+
+    // 🔍 [확인용] 기존 DB 테이블에 phone/username 단독 UNIQUE 제약이 남아 있는지 로그 출력
+    db.all(`PRAGMA index_list('regular_members')`, [], (err, indexes) => {
+        if (!err && indexes) {
+            console.log('📋 [regular_members 인덱스 목록]:', indexes);
+        }
+    });
 });
 
 // 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
@@ -673,39 +680,54 @@ app.post('/api/admin/approve-member', async (req, res) => {
     }
 });
 
-// 4. 정회원 탈퇴 처리 API (구장별 격리 및 대기열 정리 적용)
+// 4. 정회원 탈퇴 처리 API (구장별 격리, 전화번호 포맷 호환 및 대기열 정리 적용)
 app.post('/api/member/withdraw', async (req, res) => {
     try {
         const { phone, name, clubId: reqClubId, club } = req.body;
-        const clubId = reqClubId || club || 'unjeong'; // 💡 클럽 식별자 추출
+        const clubId = String(reqClubId || club || 'unjeong').trim();
 
-        if (!phone) {
+        const rawPhone = String(phone || '').trim();
+        const phoneDigits = rawPhone.replace(/[^0-9]/g, '');
+
+        if (!rawPhone && !phoneDigits) {
             return res.status(400).json({ success: false, message: '회원 정보를 확인할 수 없습니다.' });
         }
 
         // 1. regular_members 테이블에서 해당 클럽(club_id)의 회원만 특정하여 삭제
-        db.run(`DELETE FROM regular_members WHERE phone = ? AND club_id = ?`, [phone, clubId], function(err) {
+        const deleteMemberSql = `
+            DELETE FROM regular_members 
+            WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ?)
+              AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+        `;
+
+        db.run(deleteMemberSql, [phoneDigits, rawPhone, clubId, clubId], function(err) {
             if (err) {
                 console.error(`❌ 회원 탈퇴 처리 오류 (${clubId} regular_members):`, err.message);
                 return res.status(500).json({ success: false, message: '탈퇴 처리 중 서버 오류가 발생했습니다.' });
             }
 
             // 2. 해당 클럽의 pending_registrations 대기 내역만 삭제
-            db.run(`DELETE FROM pending_registrations WHERE phone = ? AND club_id = ?`, [phone, clubId], async (pendingErr) => {
+            const deletePendingSql = `
+                DELETE FROM pending_registrations 
+                WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ?)
+                  AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+            `;
+
+            db.run(deletePendingSql, [phoneDigits, rawPhone, clubId, clubId], async (pendingErr) => {
                 if (pendingErr) {
                     console.error(`❌ 대기 테이블 정리 오류 (${clubId}):`, pendingErr.message);
                 }
 
-                // 3. 💡 혹시 해당 구장의 코트나 대기열에 회원이 들어가 있다면 즉시 정리
+                // 3. 해당 구장의 코트나 대기열에 회원이 들어가 있다면 즉시 정리
                 if (typeof cleanupUser === 'function') {
                     try {
-                        await cleanupUser(phone, clubId);
+                        await cleanupUser(rawPhone, clubId);
                     } catch (cleanErr) {
                         console.error('탈퇴 유저 대기열 정리 오류:', cleanErr);
                     }
                 }
 
-                console.log(`🗑️ [${clubId} 회원 탈퇴 및 정리 완료]: 전화번호 ${phone} (${name || '이름미확인'})`);
+                console.log(`🗑️ [${clubId} 회원 탈퇴 및 정리 완료]: 전화번호 ${rawPhone} (${name || '이름미확인'})`);
                 res.json({ success: true, message: '정상적으로 탈퇴 처리되었습니다.' });
             });
         });
@@ -1099,11 +1121,17 @@ app.get('/super-admin', (req, res) => {
 // [수정] 클럽별 분리된 공지사항 관련 API 및 라우트
 // ==========================
 
-// 1. 공지사항 목록 조회 API (구장별 필터링)
+// 1. 공지사항 목록 조회 API (구장별 필터링 및 기존 데이터 호환)
 app.get('/api/notices', (req, res) => {
-    const clubId = req.query.clubId || req.query.club || 'unjeong';
+    const clubId = String(req.query.clubId || req.query.club || 'unjeong').trim();
 
-    db.all(`SELECT * FROM notices WHERE clubId = ? ORDER BY id DESC`, [clubId], (err, rows) => {
+    const sql = `
+        SELECT * FROM notices
+        WHERE clubId = ? OR (? = 'unjeong' AND (clubId IS NULL OR clubId = ''))
+        ORDER BY id DESC
+    `;
+
+    db.all(sql, [clubId, clubId], (err, rows) => {
         if (err) {
             console.error('❌ 공지사항 조회 실패:', err.message);
             return res.status(500).json({ success: false, message: '공지사항을 불러오지 못했습니다.' });
@@ -1115,7 +1143,7 @@ app.get('/api/notices', (req, res) => {
 // 2. 관리자용 공지사항 등록 API (클럽별 저장 및 해당 구장에만 실시간 전송)
 app.post('/api/admin/notice', (req, res) => {
     const { title, content, author, clubId: reqClubId, club } = req.body;
-    const clubId = reqClubId || club || 'unjeong';
+    const clubId = String(reqClubId || club || 'unjeong').trim();
 
     if (!title || !content) {
         return res.status(400).json({ success: false, message: '제목과 내용을 모두 입력해 주세요.' });
@@ -1147,11 +1175,10 @@ app.put('/api/notices/:id', (req, res) => {
     const { title, content, clubId: reqClubId, club } = req.body;
     const clubId = reqClubId || club || req.query.clubId || req.query.club;
 
-    // 🏢 [멀티테넌트 수정] 구장 ID가 함께 전달된 경우 해당 구장 공지인지 동시 검증
     const sql = clubId
-        ? `UPDATE notices SET title = ?, content = ? WHERE id = ? AND clubId = ?`
+        ? `UPDATE notices SET title = ?, content = ? WHERE id = ? AND (clubId = ? OR (? = 'unjeong' AND (clubId IS NULL OR clubId = '')))`
         : `UPDATE notices SET title = ?, content = ? WHERE id = ?`;
-    const params = clubId ? [title, content, noticeId, clubId] : [title, content, noticeId];
+    const params = clubId ? [title, content, noticeId, clubId, clubId] : [title, content, noticeId];
 
     db.run(sql, params, function(err) {
         if (err) {
@@ -1160,6 +1187,9 @@ app.put('/api/notices/:id', (req, res) => {
         }
         if (this.changes === 0) {
             return res.status(404).json({ success: false, message: '해당 공지사항을 찾을 수 없습니다.' });
+        }
+        if (clubId) {
+            io.to(`club_${clubId}`).emit('noticeUpdated', { id: noticeId, title, content, clubId });
         }
         res.json({ success: true, message: '공지사항이 수정되었습니다.' });
     });
@@ -1170,11 +1200,10 @@ app.delete('/api/notices/:id', (req, res) => {
     const noticeId = req.params.id;
     const clubId = (req.body && (req.body.clubId || req.body.club)) || req.query.clubId || req.query.club;
 
-    // 🏢 [멀티테넌트 수정] 구장 ID가 함께 전달된 경우 해당 구장 공지인지 동시 검증
     const sql = clubId
-        ? `DELETE FROM notices WHERE id = ? AND clubId = ?`
+        ? `DELETE FROM notices WHERE id = ? AND (clubId = ? OR (? = 'unjeong' AND (clubId IS NULL OR clubId = '')))`
         : `DELETE FROM notices WHERE id = ?`;
-    const params = clubId ? [noticeId, clubId] : [noticeId];
+    const params = clubId ? [noticeId, clubId, clubId] : [noticeId];
 
     db.run(sql, params, function(err) {
         if (err) {
@@ -1193,12 +1222,18 @@ app.get('/notice', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'notice.html'));
 });
 
-// 1. 회원 목록 조회 API (구장별 필터링 적용)
+// 1. 회원 목록 조회 API (구장별 필터링 및 기존 데이터 호환 적용)
 app.get('/api/members', (req, res) => {
-    const clubId = req.query.clubId || req.query.club || 'unjeong';
+    const clubId = String(req.query.clubId || req.query.club || 'unjeong').trim();
 
-    // 💡 club_id 컬럼으로 해당 클럽 회원만 필터링하여 조회
-    db.all(`SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address, club_id FROM regular_members WHERE club_id = ?`, [clubId], (err, rows) => {
+    const sql = `
+        SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address, club_id 
+        FROM regular_members 
+        WHERE club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))
+        ORDER BY name ASC
+    `;
+
+    db.all(sql, [clubId, clubId], (err, rows) => {
         if (err) {
             console.error('❌ 회원 목록 조회 실패:', err.message);
             return res.status(500).json({ success: false, error: '데이터베이스 조회 실패', message: '회원 목록을 불러오지 못했습니다.' });
@@ -1228,7 +1263,7 @@ function calculateAgeGroup(birthDate) {
     return `${decade}대`; // 📌 반드시 뒤에 '대'가 붙어 있어야 합니다!
 }
 
-// 2. 로그인 처리 API (하이픈/공백 완벽 호환 및 멀티 테넌트 구장 우선 매칭)
+// 2. 로그인 처리 API (구장별 엄격 격리 및 하이픈/공백/일괄등록 계정 완벽 호환)
 app.post('/api/login', (req, res) => {
     const { username: rawUsername, password, clubId: reqClubId, club } = req.body;
     const targetClubId = String(reqClubId || club || 'unjeong').trim();
@@ -1238,44 +1273,43 @@ app.post('/api/login', (req, res) => {
         return res.json({ success: false, message: '아이디(전화번호)를 입력해주세요.' });
     }
 
-    // 💡 숫자만 추출 및 하이픈 포맷 생성 (어떻게 입력하든 모두 매칭되도록 처리)
     const digits = cleanInput.replace(/[^0-9]/g, '');
     const formattedPhone = digits.length === 11
         ? `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`
-        : cleanInput;
+        : (digits.length === 10
+            ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 10)}`
+            : cleanInput);
 
-    // 💡 1) 입력값 그대로, 2) 하이픈 제거 비교, 3) 일괄등록 아이디(user_/reg_)까지 모두 호환 조회
-    // 💡 타 클럽 중복 가입 회원의 경우 현재 접속한 구장(targetClubId) 데이터를 최우선으로 정렬하여 선택
     const sql = `
         SELECT * FROM regular_members 
-        WHERE username = ? 
-           OR id = ? 
-           OR phone = ? 
-           OR phone = ?
-           OR (? != '' AND (
-               REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? 
-               OR REPLACE(REPLACE(username, '-', ''), ' ', '') = ?
-               OR username = ?
-               OR id = ?
-           ))
-        ORDER BY CASE 
-            WHEN club_id = ? THEN 0 
-            WHEN (? = 'unjeong' AND (club_id IS NULL OR club_id = '')) THEN 1 
-            ELSE 2 
-        END ASC
+        WHERE (
+            username = ? 
+            OR id = ? 
+            OR phone = ? 
+            OR phone = ?
+            OR (? != '' AND (
+                REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? 
+                OR REPLACE(REPLACE(username, '-', ''), ' ', '') = ?
+                OR username = ?
+                OR id = ?
+                OR id = ?
+            ))
+        )
+        AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
         LIMIT 1
     `;
 
     const params = [
-        cleanInput, 
-        cleanInput, 
-        cleanInput, 
+        cleanInput,
+        cleanInput,
+        cleanInput,
         formattedPhone,
         digits,
         digits,
         digits,
         `user_${digits}`,
         `reg_${digits}`,
+        `reg_${targetClubId}_${digits}`,
         targetClubId,
         targetClubId
     ];
@@ -1287,68 +1321,20 @@ app.post('/api/login', (req, res) => {
         }
 
         if (!user) {
-            return res.json({ success: false, message: '존재하지 않는 회원 아이디입니다.' });
+            return res.json({ success: false, message: '해당 클럽에 등록되지 않은 회원입니다. 가입 신청 후 승인을 받거나 일일회원으로 입장해 주세요.' });
         }
 
         if (String(user.password).trim() === String(password || '').trim()) {
             const { password: _, ...userInfo } = user;
-            // 💡 게임방 개설/참여 및 타이머 카운트 오류 방지를 위해 이름과 전화번호 앞뒤 공백 완벽 제거 보장
             if (userInfo.name) userInfo.name = String(userInfo.name).trim();
             if (userInfo.phone) userInfo.phone = String(userInfo.phone).trim();
+            if (!userInfo.club_id) userInfo.club_id = targetClubId;
             res.json({ success: true, user: userInfo });
         } else {
             res.json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
         }
     });
 });
-
-/* 💡 [비활성화] 구장별 분리(멀티 테넌트)가 적용된 상단 통합 API(['/api/register', '/api/register-request'])로 일원화됨
-// 📌 [추가] 정회원 가입 신청 API
-app.post('/api/register-request', (req, res) => {
-    const { name, phone, gender, birthDate, grade } = req.body;
-
-    if (!name || !phone || !birthDate) {
-        return res.status(400).json({ message: '필수 입력 항목(이름, 전화번호, 생년월일)이 누락되었습니다.' });
-    }
-
-    // 중복 전화번호 체크 (정회원 테이블 또는 대기 테이블에 이미 존재하는지 확인)
-    db.get(`SELECT phone FROM regular_members WHERE phone = ? UNION SELECT phone FROM pending_members WHERE phone = ?`, [phone, phone], (err, row) => {
-        if (err) {
-            console.error('DB 조회 에러:', err.message);
-            return res.status(500).json({ message: '서버 내부 오류가 발생했습니다.' });
-        }
-
-        if (row) {
-            return res.status(400).json({ message: '이미 가입되었거나 신청된 전화번호입니다.' });
-        }
-
-        // 고유 ID 생성 (예: pending_시간밀리초) 및 연령대 계산
-        const pendingId = 'pending_' + Date.now();
-        const birthYear = parseInt(String(birthDate).substring(0, 4)) || 1990;
-        const currentYear = new Date().getFullYear(); // 2026 등 현재 연도
-        const age = currentYear - birthYear;
-        const ageGroup = `${Math.floor(age / 10) * 10}대`;
-        
-        const address = '경기도 파주시'; // 기본 주소 설정 (필요시 폼에서 받도록 확장 가능)
-        const requestedAt = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-        const query = `
-            INSERT INTO pending_members (id, name, phone, gender, birthDate, ageGroup, grade, address, requestedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-
-        db.run(query, [pendingId, name, phone, gender, birthDate, ageGroup, grade, address, requestedAt], function(err) {
-            if (err) {
-                console.error('승인 대기 데이터 저장 실패:', err.message);
-                return res.status(500).json({ message: '가입 신청 저장에 실패했습니다.' });
-            }
-
-            console.log(`📝 [가입신청] ${name} (${phone}) 님이 가입을 신청했습니다.`);
-            res.status(200).json({ success: true, message: '가입 신청이 성공적으로 접수되었습니다.' });
-        });
-    });
-});
-*/
 
 // 회원 정보 수정 API (파라미터 누락 버그 수정 및 전화번호 정규화/멀티테넌트 적용)
 app.post('/api/member/update', (req, res) => {
@@ -5382,101 +5368,139 @@ function broadcastOnlineCount(targetClubId) {
     io.emit('updateSuperAdminCounts', superAdminSummary);
 }
 
-// 1. 전체 회원 명부 CSV 다운로드 라우트 (프론트엔드 경로 /api/admin/download-excel와 일치시킴)
+// 1. 전체 회원 명부 CSV 다운로드 라우트 (구장별 격리 적용)
 app.get('/api/admin/download-excel', (req, res) => {
-    db.all("SELECT * FROM regular_members", [], (err, rows) => {
+    const clubId = String(req.query.club || req.query.clubId || 'unjeong').trim();
+
+    const sql = `
+        SELECT * FROM regular_members
+        WHERE club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))
+        ORDER BY name ASC
+    `;
+
+    db.all(sql, [clubId, clubId], (err, rows) => {
         if (err) {
             console.error('회원 조회 에러:', err);
             return res.status(500).send('데이터 조회 실패');
         }
 
         // CSV 파일 형식 생성 (UTF-8 BOM 추가하여 엑셀에서 한글 깨짐 방지)
-        let csvContent = '\uFEFF이름,연락처,성별,연령대,급수,주소\n';
+        let csvContent = '\uFEFF이름,연락처,성별,생년월일,급수,주소\n';
         rows.forEach(m => {
-            csvContent += `"${m.name || ''}","${m.phone || ''}","${m.gender || ''}","${m.birthDate || ''}","${m.grade || ''}","${m.address || ''}"\n`;
+            csvContent += `"${m.name || ''}","${m.phone || ''}","${m.gender || ''}","${m.birthDate || m.ageGroup || ''}","${m.grade || ''}","${m.address || ''}"\n`;
         });
 
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-        res.setHeader('Content-Disposition', 'attachment; filename=member_list.csv');
+        res.setHeader('Content-Disposition', `attachment; filename=member_list_${encodeURIComponent(clubId)}.csv`);
         res.status(200).send(csvContent);
     });
 });
 
-// 2. 회원 명부 일괄 업로드(엑셀/CSV) 라우트 (구장별 격리 적용)
+// 2. 회원 명부 일괄 업로드(엑셀/CSV) 라우트 (구장별 격리 및 타 클럽 회원 보호)
 app.post('/api/admin/upload-excel', upload.single('excelFile'), async (req, res) => {
     if (!req.file) {
         return res.json({ success: false, message: '파일이 업로드되지 않았습니다.' });
     }
 
-    // 💡 요청 바디 또는 쿼리에서 클럽 식별자 추출 (기본값 unjeong)
-    const clubId = req.body.clubId || req.query.clubId || req.body.club || req.query.club || 'unjeong';
-
+    const clubId = String(req.body.clubId || req.query.clubId || req.body.club || req.query.club || 'unjeong').trim();
     const filePath = req.file.path;
     const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
     let lineCount = 0;
-    let successCount = 0;
+    const parsedRows = [];
 
-    db.serialize(() => {
-        db.run("BEGIN TRANSACTION");
-        
-        // 💡 club_id 컬럼 추가 및 충돌(Conflict) 시 소속 구장도 함께 갱신
-        const stmt = db.prepare(`
-            INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, grade, phone, address, joinedAt, club_id) 
-            VALUES (?, 'regular', ?, '1234', ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
-            ON CONFLICT(phone) DO UPDATE SET 
-                name = excluded.name,
-                gender = excluded.gender,
-                birthDate = excluded.birthDate,
-                grade = excluded.grade,
-                address = excluded.address,
-                club_id = excluded.club_id
-        `);
+    rl.on('line', (line) => {
+        lineCount++;
+        if (lineCount === 1) return; // 첫 줄(제목 행) 건너뜀
 
-        rl.on('line', (line) => {
-            lineCount++;
-            if (lineCount === 1) return; // 첫 줄(제목 행) 건너뜀
+        const cols = line.split(',').map(val => val.replace(/^["']|["']$/g, '').trim());
+        if (cols.length >= 2 && cols[0] && cols[1]) {
+            const [name, rawPhone, gender = '', birthDate = '', grade = '초심', address = ''] = cols;
 
-            const cols = line.split(',').map(val => val.replace(/^["']|["']$/g, '').trim());
-            if (cols.length >= 2 && cols[0] && cols[1]) {
-                const [name, phone, gender = '', birthDate = '', grade = '초심', address = ''] = cols;
-                
-                // 전화번호 숫자만 남긴 후, 앞의 0이 잘렸다면 복구
-                let cleanPhone = phone.replace(/[^0-9]/g, '');
-                if (cleanPhone.length === 10 && cleanPhone.startsWith('10')) {
-                    cleanPhone = '0' + cleanPhone;
-                }
-
-                // 고유 ID와 로그인용 username 생성
-                const uniqueId = 'reg_' + cleanPhone;
-                const username = 'user_' + cleanPhone;
-
-                // 💡 9번째 파라미터로 clubId 전달
-                stmt.run(uniqueId, username, name, gender, birthDate, grade, cleanPhone, address, clubId, (err) => {
-                    if (!err) {
-                        successCount++;
-                    } else {
-                        console.error('회원 일괄 등록 중 개별 행 에러:', err);
-                    }
-                });
+            let cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+            if (cleanPhone.length === 10 && cleanPhone.startsWith('10')) {
+                cleanPhone = '0' + cleanPhone;
             }
-        });
+            if (!cleanPhone) return;
 
-        rl.on('close', () => {
-            stmt.finalize();
-            db.run("COMMIT", (err) => {
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                }
+            let formattedPhone = cleanPhone;
+            if (cleanPhone.length === 11) {
+                formattedPhone = `${cleanPhone.slice(0, 3)}-${cleanPhone.slice(3, 7)}-${cleanPhone.slice(7, 11)}`;
+            } else if (cleanPhone.length === 10) {
+                formattedPhone = `${cleanPhone.slice(0, 3)}-${cleanPhone.slice(3, 6)}-${cleanPhone.slice(6, 10)}`;
+            }
 
-                if (err) {
-                    return res.json({ success: false, message: 'DB 저장 중 오류가 발생했습니다.' });
-                }
-                console.log(`📁 [회원 명부 일괄 등록 완료 - ${clubId}] 총 ${successCount}명 반영`);
-                res.json({ success: true, message: `총 ${successCount}명의 회원이 [${clubId}] 구장에 등록(갱신)되었습니다.` });
+            const ageGroup = typeof calculateAgeGroup === 'function' ? calculateAgeGroup(birthDate) : '';
+            const uniqueId = `reg_${clubId}_${cleanPhone}`;
+
+            parsedRows.push({
+                uniqueId,
+                name,
+                cleanPhone,
+                formattedPhone,
+                gender,
+                birthDate,
+                ageGroup,
+                grade: grade || '초심',
+                address
+            });
+        }
+    });
+
+    rl.on('close', async () => {
+        const runDb = (sql, params = []) => new Promise((resolve, reject) => {
+            db.run(sql, params, function(err) {
+                if (err) reject(err);
+                else resolve(this);
             });
         });
+
+        let successCount = 0;
+        try {
+            await runDb('BEGIN TRANSACTION');
+
+            for (const row of parsedRows) {
+                // 💡 현재 구장(clubId)에 이미 등록된 회원만 갱신 (타 구장 동일 번호 회원은 건드리지 않음)
+                const updateSql = `
+                    UPDATE regular_members
+                    SET name = ?, gender = ?, birthDate = ?, ageGroup = ?, grade = ?, phone = ?, address = ?, club_id = ?
+                    WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ?)
+                      AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+                `;
+                const upd = await runDb(updateSql, [
+                    row.name, row.gender, row.birthDate, row.ageGroup, row.grade,
+                    row.formattedPhone, row.address, clubId,
+                    row.cleanPhone, row.formattedPhone, clubId, clubId
+                ]);
+
+                if (upd.changes > 0) {
+                    successCount++;
+                } else {
+                    const insertSql = `
+                        INSERT INTO regular_members (id, type, username, password, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt, club_id)
+                        VALUES (?, 'regular', ?, '1234', ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)
+                    `;
+                    await runDb(insertSql, [
+                        row.uniqueId, row.formattedPhone, row.name, row.gender,
+                        row.birthDate, row.ageGroup, row.grade, row.formattedPhone,
+                        row.address, clubId
+                    ]);
+                    successCount++;
+                }
+            }
+
+            await runDb('COMMIT');
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+            console.log(`📁 [회원 명부 일괄 등록 완료 - ${clubId}] 총 ${successCount}명 반영`);
+            res.json({ success: true, message: `총 ${successCount}명의 회원이 [${clubId}] 구장에 등록(갱신)되었습니다.` });
+        } catch (err) {
+            await runDb('ROLLBACK').catch(() => {});
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            console.error('회원 명부 일괄 등록 DB 오류:', err);
+            res.json({ success: false, message: 'DB 저장 중 오류가 발생했습니다.' });
+        }
     });
 });
 
