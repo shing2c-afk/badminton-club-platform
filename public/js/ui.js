@@ -282,9 +282,17 @@ async function accessAdmin() {
         return;
     }
 
-    activeSocket.emit('verifyAdminPassword', inputPw.trim(), (response) => {
-        if (response.success) {
-            window.location.href = '/admin.html';
+    // 🏢 [멀티테넌트 수정] 현재 접속 중인 구장 ID 추출
+    const urlParams = new URLSearchParams(window.location.search);
+    const clubId = urlParams.get('club')
+        || urlParams.get('clubId')
+        || window.currentClubId
+        || localStorage.getItem('selectedClubId')
+        || 'unjeong';
+
+    activeSocket.emit('verifyAdminPassword', { password: inputPw.trim(), clubId }, (response) => {
+        if (response && response.success) {
+            window.location.href = `/admin.html?club=${encodeURIComponent(clubId)}`;
         } else {
             alert('❌ 비밀번호가 일치하지 않습니다.');
         }

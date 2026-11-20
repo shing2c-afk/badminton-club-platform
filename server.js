@@ -3119,13 +3119,29 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('verifyAdminPassword', (inputPw, callback) => {
-        if (typeof callback === 'function') {
-            if (inputPw === config.ADMIN_PASSWORD) {
-                callback({ success: true });
-            } else {
-                callback({ success: false });
-            }
+    socket.on('verifyAdminPassword', (payload, callback) => {
+        if (typeof callback !== 'function') return;
+
+        // 🏢 [멀티테넌트 수정] 문자열 또는 { password, clubId } 객체 모두 호환 처리
+        const inputPw = (payload && typeof payload === 'object')
+            ? String(payload.password || '')
+            : String(payload || '');
+
+        const targetClubId = (payload && typeof payload === 'object' && payload.clubId)
+            || socket.clubId
+            || (typeof clientClubId !== 'undefined' ? clientClubId : null)
+            || 'unjeong';
+
+        // 🏢 [멀티테넌트 수정] 해당 구장(targetClubId) 전용 config의 ADMIN_PASSWORD 조회
+        const targetClub = (typeof clubs !== 'undefined' && clubs) ? clubs[targetClubId] : null;
+        const clubPassword = (targetClub && targetClub.config && targetClub.config.ADMIN_PASSWORD)
+            || (typeof config !== 'undefined' && config.ADMIN_PASSWORD)
+            || '1234';
+
+        if (inputPw === String(clubPassword)) {
+            callback({ success: true, clubId: targetClubId });
+        } else {
+            callback({ success: false });
         }
     });
 
