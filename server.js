@@ -2763,18 +2763,15 @@ io.on('connection', (socket) => {
             }
         }
 
-        // 🚪 동일 구장 내 중복 로그인 감지 (기존 기기 소켓에만 1회 퇴출 신호 전송)
-        if (!isAutoRestore && activeUserSockets.has(clubUserKey)) {
+        // 🚪 동일 구장 내 중복 로그인 감지 (기존 탭/기기 소켓이 실제로 살아 연결된 경우에만 1회 퇴출 신호 전송)
+        if (activeUserSockets.has(clubUserKey)) {
             const oldSocketId = activeUserSockets.get(clubUserKey);
             if (oldSocketId && oldSocketId !== socket.id) {
                 const oldSocket = io.sockets.sockets.get(oldSocketId);
-                const sameBrowserReconnect = oldSocket
-                    && oldSocket.handshake.headers['user-agent'] === socket.handshake.headers['user-agent']
-                    && oldSocket.handshake.address === socket.handshake.address
-                    && (Date.now() - (oldSocket.connectedAt || 0) < 3000);
 
-                if (!sameBrowserReconnect && (!oldSocket || !oldSocket.isKicked)) {
-                    if (oldSocket) oldSocket.isKicked = true;
+                // 🏢 [멀티테넌트 수정] 기존 소켓이 아직 연결(connected) 상태라면 자동 로그인 복구(isAutoRestore)라도 이전 창 종료
+                if (oldSocket && oldSocket.connected && !oldSocket.isKicked) {
+                    oldSocket.isKicked = true;
                     console.log(`🚪 [중복 로그인 감지] [${incomingClubId}] ${cleanUsername} 기존 세션(${oldSocketId}) 종료 전송`);
                     io.to(oldSocketId).emit('forceLogout', {
                         username: cleanUsername,
