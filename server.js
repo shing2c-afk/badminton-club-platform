@@ -40,6 +40,46 @@ const dbPath = path.join(DATA_DIR, 'badminton.db');
 console.log(`📂 [스토리지 경로] DATA_DIR: ${DATA_DIR}`);
 console.log(`📦 [DB 파일 경로] dbPath: ${dbPath}`);
 
+// 🗄️ [복구] SQLite 데이터베이스 연결 및 기본 테이블 보장
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('❌ [DB 연결 실패]:', err.message);
+    } else {
+        console.log('✅ [DB 연결 성공] badminton.db 연결 완료');
+    }
+});
+
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS regular_members (
+        id TEXT PRIMARY KEY,
+        type TEXT,
+        username TEXT,
+        password TEXT,
+        name TEXT,
+        gender TEXT,
+        birthDate TEXT,
+        ageGroup TEXT,
+        grade TEXT,
+        phone TEXT,
+        address TEXT,
+        joinedAt TEXT,
+        club_id TEXT DEFAULT 'unjeong'
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS pending_registrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        phone TEXT,
+        gender TEXT,
+        birthDate TEXT,
+        grade TEXT,
+        address TEXT,
+        status TEXT DEFAULT 'pending',
+        createdAt TEXT,
+        club_id TEXT DEFAULT 'unjeong'
+    )`);
+});
+
 // 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
 const activeUserSockets = new Map();
 
