@@ -164,14 +164,14 @@
         // 💡 3. 상단 헤더에 현재 관리 중인 클럽 동적 표시 (멀티테넌트 완벽 대응)
         const headerTitle = document.querySelector('h2 span');
         if (headerTitle) {
-            const defaultNames = { unjeong: '운정클럽', daewon: '대원클럽', paju: '파주클럽' };
+            const defaultNames = { unjeong: '운정배드민턴클럽', daewon: '대원배드민턴클럽' };
             const urlClubName = urlParams.get('clubName');
             if (urlClubName) {
                 localStorage.setItem(`admin_club_name_${currentClubId}`, urlClubName);
             }
+            // 🏢 [멀티테넌트 수정] 구장 구분 없는 공용 selectedClubName 제거 -> 타 구장명 오표시 및 /api/clubs 조회 누락 차단
             const savedClubName = urlClubName || 
                                   localStorage.getItem(`admin_club_name_${currentClubId}`) || 
-                                  localStorage.getItem('selectedClubName') || 
                                   defaultNames[currentClubId] || 
                                   currentClubId;
 

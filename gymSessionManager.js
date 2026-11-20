@@ -1,6 +1,6 @@
 /**
- * gymSessionManager.js
- * 멀티 테넌트 기반 체육관 이탈/유예/만료/복귀 라이프사이클 전담 매니저 (5단계 마스터 로직 완결판)
+- gymSessionManager.js
+- 멀티 테넌트 기반 체육관 이탈/유예/만료/복귀 라이프사이클 전담 매니저 (5단계 마스터 로직 완결판)
  */
 
 class GymSessionManager {
@@ -41,12 +41,15 @@ class GymSessionManager {
     }
 
     /**
-     * ⚙️ 관리자 모드에서 설정한 유예시간 / 만료시간 실시간 로드
+- ⚙️ 관리자 모드에서 설정한 유예시간 / 만료시간 실시간 로드
      */
     _getClubConfig(clubId) {
-        const club = (typeof this.getClub === 'function') 
-            ? this.getClub(clubId) 
-            : (this.clubs ? this.clubs[clubId] : null);
+        const targetClubId = clubId || 'unjeong';
+
+        // 🏢 [멀티테넌트 수정] this.clubs에서 직접 먼저 조회하여 삭제된 클럽이 getClub()으로 자동 재생성되는 부수 효과 차단
+        const club = (this.clubs && this.clubs[targetClubId])
+            ? this.clubs[targetClubId]
+            : (typeof this.getClub === 'function' ? this.getClub(targetClubId) : null);
         
         const config = (club && club.config) ? club.config : {};
         
@@ -68,7 +71,7 @@ class GymSessionManager {
     }
 
     /**
-     * 특정 유저의 현재 클럽 내 모든 활성 소켓 상태 일괄 업데이트
+- 특정 유저의 현재 클럽 내 모든 활성 소켓 상태 일괄 업데이트
      */
     _updateUserSocketsState(clubId, cleanUsername, stateUpdater) {
         if (!this.io || !this.io.sockets || !this.io.sockets.sockets) return;
@@ -87,13 +90,17 @@ class GymSessionManager {
     }
 
     /**
-     * 🔴 [2단계 마스터 로직] Wi-Fi 불일치(단절) 및 수면 모드 감지 시 타이머 제어
-     * @param {boolean} isSleepMode - true이면 구장 내 단순 수면 모드(1단계 대기방 삭제 생략), false이면 실제 [Wi-Fi 불일치]
+- 🔴 [2단계 마스터 로직] Wi-Fi 불일치(단절) 및 수면 모드 감지 시 타이머 제어
+- @param {boolean} isSleepMode - true이면 구장 내 단순 수면 모드(1단계 대기방 삭제 생략), false이면 실제 [Wi-Fi 불일치]
      */
     handleDisconnect(socket, rawUsername, clubId, isSleepMode = false) {
         const cleanUsername = this._normalizeName(rawUsername || (socket && (socket.finalName || socket.username)));
         if (!cleanUsername || cleanUsername === '0100') return;
 
+        // 🏢 [멀티테넌트 수정] 구장 ID 누락 호출 감지용 경고 로그 추가
+        if (!clubId && !(socket && socket.clubId)) {
+            console.warn(`⚠️ [GymSessionManager] clubId 없이 handleDisconnect(${cleanUsername}) 호출됨`);
+        }
         const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
         const { graceMinutes, expireMinutes, useWifiRestriction } = this._getClubConfig(targetClubId);
@@ -256,8 +263,9 @@ class GymSessionManager {
                     message: expireMsg
                 };
 
+                // 🏢 [멀티테넌트 수정] 구장 방 및 구장 전용 개인 채널로만 만료 신호 전송 (타 구장 패킷 유출 차단)
                 this.io.to(`club_${targetClubId}`).emit('forceSessionExpire', payload);
-                this.io.to(`user_${cleanPhone}`).emit('forceSessionExpire', payload);
+                this.io.to(`user_${targetClubId}_${cleanPhone}`).emit('forceSessionExpire', payload);
 
                 this._updateUserSocketsState(targetClubId, cleanUsername, (s) => {
                     notifiedActiveSocket = true;
@@ -288,12 +296,16 @@ class GymSessionManager {
     }
 
     /**
-     * 🟢 [1단계 & 3단계 마스터 로직] 구장 Wi-Fi 접속/복귀 시 모든 타이머 즉시 초기화 및 상태 복원
+- 🟢 [1단계 & 3단계 마스터 로직] 구장 Wi-Fi 접속/복귀 시 모든 타이머 즉시 초기화 및 상태 복원
      */
     handleConnect(socket, rawUsername, clubId) {
         const cleanUsername = this._normalizeName(rawUsername || (socket && (socket.finalName || socket.username)));
         if (!cleanUsername || cleanUsername === '0100') return;
 
+        // 🏢 [멀티테넌트 수정] 구장 ID 누락 호출 감지용 경고 로그 추가
+        if (!clubId && !(socket && socket.clubId)) {
+            console.warn(`⚠️ [GymSessionManager] clubId 없이 handleConnect(${cleanUsername}) 호출됨`);
+        }
         const targetClubId = clubId || (socket && socket.clubId) || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
 
@@ -348,11 +360,14 @@ class GymSessionManager {
     }
 
     /**
-     * 🚪 명시적 로그아웃 시 잔존 타이머 및 카운트 즉시 완전 제거
+- 🚪 명시적 로그아웃 시 잔존 타이머 및 카운트 즉시 완전 제거
      */
     clearUserImmediately(rawUsername, clubId) {
         const cleanUsername = this._normalizeName(rawUsername);
         if (!cleanUsername) return;
+        if (!clubId) {
+            console.warn(`⚠️ [GymSessionManager] clubId 없이 clearUserImmediately(${cleanUsername}) 호출됨`);
+        }
         const targetClubId = clubId || 'unjeong';
         const userKey = this._getKey(targetClubId, cleanUsername);
 
@@ -377,13 +392,12 @@ class GymSessionManager {
         const normName = this._normalizeName(cleanUsername);
         const cleanPhone = String(cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
         
+        // 🏢 [멀티테넌트 수정] 구장 ID가 결합된 복합 키만 초기화 (구장 미구분 단독 키 제거)
         const keysToClear = [
             this._getKey(targetClubId, normName),
             this._getKey(targetClubId, cleanPhone),
             `${targetClubId}_${normName}`,
-            `${targetClubId}_${cleanPhone}`,
-            normName,
-            cleanPhone
+            `${targetClubId}_${cleanPhone}`
         ];
 
         keysToClear.forEach(key => {
@@ -403,7 +417,7 @@ class GymSessionManager {
     }
 
     /**
-     * 📊 [전광판 카운트 집계용] 현재 1단계 유예 중(운동중+접속자 유지)인 유저와 2단계 세션 대기 중(접속자만 유지)인 유저 반환
+- 📊 [전광판 카운트 집계용] 현재 1단계 유예 중(운동중+접속자 유지)인 유저와 2단계 세션 대기 중(접속자만 유지)인 유저 반환
      */
     getPendingUsers(clubId) {
         const targetClubId = clubId || 'unjeong';

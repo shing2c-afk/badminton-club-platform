@@ -1,8 +1,11 @@
 // 🔑 현재 접속한 구장별 스토리지 키 생성 헬퍼
+// 🏢 [멀티테넌트 수정] 주소창 URL(?club=)을 무조건 1순위로 확인하여 탭 간 키 혼선 차단
 function getClubStorageKey(baseKey) {
-  const clubId = (typeof currentClubId !== 'undefined' && currentClubId) 
-                 || new URLSearchParams(window.location.search).get('club') 
-                 || 'default';
+  const urlClub = new URLSearchParams(window.location.search).get('club');
+  const clubId = urlClub
+                 || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+                 || localStorage.getItem('preferredClubId')
+                 || 'unjeong';
   return `${baseKey}_${clubId}`;
 }
 
@@ -57,14 +60,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const container = document.getElementById('clubListContainer');
     if (!container) return;
 
-    const currentClubId = localStorage.getItem('preferredClubId');
+    // 🏢 [멀티테넌트 수정] 현재 실제 접속 중인 구장을 기준으로 '선택됨' 표시
+    const activeClubId = new URLSearchParams(window.location.search).get('club')
+                         || window.currentClubId
+                         || localStorage.getItem('preferredClubId');
     if (!clubs || clubs.length === 0) {
       container.innerHTML = '<div class="club-loading">운영 중인 클럽이 없습니다.</div>';
       return;
     }
 
     container.innerHTML = clubs.map(club => {
-      const isCurrent = club.id === currentClubId;
+      const isCurrent = club.id === activeClubId;
       return `
         <div class="club-item-card ${isCurrent ? 'active' : ''}" onclick="selectClub('${club.id}')">
           <div class="club-item-info">
@@ -100,18 +106,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // 🏢 [멀티 테넌트] 클럽 변경 (서버에 정식 로그아웃 전송 후 전환)
   // =================================================================
   window.selectClub = async function(clubId) {
-    const currentClubId = localStorage.getItem('preferredClubId');
-    if (currentClubId === clubId) {
+    // 🏢 [멀티테넌트 수정] 전역 currentClubId 변수 충돌 방지를 위해 실제 URL 기준 구장 추출
+    const currentClub = new URLSearchParams(window.location.search).get('club')
+                        || window.currentClubId
+                        || localStorage.getItem('preferredClubId')
+                        || 'unjeong';
+
+    if (currentClub === clubId) {
       closeClubModal();
       return;
     }
 
     // 💡 1. 현재 로그인 정보가 있다면 서버에 정식 로그아웃 요청 (대기열/코트 슬롯 즉시 파기)
-    const currentClub = (typeof currentClubId !== 'undefined' && currentClubId) 
-                        || new URLSearchParams(window.location.search).get('club') 
-                        || 'default';
-
-    // 🔑 [수정] 현재 구장 전용 키로 조회
     const rawUser = localStorage.getItem(getClubStorageKey("currentUser"));
     if (rawUser) {
       try {
@@ -124,7 +130,6 @@ document.addEventListener("DOMContentLoaded", () => {
         await fetch('/api/logout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // 📡 서버 로그아웃 시 구장 정보도 함께 전달
           body: JSON.stringify({ user: userData, clubId: currentClub })
         });
       } catch (err) {
@@ -132,14 +137,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // 💡 2. 소켓 연결 정상 종료
+    // 💡 2. 소켓 연결 정상 종료 (현재 구장 정보 함께 전달)
     const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
     if (activeSocket) {
-      activeSocket.emit('explicitLogout'); // 👈 이 신호 한 줄 추가!
+      activeSocket.emit('explicitLogout', { clubId: currentClub });
       activeSocket.disconnect();
     }
 
-    // 💡 3. 브라우저 세션 정리 및 새 클럽 저장
+    // 💡 3. 현재 구장 브라우저 세션 정리 및 새 클럽 저장
     localStorage.removeItem(getClubStorageKey("currentUser"));
     localStorage.removeItem("username");
     sessionStorage.clear();
@@ -159,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 클럽 목록 백그라운드 선행 로드
   window.loadClubsData();
 
-// =================================================================
+  // =================================================================
   // 💡 [핵심] 1. 접속 구장(URL ?club=...) 최우선 확정 및 전역 등록
   // =================================================================
   const urlParams = new URLSearchParams(window.location.search);
@@ -172,7 +177,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // =================================================================
   // 💡 [핵심] 2. 로그인 세션 구장 검증 (타 구장 세션 침범 원천 차단)
   // =================================================================
-  // 🔑 [수정] 현재 구장 전용 키로 조회
   let savedUser = localStorage.getItem(getClubStorageKey("currentUser"));
 
   // 🚨 강제 로그아웃 직후 새로고침인 경우 세션 자동 복구 원천 차단
@@ -199,10 +203,9 @@ document.addEventListener("DOMContentLoaded", () => {
         localStorage.removeItem(getClubStorageKey("currentUser"));
         localStorage.removeItem("username");
         sessionStorage.clear();
-        savedUser = null; // 현재 페이지에서 비로그인 상태로 즉시 전환
+        savedUser = null;
       }
     } catch (e) {
-      // JSON 파싱 에러 발생 시 즉시 파기
       localStorage.removeItem(getClubStorageKey("currentUser"));
       localStorage.removeItem("username");
       sessionStorage.clear();
@@ -216,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (savedUser) {
     // A. 현재 구장과 일치하는 유효한 세션이 있을 때만 자동 로그인
     if (mainApp) {
-      mainApp.style.display = 'block'; // 👈 추가 (인라인 display:none 해제)
+      mainApp.style.display = 'block';
       mainApp.classList.remove("hidden");
     }
     if (introOverlay) introOverlay.classList.add("hidden");
@@ -224,7 +227,8 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const parsedUser = JSON.parse(savedUser);
       if (typeof socket !== 'undefined' && parsedUser) {
-        socket.emit('registerUserSession', parsedUser);
+        // 🏢 [멀티테넌트 수정] 세션 복구 시에도 현재 구장 ID를 명확히 동봉
+        socket.emit('registerUserSession', { ...parsedUser, clubId: window.currentClubId });
       }
     } catch (e) {
       console.error("소켓 유저 등록 에러:", e);
@@ -240,7 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-// B. 비로그인 상태: 인트로(1초) 후 해당 구장 로그인 모달 오픈
+  // B. 비로그인 상태: 인트로(1초) 후 해당 구장 로그인 모달 오픈
   if (introOverlay) introOverlay.classList.remove("hidden");
   if (loginOverlay) loginOverlay.classList.add("hidden");
   
@@ -290,21 +294,21 @@ document.addEventListener("DOMContentLoaded", () => {
       if (loginCard) loginCard.insertBefore(headerEl, loginCard.firstChild);
     }
     if (headerEl) {
-    headerEl.innerHTML = `🏸 ${club.name} <button type="button" onclick="openClubModal(true)" style="
-        background: transparent;
-        border: 1px solid #4b5563;
-        color: #9ca3af;
-        font-size: 11px;
-        padding: 3px 7px;
-        border-radius: 4px;
-        cursor: pointer;
-        vertical-align: middle;
-        margin-left: 6px;
-        line-height: 1.2;
-        transition: all 0.2s;
-    " onmouseover="this.style.color='#fff'; this.style.borderColor='#9ca3af';" 
-       onmouseout="this.style.color='#9ca3af'; this.style.borderColor='#4b5563';">클럽 변경</button>`;
-}
+      headerEl.innerHTML = `🏸 ${club.name} <button type="button" onclick="openClubModal(true)" style="
+          background: transparent;
+          border: 1px solid #4b5563;
+          color: #9ca3af;
+          font-size: 11px;
+          padding: 3px 7px;
+          border-radius: 4px;
+          cursor: pointer;
+          vertical-align: middle;
+          margin-left: 6px;
+          line-height: 1.2;
+          transition: all 0.2s;
+      " onmouseover="this.style.color='#fff'; this.style.borderColor='#9ca3af';" 
+         onmouseout="this.style.color='#9ca3af'; this.style.borderColor='#4b5563';">클럽 변경</button>`;
+    }
   }
 
   // =================================================================
@@ -314,9 +318,8 @@ document.addEventListener("DOMContentLoaded", () => {
     input.value = input.value.replace(/[^a-zA-Z가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
   };
 
-  // 📌 로그인 창 전화번호 실시간 하이픈 적용을 위한 함수 추가
   window.formatPhone = function(input) {
-    let value = input.value.replace(/\D/g, ''); // 숫자만 남기기
+    let value = input.value.replace(/\D/g, '');
     if (value.length > 11) value = value.slice(0, 11);
 
     let formatted = '';
@@ -349,7 +352,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (tabMember) tabMember.classList.add('active');
       if (tabGuest) tabGuest.classList.remove('active');
       
-      // 정회원 탭으로 전환될 때 이름 입력창에 포커스를 주어 한글 자판 유도
       setTimeout(() => {
         const mInput = document.getElementById('memberName');
         if (mInput) mInput.focus();
@@ -361,13 +363,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (tabMember) tabMember.classList.remove('active');
       if (tabGuest) tabGuest.classList.add('active');
       
-      // 일일회원 탭으로 전환될 때 이름 입력창에 포커스를 주어 한글 자판 유도
       setTimeout(() => {
         const gInput = document.getElementById('guestName');
         if (gInput) gInput.focus();
       }, 50);
     }
-    if (authMsg) authMsg.textContent = ""; // 메시지 초기화
+    if (authMsg) authMsg.textContent = "";
   };
 
   // =================================================================
@@ -377,7 +378,6 @@ document.addEventListener("DOMContentLoaded", () => {
     memberLoginForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = document.getElementById('memberName').value.trim();
-      // 📌 하이픈(-)을 제거하여 순수 11자리 숫자로 변환 후 검증 및 전송
       const phone = document.getElementById('memberPhone').value.trim().replace(/-/g, '');
 
       if (phone.length !== 11) {
@@ -390,24 +390,19 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 서버로 정회원 로그인 요청
-      socket.emit('loginMember', { name, phone }, (response) => {
+      // 🏢 [멀티테넌트 수정] 로그인 검증 시 현재 접속 구장(clubId)을 서버에 필수 전달
+      const currentClub = new URLSearchParams(window.location.search).get('club')
+                          || window.currentClubId
+                          || 'unjeong';
+
+      socket.emit('loginMember', { name, phone, clubId: currentClub }, (response) => {
         if (response.success) {
-          // 🔑 [구장 키 추출] URL 파라미터 또는 전역 변수에서 현재 clubId 확인
-          const currentClub = (typeof currentClubId !== 'undefined' && currentClubId) 
-                              ? currentClubId 
-                              : (new URLSearchParams(window.location.search).get('club') || 'default');
+          // 🏢 [멀티테넌트 수정] 저장 데이터에 현재 구장 ID(clubId)를 명확히 각인하여 타 구장 간섭 차단
+          const userToSave = { ...response.user, clubId: currentClub };
+          localStorage.setItem(getClubStorageKey("currentUser"), JSON.stringify(userToSave));
 
-          // 💾 [수정] 헬퍼 함수를 사용하여 현재 구장 전용 키로 저장
-          localStorage.setItem(getClubStorageKey("currentUser"), JSON.stringify(response.user));
+          socket.emit('registerUserSession', userToSave);
 
-          // 📡 서버로 세션 등록 시 구장 정보(clubId)도 함께 전달
-          socket.emit('registerUserSession', { 
-            ...response.user, 
-            clubId: currentClub 
-          });
-
-          // ✅ 로그인 성공 즉시 소켓 채널 등록 및 접속자 카운트 갱신!
           if (typeof window.registerUserSocket === 'function') {
             window.registerUserSocket();
           }
@@ -416,11 +411,10 @@ document.addEventListener("DOMContentLoaded", () => {
           
           if (loginOverlay) loginOverlay.classList.add("hidden");
           if (mainApp) {
-            mainApp.style.display = 'block'; // 👈 인라인 style="display: none;" 해제
+            mainApp.style.display = 'block';
             mainApp.classList.remove("hidden");
           }
         } else {
-          // 💡 [수정] 등록되지 않은 정회원 정보일 때 authMsg 및 토스트 팝업으로 확실하게 메시지 출력
           const errorMsg = response.message || '등록된 정회원 정보를 찾을 수 없습니다.';
           if (authMsg) {
             authMsg.textContent = errorMsg;
@@ -443,10 +437,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const phone = document.getElementById('guestPhone').value.trim().replace(/-/g, '');
       const payCode = document.getElementById('guestPayCode').value.trim();
 
-      // 🎯 [정회원 규격 통일] level 대신 grade로 변수명 일치
       const gender = document.getElementById('guestGender') ? document.getElementById('guestGender').value : '';
       const ageGroup = document.getElementById('guestAge') ? document.getElementById('guestAge').value : '';
-      const grade = document.getElementById('guestLevel') ? document.getElementById('guestLevel').value : ''; // 👈 level -> grade로 변경
+      const grade = document.getElementById('guestLevel') ? document.getElementById('guestLevel').value : '';
 
       if (phone.length !== 11) {
         if (authMsg) authMsg.textContent = '전화번호 11자리를 정확히 입력해 주세요.';
@@ -462,18 +455,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // 📡 [전송] 정회원과 100% 동일한 명칭(gender, ageGroup, grade)으로 서버에 전달
-      socket.emit('loginGuest', { name, phone, payCode, gender, ageGroup, grade }, (response) => {
-        if (response.success) {
-          localStorage.setItem(getClubStorageKey("currentUser"), JSON.stringify(response.user));
+      // 🏢 [멀티테넌트 수정] 일일회원 로그인 시에도 현재 접속 구장(clubId)을 서버에 필수 전달
+      const currentClub = new URLSearchParams(window.location.search).get('club')
+                          || window.currentClubId
+                          || 'unjeong';
 
-          const currentClub = (typeof currentClubId !== 'undefined' && currentClubId) 
-                              || new URLSearchParams(window.location.search).get('club') 
-                              || 'default';
-          socket.emit('registerUserSession', { 
-            ...response.user, 
-            clubId: currentClub 
-          });
+      socket.emit('loginGuest', { name, phone, payCode, gender, ageGroup, grade, clubId: currentClub }, (response) => {
+        if (response.success) {
+          // 🏢 [멀티테넌트 수정] 저장 데이터에 현재 구장 ID(clubId) 각인
+          const userToSave = { ...response.user, clubId: currentClub };
+          localStorage.setItem(getClubStorageKey("currentUser"), JSON.stringify(userToSave));
+
+          socket.emit('registerUserSession', userToSave);
 
           if (typeof window.registerUserSocket === 'function') {
             window.registerUserSocket();
@@ -497,21 +490,18 @@ document.addEventListener("DOMContentLoaded", () => {
 // 팝업 알림(토스트 메시지)을 띄워주는 함수
 // ==========================================
 function showToast(message, isSuccess = true) {
-    // 기존에 이미 떠있는 토스트가 있다면 제거
     const existingToast = document.getElementById('custom-toast');
     if (existingToast) existingToast.remove();
 
-    // 토스트 요소 생성
     const toast = document.createElement('div');
     toast.id = 'custom-toast';
     toast.textContent = message;
     
-    // 스타일 지정 (화면 중앙 상단에 깔끔하게 표시)
     toast.style.position = 'fixed';
     toast.style.top = '20%';
     toast.style.left = '50%';
     toast.style.transform = 'translate(-50%, -50%)';
-    toast.style.backgroundColor = isSuccess ? '#10b981' : '#ef4444'; // 성공: 초록색, 실패: 빨간색
+    toast.style.backgroundColor = isSuccess ? '#10b981' : '#ef4444';
     toast.style.color = '#ffffff';
     toast.style.padding = '12px 24px';
     toast.style.borderRadius = '8px';
@@ -523,7 +513,6 @@ function showToast(message, isSuccess = true) {
 
     document.body.appendChild(toast);
 
-    // 2초 뒤에 서서히 사라지면서 제거
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
@@ -534,13 +523,11 @@ function showToast(message, isSuccess = true) {
 // [통합 완료] 정회원 가입 신청 폼 제출 처리 함수
 // ==========================================
 async function handleRegisterSubmit(event) {
-    if (event) event.preventDefault(); // 폼 제출로 인한 새로고침 방지
+    if (event) event.preventDefault();
 
-    // 💡 커스텀 알림창이 가입 신청 모달 뒤에 가려지지 않도록 최상단 노출 및 대기 보장 헬퍼
     const showTopAlert = async (msg) => {
         const customModal = document.getElementById('custom-modal');
         if (customModal) {
-            // body 맨 마지막 자식으로 이동시켜 DOM 순서상으로도 무조건 최상위에 오도록 처리
             if (customModal.parentNode !== document.body) {
                 document.body.appendChild(customModal);
             } else {
@@ -555,7 +542,6 @@ async function handleRegisterSubmit(event) {
         }
     };
 
-    // 💡 가입 신청 모달 닫기 헬퍼
     const hideRegisterModal = () => {
         if (typeof closeRegisterModal === 'function') {
             closeRegisterModal();
@@ -565,16 +551,14 @@ async function handleRegisterSubmit(event) {
         }
     };
 
-    // 💡 1. 현재 구장 식별자 추출 (기본값 unjeong)
+    // 🏢 [멀티테넌트 수정] URL 파라미터(?club=) 및 window.currentClubId를 최우선으로 추출
     const urlParams = new URLSearchParams(window.location.search);
-    const clubId = (typeof currentClub !== 'undefined' && currentClub) || 
-                   (typeof currentClubId !== 'undefined' && currentClubId) || 
-                   urlParams.get('club') || 
+    const clubId = urlParams.get('club') || 
                    urlParams.get('clubId') || 
-                   localStorage.getItem('selectedClubId') || 
+                   (typeof window.currentClubId !== 'undefined' && window.currentClubId) || 
+                   localStorage.getItem('preferredClubId') || 
                    'unjeong';
 
-    // 💡 2. 입력 데이터 수집 (clubId 포함)
     const formData = {
         name: document.getElementById('regName').value.trim(),
         phone: document.getElementById('regPhone').value.trim(),
@@ -582,7 +566,7 @@ async function handleRegisterSubmit(event) {
         birthDate: document.getElementById('regBirthDate').value.trim(),
         grade: document.getElementById('regGrade').value,
         address: document.getElementById('regAddress') ? document.getElementById('regAddress').value.trim() : '',
-        clubId: clubId // 📌 현재 구장 전송
+        clubId: clubId
     };
 
     try {
@@ -595,17 +579,14 @@ async function handleRegisterSubmit(event) {
         const result = await response.json();
 
         if (result.success) {
-            // 📌 1) 가입 신청 모달을 먼저 닫고 폼 초기화
             hideRegisterModal();
             const form = document.getElementById('registerForm');
             if (form) form.reset();
 
-            // 📌 2) 최상단 안내 팝업 출력 (확인을 누르면 로그인 화면 유지)
             await showTopAlert(result.message || '정회원 가입 신청이 완료되었습니다.\n관리자 승인 대기중입니다.');
         } else {
             const errMsg = result.message || '가입 신청에 실패했습니다.';
 
-            // 📌 이미 등록된 정회원이거나 가입 대기 중인 연락처인 경우 가입 모달을 닫고 안내 팝업 표시 후 로그인 화면으로 전환
             if (errMsg.includes('이미')) {
                 hideRegisterModal();
                 const form = document.getElementById('registerForm');
@@ -620,15 +601,13 @@ async function handleRegisterSubmit(event) {
     }
 }
 
-// Global 등록 보장
 window.handleRegisterSubmit = handleRegisterSubmit;
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. 전화번호 실시간 자동 하이픈 (010-XXXX-XXXX)
     const phoneInput = document.getElementById('regPhone');
     if (phoneInput) {
         phoneInput.addEventListener('input', (e) => {
-            let value = e.target.value.replace(/\D/g, ''); // 숫자만 남기기
+            let value = e.target.value.replace(/\D/g, '');
             if (value.length > 11) value = value.slice(0, 11);
 
             let formatted = '';
@@ -645,11 +624,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 2. 생년월일 실시간 자동 하이픈 (2000-01-01)
     const birthInput = document.getElementById('regBirthDate');
     if (birthInput) {
         birthInput.addEventListener('input', (e) => {
-            let value = e.target.value.replace(/\D/g, ''); // 숫자만 남기기
+            let value = e.target.value.replace(/\D/g, '');
             if (value.length > 8) value = value.slice(0, 8);
 
             let formatted = '';

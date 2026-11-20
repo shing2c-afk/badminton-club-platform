@@ -697,7 +697,8 @@ app.get('/api/clubs', (req, res) => {
                 id: clubId,                                                // 구장 식별자 (예: unjeong, daewon)
                 name: displayName,                                        // 화면에 보여줄 이름
                 courtCount: Array.isArray(club.courtsData) ? club.courtsData.length : 0, // 총 코트 수
-                isActive: true
+                // 🏢 [멀티테넌트 수정] 마스터 관리자 비활성화 상태 반영 (미설정 시 기본 true)
+                isActive: club.isActive !== false
             };
         });
 
@@ -715,9 +716,15 @@ app.get('/api/check-wifi', (req, res) => {
     const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.socket.remoteAddress || '');
     const clientIp = rawIp.replace(/^.*:/, '').trim();
     
-    const clubId = req.query.clubId || 'unjeong';
+    // 🏢 [멀티테넌트 수정] 구장 ID 누락 시 'unjeong' 설정을 오용하지 않도록 처리
+    const clubId = req.query.clubId;
+    if (!clubId) {
+        return res.json({ isGymWifi: true, clientIp: clientIp, useWifiRestriction: false });
+    }
+
     const club = (typeof getClub === 'function') ? getClub(clubId) : (clubs && clubs[clubId]);
-    const targetConfig = (club && club.config) ? club.config : (typeof config !== 'undefined' ? config : {});
+    // 🏢 [멀티테넌트 수정] 전역 config(운정클럽) 폴백 제거 — 반드시 해당 구장의 config만 사용
+    const targetConfig = (club && club.config) ? club.config : {};
     
     // IP 일치 여부 판별 (Wi-Fi 제한이 꺼져 있거나 등록된 IP가 없으면 무조건 true)
     let isGym = true;
@@ -733,22 +740,6 @@ app.get('/api/check-wifi', (req, res) => {
         clientIp: clientIp,
         useWifiRestriction: targetConfig ? (targetConfig.useWifiRestriction !== false) : true
     });
-});
-
-// ==========================
-// 3. 데이터베이스(SQLite) 연결 및 초기화
-// ==========================
-// 💾 DB 연결 및 초기화 실행부
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('❌ 데이터베이스 연결 실패:', err.message);
-    } else {
-        console.log('✅ SQLite 데이터베이스 연결 성공:', dbPath);
-        
-        // 🔒 테이블 생성 및 컬럼 보강(initDatabase)을 먼저 완벽히 수행합니다.
-        // 더미 데이터 삽입은 initDatabase 내부의 마지막 단계에서 안전하게 호출됩니다.
-        initDatabase();
-    }
 });
 
 function initDatabase() {
@@ -1034,11 +1025,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ⚙️ [멀티 테넌트] 클럽별 환경 설정 조회 API
 // ==========================================
 app.get('/api/config', (req, res) => {
-    const clubId = req.query.club || 'unjeong';
+    // 🏢 [멀티테넌트 수정] club 및 clubId 파라미터 모두 수용
+    const clubId = req.query.clubId || req.query.club || 'unjeong';
     const targetClub = getClub(clubId);
     
     if (targetClub && targetClub.config) {
         return res.json(targetClub.config);
+    }
+    // 🏢 [멀티테넌트 수정] 타 구장 조회 시 전역 config(운정클럽) 유출 차단
+    if (clubId !== 'unjeong') {
+        return res.json({});
     }
     res.json(config);
 });
@@ -1108,9 +1104,16 @@ app.post('/api/admin/notice', (req, res) => {
 // 3. 공지사항 수정 API
 app.put('/api/notices/:id', (req, res) => {
     const noticeId = req.params.id;
-    const { title, content } = req.body;
+    const { title, content, clubId: reqClubId, club } = req.body;
+    const clubId = reqClubId || club || req.query.clubId || req.query.club;
 
-    db.run(`UPDATE notices SET title = ?, content = ? WHERE id = ?`, [title, content, noticeId], function(err) {
+    // 🏢 [멀티테넌트 수정] 구장 ID가 함께 전달된 경우 해당 구장 공지인지 동시 검증
+    const sql = clubId
+        ? `UPDATE notices SET title = ?, content = ? WHERE id = ? AND clubId = ?`
+        : `UPDATE notices SET title = ?, content = ? WHERE id = ?`;
+    const params = clubId ? [title, content, noticeId, clubId] : [title, content, noticeId];
+
+    db.run(sql, params, function(err) {
         if (err) {
             console.error('❌ 공지사항 수정 실패:', err.message);
             return res.status(500).json({ success: false, message: '공지사항 수정에 실패했습니다.' });
@@ -1125,8 +1128,15 @@ app.put('/api/notices/:id', (req, res) => {
 // 4. 공지사항 삭제 API
 app.delete('/api/notices/:id', (req, res) => {
     const noticeId = req.params.id;
+    const clubId = (req.body && (req.body.clubId || req.body.club)) || req.query.clubId || req.query.club;
 
-    db.run(`DELETE FROM notices WHERE id = ?`, [noticeId], function(err) {
+    // 🏢 [멀티테넌트 수정] 구장 ID가 함께 전달된 경우 해당 구장 공지인지 동시 검증
+    const sql = clubId
+        ? `DELETE FROM notices WHERE id = ? AND clubId = ?`
+        : `DELETE FROM notices WHERE id = ?`;
+    const params = clubId ? [noticeId, clubId] : [noticeId];
+
+    db.run(sql, params, function(err) {
         if (err) {
             console.error('❌ 공지사항 삭제 실패:', err.message);
             return res.status(500).json({ success: false, message: '공지사항 삭제에 실패했습니다.' });
@@ -1360,16 +1370,20 @@ async function cleanupUser(usernameOrObj, clubId = null) {
 
     let targetId = '';
     let targetName = '';
+    // 🏢 [멀티테넌트 수정] 전달된 회원 객체/JSON 내부의 clubId도 함께 추출
+    let embeddedClubId = null;
 
     if (typeof usernameOrObj === 'object' && usernameOrObj !== null) {
         targetId = usernameOrObj.id || usernameOrObj.phone || '';
         targetName = usernameOrObj.name || '';
+        embeddedClubId = usernameOrObj.clubId || null;
     } else if (typeof usernameOrObj === 'string') {
         if (usernameOrObj.trim().startsWith('{')) {
             try {
                 const parsed = JSON.parse(usernameOrObj);
                 targetId = parsed.id || parsed.phone || '';
                 targetName = parsed.name || '';
+                embeddedClubId = parsed.clubId || null;
             } catch (e) {
                 targetId = usernameOrObj;
                 targetName = usernameOrObj;
@@ -1380,6 +1394,9 @@ async function cleanupUser(usernameOrObj, clubId = null) {
         }
     }
 
+    // 🏢 [멀티테넌트 수정] 명시적 clubId -> 객체 내장 clubId 순으로 최종 구장 확정
+    const resolvedClubId = (clubId && String(clubId).trim()) || (embeddedClubId && String(embeddedClubId).trim()) || null;
+
     const cleanId = String(targetId).replace(/^user_/, '').trim();
     const hyphenId = cleanId.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
 
@@ -1388,15 +1405,20 @@ async function cleanupUser(usernameOrObj, clubId = null) {
         dbRow = { id: '010-0000-0000', name: '관리자' };
     } else {
         try {
+            // 🏢 [멀티테넌트 수정] 특정 구장 청소 시 해당 구장(club_id) 소속 회원만 조회하여 타 구장 동명이인 오매칭 차단
+            const useClubFilter = Boolean(resolvedClubId && resolvedClubId !== 'all');
+            const sql = useClubFilter
+                ? `SELECT id, name FROM regular_members WHERE (id = ? OR phone = ? OR phone = ? OR phone = ? OR name = ?) AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))`
+                : `SELECT id, name FROM regular_members WHERE id = ? OR phone = ? OR phone = ? OR phone = ? OR name = ?`;
+            const params = useClubFilter
+                ? [targetId, cleanId, hyphenId, targetId, targetName, resolvedClubId, resolvedClubId]
+                : [targetId, cleanId, hyphenId, targetId, targetName];
+
             dbRow = await new Promise((resolve, reject) => {
-                db.get(
-                    `SELECT id, name FROM regular_members WHERE id = ? OR phone = ? OR phone = ? OR phone = ? OR name = ?`, 
-                    [targetId, cleanId, hyphenId, targetId, targetName],
-                    (err, row) => {
-                        if (err) reject(err);
-                        else resolve(row || null);
-                    }
-                );
+                db.get(sql, params, (err, row) => {
+                    if (err) reject(err);
+                    else resolve(row || null);
+                });
             });
         } catch (e) {
             console.error('❌ [청소 DB 조회 에러]:', e.message);
@@ -1408,15 +1430,21 @@ async function cleanupUser(usernameOrObj, clubId = null) {
     const pureName = String(realName).replace(/님$/, '').split('/')[0].split('|')[0].trim();
     const purePhone = String(realId).replace(/[^0-9]/g, '');
 
-    const targetClubs = (clubId && clubId !== 'all') 
-        ? [clubId] 
-        : (typeof clubs !== 'undefined' ? Object.keys(clubs) : ['unjeong', 'daewon']);
+    if (!resolvedClubId) {
+        console.warn(`⚠️ [멀티테넌트 경고] clubId 없이 cleanupUser("${pureName}")가 호출되었습니다.`);
+    }
+
+    // 🏢 [멀티테넌트 수정] 실제 존재하는 clubs 키만 대상에 포함 (삭제된 구장 폴백 제거)
+    const targetClubs = (resolvedClubId && resolvedClubId !== 'all') 
+        ? [resolvedClubId] 
+        : (typeof clubs !== 'undefined' && clubs ? Object.keys(clubs) : ['unjeong']);
 
     console.log(`\n========================================`);
     console.log(`🧹 [청소 시작] 대상: "${pureName}" (ID: ${realId}), 구장:`, targetClubs);
 
     for (const cid of targetClubs) {
-        const club = (typeof getClub === 'function') ? getClub(cid) : (typeof clubs !== 'undefined' ? clubs[cid] : null);
+        // 🏢 [멀티테넌트 수정] getClub() 대신 clubs[cid] 직접 조회로 삭제된 구장 자동 부활 차단
+        const club = (typeof clubs !== 'undefined' && clubs) ? clubs[cid] : null;
         if (!club) continue;
 
         const checkMatch = (str) => {
@@ -1495,12 +1523,40 @@ async function cleanupUser(usernameOrObj, clubId = null) {
 
 // 4. 로그아웃 API
 app.post('/api/logout', async (req, res) => {
-    const { username, user } = req.body;
+    const { username, user, clubId: reqClubId, club } = req.body;
     const target = user || username;
-    console.log(`🧹 [로그아웃 요청 수신] 유저 데이터 정리 중...`, target);
+
+    // 🏢 [멀티테넌트 수정] 요청 본문 또는 user 객체 내부에서 현재 구장 ID(clubId) 추출
+    const clubId = reqClubId
+        || club
+        || (target && typeof target === 'object' ? target.clubId : null)
+        || 'unjeong';
+
+    const cleanName = (target && typeof target === 'object')
+        ? String(target.name || target.username || target.id || target.phone || '').replace(/님$/, '').split('/')[0].trim()
+        : String(target || '').replace(/님$/, '').split('/')[0].trim();
+
+    console.log(`🧹 [로그아웃 요청 수신 - ${clubId}] 유저 데이터 정리 중...`, cleanName || target);
+
     if (target) {
-        await cleanupUser(target);
+        // 🏢 [멀티테넌트 수정] 반드시 해당 구장(clubId)을 함께 전달하여 타 구장 대기방 삭제 차단
+        await cleanupUser(target, clubId);
     }
+
+    if (cleanName) {
+        // 🏢 [멀티테넌트 수정] 해당 구장의 유예/만료 타이머 및 소켓 매핑 즉시 정리
+        if (typeof gymSessionManager !== 'undefined' && typeof gymSessionManager.clearUserImmediately === 'function') {
+            gymSessionManager.clearUserImmediately(cleanName, clubId);
+        }
+        if (typeof activeUserSockets !== 'undefined' && activeUserSockets.delete) {
+            activeUserSockets.delete(`${clubId}_${cleanName}`);
+        }
+    }
+
+    if (typeof broadcastOnlineCount === 'function') {
+        broadcastOnlineCount(clubId);
+    }
+
     res.json({ success: true });
 });
 
@@ -1518,6 +1574,15 @@ app.post('/api/admin/kick-user', async (req, res) => {
 
     // 💡 2. cleanupUser 호출할 때 반드시 뒤에 clubId를 함께 넘겨줍니다!
     await cleanupUser(target, clubId);
+
+    // 🏢 [멀티테넌트 수정] 강제 퇴장된 회원의 해당 구장 잔여 타이머 정리 및 전광판 인원 갱신
+    const cleanName = String(target).replace(/님$/, '').split('/')[0].trim();
+    if (cleanName && typeof gymSessionManager !== 'undefined' && typeof gymSessionManager.clearUserImmediately === 'function') {
+        gymSessionManager.clearUserImmediately(cleanName, clubId);
+    }
+    if (typeof broadcastOnlineCount === 'function') {
+        broadcastOnlineCount(clubId);
+    }
 
     res.json({ success: true, message: `해당 회원을 성공적으로 강제 퇴장 및 정리했습니다.` });
 });
@@ -1690,7 +1755,11 @@ function createDefaultCourts() {
 
 // 클럽 ID로 해당 클럽 데이터 객체를 안전하게 가져오는 헬퍼 함수
 function getClub(clubId) {
-    const id = clubId || 'unjeong'; // 지정이 없으면 기본값은 무조건 'unjeong'
+    // 🏢 [멀티테넌트 수정] 구장 ID 누락 호출 추적용 경고 (기존 동작은 안전하게 유지)
+    if (!clubId || !String(clubId).trim()) {
+        console.warn('⚠️ [멀티테넌트 경고] clubId 없이 getClub()이 호출되어 기본값(unjeong)으로 처리됩니다.');
+    }
+    const id = (clubId && String(clubId).trim()) || 'unjeong';
     
     // 🏢 기본 한글 클럽 명칭 매핑
     const defaultClubNames = {
@@ -1698,24 +1767,70 @@ function getClub(clubId) {
         'daewon': '대원배드민턴클럽'
     };
 
+    // 🏢 [멀티테넌트 수정] defaultConfig 깊은 복사 헬퍼 (구장 간 배열/객체 참조 공유 차단)
+    const cloneDefaultConfig = () => {
+        const base = (typeof defaultConfig !== 'undefined')
+            ? JSON.parse(JSON.stringify(defaultConfig))
+            : {};
+        return {
+            ...base,
+            allowedGymIps: Array.isArray(base.allowedGymIps) && id === 'unjeong' ? [...base.allowedGymIps] : [],
+            queueGraceMinutes: base.queueGraceMinutes ?? 30,
+            sessionExpireMinutes: base.sessionExpireMinutes ?? 60
+        };
+    };
+
+    // 🏢 [멀티테넌트 수정] 타 구장 선수 데이터가 섞이지 않은 깨끗한 코트 배열 생성 헬퍼
+    const createCleanCourts = () => {
+        if (typeof createDefaultCourts === 'function') {
+            return createDefaultCourts();
+        }
+        if (typeof courtsData !== 'undefined' && Array.isArray(courtsData)) {
+            return JSON.parse(JSON.stringify(courtsData)).map((c, idx) => ({
+                ...c,
+                id: c.id || (idx + 1),
+                status: 'empty',
+                matchType: '',
+                players: [],
+                startTime: null
+            }));
+        }
+        return [];
+    };
+
     if (!clubs[id]) {
         // 새 클럽이 처음 호출되면 기본 틀을 자동 생성
         clubs[id] = {
             clubId: id,
             clubName: defaultClubNames[id] || `${id}배드민턴클럽`,
-            config: {
-                ...(typeof defaultConfig !== 'undefined' ? defaultConfig : {}),
-                // ⏱️ 클럽별 유예 시간 기본값 (관리자가 변경 가능)
-                queueGraceMinutes: 30,    // 대기방 유지 시간 (기본 30분)
-                sessionExpireMinutes: 60  // 세션 완전 만료 시간 (기본 60분)
-            },
-            courtsData: typeof createDefaultCourts === 'function' ? createDefaultCourts() : (typeof courtsData !== 'undefined' ? JSON.parse(JSON.stringify(courtsData)) : []),
+            config: cloneDefaultConfig(),
+            courtsData: createCleanCourts(),
             gameQueue: [],
             nantaQueue: [],
             notifications: [],
             slotIdCounter: 1
         };
+    } else {
+        // 🏢 [멀티테넌트 수정] 마스터 관리자에서 먼저 생성된 클럽이라도 필수 런타임 필드가 누락되지 않도록 자동 보강
+        if (!clubs[id].clubId) clubs[id].clubId = id;
+        if (!clubs[id].clubName) {
+            clubs[id].clubName = (clubs[id].config && clubs[id].config.clubName)
+                || defaultClubNames[id]
+                || `${id}배드민턴클럽`;
+        }
+        if (!clubs[id].config || typeof clubs[id].config !== 'object') {
+            clubs[id].config = cloneDefaultConfig();
+        } else {
+            if (typeof clubs[id].config.queueGraceMinutes === 'undefined') clubs[id].config.queueGraceMinutes = 30;
+            if (typeof clubs[id].config.sessionExpireMinutes === 'undefined') clubs[id].config.sessionExpireMinutes = 60;
+        }
+        if (!Array.isArray(clubs[id].courtsData)) clubs[id].courtsData = createCleanCourts();
+        if (!Array.isArray(clubs[id].gameQueue)) clubs[id].gameQueue = [];
+        if (!Array.isArray(clubs[id].nantaQueue)) clubs[id].nantaQueue = [];
+        if (!Array.isArray(clubs[id].notifications)) clubs[id].notifications = [];
+        if (typeof clubs[id].slotIdCounter !== 'number') clubs[id].slotIdCounter = 1;
     }
+
     return clubs[id];
 }
 // ==========================================
@@ -1788,9 +1903,13 @@ function addNotification(message, clubId = 'default', targetUser = null) {
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 
-    // 💡 1. 당일(오늘) 알림만 서버 메모리에 유지 (어제 이전 알림 자동 정리)
-    if (Array.isArray(notifications)) {
-        notifications = notifications.filter(n => {
+    // 🏢 [멀티테넌트 수정] 구장 ID 정규화
+    const targetClubId = (clubId && String(clubId).trim()) || 'default';
+
+    // 당일 알림 필터 헬퍼
+    const filterTodayOnly = (list) => {
+        if (!Array.isArray(list)) return [];
+        return list.filter(n => {
             if (!n) return false;
             let itemDate = n.date;
             if (!itemDate && n.timestamp) {
@@ -1799,14 +1918,15 @@ function addNotification(message, clubId = 'default', targetUser = null) {
             }
             return itemDate === todayStr;
         });
-    } else {
-        notifications = [];
-    }
+    };
+
+    // 💡 1. 당일(오늘) 알림만 서버 메모리에 유지 (어제 이전 알림 자동 정리)
+    notifications = filterTodayOnly(notifications);
 
     // 💡 2. 새 알림 객체 생성 (구장 ID 및 대상자 포함)
     const newNoti = { 
         message, 
-        clubId: clubId || 'default',
+        clubId: targetClubId,
         targetUser: targetUser || null,
         time: timeStr, 
         date: todayStr,
@@ -1816,10 +1936,23 @@ function addNotification(message, clubId = 'default', targetUser = null) {
     notifications.unshift(newNoti);
     if (notifications.length > 50) notifications.pop();
 
-    // 💡 3. 소켓 브로드캐스트 (클라이언트에서 본인 및 구장 필터링 수행)
+    // 🏢 [멀티테넌트 수정] 구장별 독립 알림 배열(clubs[targetClubId].notifications)에도 분리 보관
+    if (targetClubId !== 'default' && typeof clubs !== 'undefined' && clubs[targetClubId]) {
+        clubs[targetClubId].notifications = filterTodayOnly(clubs[targetClubId].notifications);
+        clubs[targetClubId].notifications.unshift(newNoti);
+        if (clubs[targetClubId].notifications.length > 50) {
+            clubs[targetClubId].notifications.pop();
+        }
+    }
+
+    // 💡 3. 🏢 [멀티테넌트 수정] 해당 구장 룸(club_${targetClubId})에만 전송 (타 구장 데이터 유출 차단)
     try {
         if (typeof io !== 'undefined' && io) {
-            io.emit('newNotification', newNoti);
+            if (targetClubId !== 'default') {
+                io.to(`club_${targetClubId}`).emit('newNotification', newNoti);
+            } else {
+                io.emit('newNotification', newNoti);
+            }
         }
     } catch (err) {
         console.error('알림 소켓 전송 에러:', err);
@@ -2281,6 +2414,16 @@ io.on('connection', (socket) => {
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
 
+    // 🏢 [멀티테넌트 수정] 소켓의 소속 구장 룸을 안전하게 전환하는 헬퍼 (이전 구장 방 잔류 차단)
+    const switchSocketClubRoom = (newClubId) => {
+        if (!newClubId) return;
+        if (socket.clubId && socket.clubId !== newClubId) {
+            socket.leave(`club_${socket.clubId}`);
+        }
+        socket.clubId = newClubId;
+        socket.join(`club_${newClubId}`);
+    };
+
     // =================================================================
     // 🛡️ [복구됨] Wi-Fi 상태 기반 접근 제어 가드
     // =================================================================
@@ -2303,7 +2446,7 @@ io.on('connection', (socket) => {
 
         socket.finalName = cleanUsername;
         socket.username = cleanUsername;
-        socket.clubId = targetClubId;
+        switchSocketClubRoom(targetClubId);
 
         const isWifiMatch = (typeof isGymWifiUser === 'function') ? isGymWifiUser(socket, targetClubId) : true;
 
@@ -2357,9 +2500,10 @@ io.on('connection', (socket) => {
         const club = (typeof getClub === 'function') ? getClub(targetClubId) : (typeof clubs !== 'undefined' ? clubs[targetClubId] : null);
         const useWifiRestriction = (club && club.config) ? (club.config.useWifiRestriction !== false) : true;
 
-        console.log(`📡 [Wi-Fi 재검증] IP: ${clientIp}, 결과: ${isValid}`);
+        console.log(`📡 [Wi-Fi 재검증] [${targetClubId}] IP: ${clientIp}, 결과: ${isValid}`);
         
         socket.emit('wifiStatus', { 
+            clubId: targetClubId,
             isGymWifi: isValid,
             clientIp: clientIp,
             useWifiRestriction: useWifiRestriction
@@ -2376,8 +2520,13 @@ io.on('connection', (socket) => {
             const digits = cleanUsername.replace(/[^0-9]/g, '');
             const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
             try {
+                // 🏢 [멀티테넌트 수정] 해당 구장 소속 회원만 이름 조회
                 const row = await new Promise((resolve) => {
-                    db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
+                    db.get(
+                        `SELECT name FROM regular_members WHERE (id = ? OR phone = ? OR phone = ?) AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))`,
+                        [cleanUsername, digits, hyphen, targetClubId, targetClubId],
+                        (err, res) => resolve(res)
+                    );
                 });
                 if (row && row.name) cleanUsername = row.name;
             } catch (e) {}
@@ -2387,11 +2536,18 @@ io.on('connection', (socket) => {
 
         socket.finalName = cleanUsername;
         socket.username = cleanUsername;
-        socket.clubId = targetClubId;
+        switchSocketClubRoom(targetClubId);
 
-        if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
-            clearTimeout(disconnectTimers[cleanUsername]);
-            delete disconnectTimers[cleanUsername];
+        const clubTimerKey = `${targetClubId}_${cleanUsername}`;
+        if (typeof disconnectTimers !== 'undefined') {
+            if (disconnectTimers[clubTimerKey]) {
+                clearTimeout(disconnectTimers[clubTimerKey]);
+                delete disconnectTimers[clubTimerKey];
+            }
+            if (disconnectTimers[cleanUsername]) {
+                clearTimeout(disconnectTimers[cleanUsername]);
+                delete disconnectTimers[cleanUsername];
+            }
         }
 
         if (typeof gymSessionManager !== 'undefined') {
@@ -2409,8 +2565,13 @@ io.on('connection', (socket) => {
             const digits = cleanUsername.replace(/[^0-9]/g, '');
             const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
             try {
+                // 🏢 [멀티테넌트 수정] 해당 구장 소속 회원만 이름 조회
                 const row = await new Promise((resolve) => {
-                    db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
+                    db.get(
+                        `SELECT name FROM regular_members WHERE (id = ? OR phone = ? OR phone = ?) AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))`,
+                        [cleanUsername, digits, hyphen, targetClubId, targetClubId],
+                        (err, res) => resolve(res)
+                    );
                 });
                 if (row && row.name) cleanUsername = row.name;
             } catch (e) {}
@@ -2420,7 +2581,7 @@ io.on('connection', (socket) => {
 
         socket.finalName = cleanUsername;
         socket.username = cleanUsername;
-        socket.clubId = targetClubId;
+        switchSocketClubRoom(targetClubId);
 
         if (typeof gymSessionManager !== 'undefined') {
             gymSessionManager.handleDisconnect(socket, cleanUsername, targetClubId);
@@ -2434,6 +2595,7 @@ io.on('connection', (socket) => {
     const initialUseWifiRestriction = (initialClub && initialClub.config) ? (initialClub.config.useWifiRestriction !== false) : true;
 
     socket.emit('wifiStatus', { 
+        clubId: clientClubId,
         isGymWifi: initialIsGym, 
         clientIp: initialClientIp, 
         useWifiRestriction: initialUseWifiRestriction 
@@ -2447,13 +2609,18 @@ io.on('connection', (socket) => {
             const cleanPhone = String(userData.phone || cleanUsername).replace(/[^0-9a-zA-Z가-힣_]/g, '');
             const targetClubId = userData.clubId || socket.clubId || clientClubId || 'unjeong';
 
-            // 전화번호만 들어온 경우 DB에서 진짜 이름 조회
+            // 전화번호만 들어온 경우 DB에서 해당 구장의 진짜 이름 조회
             if (cleanUsername && /^[0-9\-]+$/.test(cleanUsername) && typeof db !== 'undefined') {
                 const digits = cleanUsername.replace(/[^0-9]/g, '');
                 const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
                 try {
+                    // 🏢 [멀티테넌트 수정] 구장 조건 포함 조회
                     const row = await new Promise((resolve) => {
-                        db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
+                        db.get(
+                            `SELECT name FROM regular_members WHERE (id = ? OR phone = ? OR phone = ?) AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))`,
+                            [cleanUsername, digits, hyphen, targetClubId, targetClubId],
+                            (err, res) => resolve(res)
+                        );
                     });
                     if (row && row.name) cleanUsername = row.name;
                 } catch (e) {}
@@ -2461,13 +2628,15 @@ io.on('connection', (socket) => {
 
             if (!cleanUsername || cleanUsername === '0100') return;
 
+            // 🏢 [멀티테넌트 수정] 구장 전용 개인 채널 + 기존 호환 채널 동시 가입 및 구장 룸 안전 전환
+            socket.join(`user_${targetClubId}_${cleanPhone}`);
             socket.join(`user_${cleanPhone}`);
-            socket.join(`club_${targetClubId}`);
+            switchSocketClubRoom(targetClubId);
+
             socket.userIdentifier = cleanPhone;
             socket.userId = userData.id || cleanPhone;
             socket.username = cleanUsername;
             socket.finalName = cleanUsername;
-            socket.clubId = targetClubId;
 
             if (typeof userSockets !== 'undefined') {
                 userSockets[socket.id] = { username: cleanUsername, clubId: targetClubId };
@@ -2514,25 +2683,32 @@ io.on('connection', (socket) => {
             const digits = cleanUsername.replace(/[^0-9]/g, '');
             const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
             try {
+                // 🏢 [멀티테넌트 수정] 해당 구장 소속 회원만 조회
                 const row = await new Promise((resolve) => {
-                    db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
+                    db.get(
+                        `SELECT name FROM regular_members WHERE (id = ? OR phone = ? OR phone = ?) AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))`,
+                        [cleanUsername, digits, hyphen, incomingClubId, incomingClubId],
+                        (err, res) => resolve(res)
+                    );
                 });
                 if (row && row.name) cleanUsername = row.name;
             } catch (e) {}
         }
 
+        const clubUserKey = `${incomingClubId}_${cleanUsername}`;
         const managerUserKey = `${incomingClubId}:${cleanUsername}`;
         const isExpiredInManager = (typeof gymSessionManager !== 'undefined' && gymSessionManager.expiredUsers && gymSessionManager.expiredUsers.has(managerUserKey));
-        const isExpiredLegacy = (typeof expiredUsers !== 'undefined' && expiredUsers[cleanUsername]);
+        // 🏢 [멀티테넌트 수정] 만료 키도 구장별 복합 키 기준으로 확인
+        const isExpiredLegacy = (typeof expiredUsers !== 'undefined' && Boolean(expiredUsers[clubUserKey]));
 
         // 🚨 [세션 만료 검증 분기]
         if (isExpiredInManager || isExpiredLegacy) {
             if (isAutoRestore) {
                 setTimeout(() => {
                     if (typeof gymSessionManager !== 'undefined' && gymSessionManager.expiredUsers) gymSessionManager.expiredUsers.delete(managerUserKey);
-                    if (typeof expiredUsers !== 'undefined') delete expiredUsers[cleanUsername];
+                    if (typeof expiredUsers !== 'undefined') delete expiredUsers[clubUserKey];
                 }, 3000);
-                console.log(`[접속 차단] 유저(${cleanUsername})는 세션이 완전 만료되어 자동 복귀를 차단하고 강제 로그아웃 신호를 전송합니다.`);
+                console.log(`[접속 차단] [${incomingClubId}] 유저(${cleanUsername})는 세션이 완전 만료되어 자동 복귀를 차단하고 강제 로그아웃 신호를 전송합니다.`);
 
                 socket.emit('forceSessionExpire', {
                     targetUser: cleanUsername,
@@ -2542,12 +2718,10 @@ io.on('connection', (socket) => {
                 return;
             } else {
                 if (typeof gymSessionManager !== 'undefined' && gymSessionManager.expiredUsers) gymSessionManager.expiredUsers.delete(managerUserKey);
-                if (typeof expiredUsers !== 'undefined') delete expiredUsers[cleanUsername];
-                console.log(`[신규 로그인] 유저(${cleanUsername})가 직접 로그인하여 이전 만료 상태를 초기화하고 정상 접속합니다.`);
+                if (typeof expiredUsers !== 'undefined') delete expiredUsers[clubUserKey];
+                console.log(`[신규 로그인] [${incomingClubId}] 유저(${cleanUsername})가 직접 로그인하여 이전 만료 상태를 초기화하고 정상 접속합니다.`);
             }
         }
-
-        const clubUserKey = `${incomingClubId}_${cleanUsername}`;
 
         // 🚪 동일 구장 내 중복 로그인 감지 (기존 기기 소켓에만 1회 퇴출 신호 전송)
         if (!isAutoRestore && activeUserSockets.has(clubUserKey)) {
@@ -2572,28 +2746,14 @@ io.on('connection', (socket) => {
             }
         }
 
-        // 🔄 이전 구장 변경 감지 시 이전 클럽 대기방 정리
-        const previousClubId = (typeof disconnectUserClubs !== 'undefined') ? disconnectUserClubs[cleanUsername] : null;
-        if (previousClubId && previousClubId !== incomingClubId) {
-            if (typeof cleanupUser === 'function') {
-                await cleanupUser(cleanUsername, previousClubId);
-            }
-            if (typeof gymSessionManager !== 'undefined' && typeof gymSessionManager.clearUserImmediately === 'function') {
-                gymSessionManager.clearUserImmediately(cleanUsername, previousClubId);
-            }
-            console.log(`[클럽 변경 감지] 유저(${cleanUsername})가 '${previousClubId}' ➔ '${incomingClubId}'(으)로 이동: 이전 구장 정리 완료`);
+        // 🏢 [멀티테넌트 수정] 구장별 복합 키 기준으로만 타이머 정리 (타 구장 대기열 간섭 차단)
+        if (typeof disconnectTimers !== 'undefined' && disconnectTimers[clubUserKey]) {
+            clearTimeout(disconnectTimers[clubUserKey]);
+            delete disconnectTimers[clubUserKey];
         }
-
-        // 구형 타이머 잔재가 있다면 안전하게 청소
-        if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
-            clearTimeout(disconnectTimers[cleanUsername]);
-            delete disconnectTimers[cleanUsername];
-        }
-        if (typeof disconnectUserClubs !== 'undefined') delete disconnectUserClubs[cleanUsername];
-        if (typeof disconnectRawUsers !== 'undefined') delete disconnectRawUsers[cleanUsername];
-        if (typeof sessionTimers !== 'undefined' && sessionTimers[cleanUsername]) {
-            clearTimeout(sessionTimers[cleanUsername]);
-            delete sessionTimers[cleanUsername];
+        if (typeof sessionTimers !== 'undefined' && sessionTimers[clubUserKey]) {
+            clearTimeout(sessionTimers[clubUserKey]);
+            delete sessionTimers[clubUserKey];
         }
 
         // 💾 구장별 세션 키 및 진짜 이름으로 소켓 완벽 등록
@@ -2601,9 +2761,8 @@ io.on('connection', (socket) => {
         activeUserSockets.set(clubUserKey, socket.id);
         socket.username = cleanUsername;
         socket.finalName = cleanUsername;
-        socket.clubId = incomingClubId;
         socket.clubUserKey = clubUserKey;
-        socket.join(`club_${incomingClubId}`);
+        switchSocketClubRoom(incomingClubId);
 
         if (typeof userSockets !== 'undefined') {
             userSockets[socket.id] = { username: cleanUsername, clubId: incomingClubId };
@@ -2731,12 +2890,16 @@ io.on('connection', (socket) => {
         console.log(`🚪 [소켓 룸 조인] 소켓(${socket.id}) -> 방 등록: [${roomName}, ${clubRoomName}]`);
     });
     
-    // 🔑 [추가 완료] 정회원 로그인 처리 소켓 이벤트
     // 🔑 [수정] 정회원 로그인 처리 소켓 이벤트 (클럽별 회원 분리)
-    socket.on('loginMember', ({ name, phone }, callback) => {
+    socket.on('loginMember', ({ name, phone, clubId }, callback) => {
         const trimmedName = name ? name.trim() : '';
         const cleanInputPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
-        const currentClubId = socket.clubId || 'unjeong'; // 🏢 접속한 클럽 확인
+        // 🏢 [멀티테넌트 수정] 클라이언트가 전달한 clubId를 최우선 사용하고, 없을 때만 socket.clubId 참조 ('unjeong' 임의 폴백 제거)
+        const currentClubId = (clubId && String(clubId).trim()) || socket.clubId;
+
+        if (!currentClubId) {
+            return callback({ success: false, message: '접속 구장 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.' });
+        }
 
         if (!trimmedName || !cleanInputPhone) {
             return callback({ success: false, message: '이름과 전화번호를 모두 입력해 주세요.' });
@@ -2759,6 +2922,13 @@ io.on('connection', (socket) => {
             if (!row) {
                 return callback({ success: false, message: '해당 클럽에 등록된 정회원 정보가 없습니다.' });
             }
+
+            // 🏢 [멀티테넌트 수정] 로그인 성공 시 현재 소켓의 구장 소속을 실제 로그인 구장으로 확정
+            if (socket.clubId && socket.clubId !== currentClubId) {
+                socket.leave(`club_${socket.clubId}`);
+            }
+            socket.clubId = currentClubId;
+            socket.join(`club_${currentClubId}`);
 
             const genderStr = row.gender ? row.gender : '미입력';
             const ageGroupStr = row.ageGroup ? row.ageGroup : '일반';
@@ -2783,12 +2953,17 @@ io.on('connection', (socket) => {
     });
 
     // 🔑 일일회원 로그인 처리 소켓 이벤트 (DB 자동 저장 및 재방문 연동)
-    socket.on('loginGuest', ({ name, phone, payCode, gender, ageGroup, grade }, callback) => {
+    socket.on('loginGuest', ({ name, phone, payCode, gender, ageGroup, grade, clubId }, callback) => {
         if (!payCode || payCode.length !== 6) {
             return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
         }
 
-        const currentClubId = socket.clubId || 'unjeong';
+        // 🏢 [멀티테넌트 수정] 클라이언트가 전달한 clubId를 최우선 사용하고, 없을 때만 socket.clubId 참조
+        const currentClubId = (clubId && String(clubId).trim()) || socket.clubId;
+        if (!currentClubId) {
+            return callback({ success: false, message: '접속 구장 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.' });
+        }
+
         const cleanName = (name || '').trim();
         const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
 
@@ -2831,6 +3006,13 @@ io.on('connection', (socket) => {
                 `SELECT id, visit_count FROM guest_members WHERE club_id = ? AND name = ? AND phone = ?`,
                 [currentClubId, cleanName, cleanPhone],
                 (selectErr, row) => {
+                    // 🏢 [멀티테넌트 수정] 일일회원 입장 성공 시 현재 소켓의 구장 소속 확정
+                    if (socket.clubId && socket.clubId !== currentClubId) {
+                        socket.leave(`club_${socket.clubId}`);
+                    }
+                    socket.clubId = currentClubId;
+                    socket.join(`club_${currentClubId}`);
+
                     const guestId = (row && row.id) ? `guest_${row.id}` : `guest_${Date.now()}`;
 
                     const user = {
@@ -4589,21 +4771,27 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
         if (rawName) {
             let cleanUsername = String(rawName).replace(/님$/, '').split('/')[0].split('|')[0].trim();
 
-            // 전화번호 형태라면 DB에서 진짜 이름으로 변환
+            // 전화번호 형태라면 DB에서 해당 구장 소속 회원의 진짜 이름으로 변환
             if (cleanUsername && /^[0-9\-]+$/.test(cleanUsername) && typeof db !== 'undefined') {
                 const digits = cleanUsername.replace(/[^0-9]/g, '');
                 const hyphen = digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
                 try {
+                    // 🏢 [멀티테넌트 수정] 해당 구장 소속 회원만 조회
                     const row = await new Promise((resolve) => {
-                        db.get(`SELECT name FROM regular_members WHERE id = ? OR phone = ? OR phone = ?`, [cleanUsername, digits, hyphen], (err, res) => resolve(res));
+                        db.get(
+                            `SELECT name FROM regular_members WHERE (id = ? OR phone = ? OR phone = ?) AND (club_id = ? OR (club_id IS NULL AND ? = 'unjeong'))`,
+                            [cleanUsername, digits, hyphen, targetClubId, targetClubId],
+                            (err, res) => resolve(res)
+                        );
                     });
                     if (row && row.name) cleanUsername = row.name;
                 } catch (e) {}
             }
 
+            const clubUserKey = `${targetClubId}_${cleanUsername}`;
+
             // 현재 소켓이 activeUserSockets에 등록된 경우에만 매핑 제거 (새 기기 소켓 보호)
             if (typeof activeUserSockets !== 'undefined' && activeUserSockets.get) {
-                const clubUserKey = `${targetClubId}_${cleanUsername}`;
                 if (activeUserSockets.get(clubUserKey) === socket.id) {
                     activeUserSockets.delete(clubUserKey);
                 }
@@ -4617,10 +4805,10 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                     gymSessionManager.clearUserImmediately(cleanUsername, targetClubId);
                 }
 
-                // 2. 구형 타이머 잔재 제거
-                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[cleanUsername]) {
-                    clearTimeout(disconnectTimers[cleanUsername]);
-                    delete disconnectTimers[cleanUsername];
+                // 2. 🏢 [멀티테넌트 수정] 구장별 복합 키 기준으로만 구형 타이머 잔재 제거 (타 구장 동명이인 보호)
+                if (typeof disconnectTimers !== 'undefined' && disconnectTimers[clubUserKey]) {
+                    clearTimeout(disconnectTimers[clubUserKey]);
+                    delete disconnectTimers[clubUserKey];
                 }
 
                 // 3. 즉시 대기방 폭파 (클럽 ID 포함)
@@ -4634,6 +4822,7 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
 
         socket.username = null;
         socket.finalName = null;
+        socket.clubUserKey = null;
         if (typeof userSockets !== 'undefined') delete userSockets[socket.id];
         if (typeof broadcastOnlineCount === 'function') broadcastOnlineCount(targetClubId);
 
@@ -4892,39 +5081,50 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
             return callback({ success: false, message: '이미 존재하는 클럽 ID입니다.' });
         }
 
-        // 코트 기본 데이터 생성 (마지막 2코트는 난타 및 레슨 전용)
+        // 🏢 [멀티테넌트 수정] loadClubsData()와 100% 동일한 구조(name, nextType 포함)로 코트 생성
         const generatedCourts = [];
         for (let i = 1; i <= courtsNum; i++) {
+            const courtName = `${i}코트`;
             if (i <= courtsNum - 2) {
-                generatedCourts.push({ id: i, type: 'game', isEmpty: true, players: '', note: '' });
+                generatedCourts.push({ id: i, name: courtName, type: 'game', nextType: 'game', isEmpty: true, players: '', note: '' });
             } else if (i === courtsNum - 1) {
                 generatedCourts.push({
                     id: i,
+                    name: courtName,
                     type: 'nanta',
+                    nextType: 'nanta',
                     sideA: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
                     sideB: { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 },
                     note: ''
                 });
             } else {
-                generatedCourts.push({ id: i, type: 'lesson', isEmpty: false, players: '레슨 전용 코트', note: '' });
+                generatedCourts.push({ id: i, name: courtName, type: 'lesson', nextType: 'lesson', isEmpty: false, players: '레슨 전용 코트', note: '' });
             }
         }
 
-        // 새 클럽 데이터 모델 구조화
+        // 🏢 [멀티테넌트 수정] 운정클럽과 동일한 필수 런타임 필드 및 분/초 타이머 설정 완비
         clubs[cleanId] = {
             clubId: cleanId,
             clubName: cleanName,
             name: cleanName, // 기존 호환성 유지용
+            isActive: true,
+            courtCount: courtsNum,
+            slotIdCounter: 1,
             config: {
+                clubName: cleanName,
                 ENTRY_TIMEOUT_SEC: 180,
                 NANTA_COURT_LIMIT_SEC: 900,
                 ADMIN_PASSWORD: adminPass,
+                queueGraceMinutes: 30,
+                sessionExpireMinutes: 60,
+                continuousGameLimitMinutes: 5,
                 DISCONNECT_GRACE_SEC: 1800,
                 SESSION_TIMEOUT_SEC: 3600,
                 useWifiRestriction: false,
                 allowedGymIps: []
             },
             courtsData: generatedCourts,
+            courts: generatedCourts,
             gameQueue: [],
             nantaQueue: [],
             notifications: []
@@ -4944,18 +5144,41 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
         if (password !== SUPER_ADMIN_KEY) {
             return callback({ success: false, message: '권한이 없습니다.' });
         }
-        if (!clubs[clubId]) {
+
+        const cleanId = String(clubId || '').trim().toLowerCase();
+        if (!cleanId || !clubs[cleanId]) {
             return callback({ success: false, message: '존재하지 않는 클럽입니다.' });
         }
 
-        const deletedName = clubs[clubId].name;
-        delete clubs[clubId];
+        // 🏢 [멀티테넌트 수정] 기본 기준 구장(unjeong) 실수 삭제 보호
+        if (cleanId === 'unjeong') {
+            return callback({ success: false, message: '기본 기준 클럽(unjeong)은 삭제할 수 없습니다.' });
+        }
+
+        const deletedName = clubs[cleanId].clubName || clubs[cleanId].name || cleanId;
+
+        // 🏢 [멀티테넌트 수정] 삭제 대상 구장에 접속 중인 사용자 세션 정리 및 강제 종료 알림
+        io.to(`club_${cleanId}`).emit('forceLogout', {
+            clubId: cleanId,
+            reason: 'club_deleted',
+            message: '해당 클럽 운영이 종료되어 로그아웃됩니다.'
+        });
+
+        if (typeof activeUserSockets !== 'undefined' && activeUserSockets.keys) {
+            for (const key of Array.from(activeUserSockets.keys())) {
+                if (key.startsWith(`${cleanId}_`)) {
+                    activeUserSockets.delete(key);
+                }
+            }
+        }
+
+        delete clubs[cleanId];
 
         if (typeof saveClubsData === 'function') {
             saveClubsData();
         }
 
-        console.log(`👑 [슈퍼 관리자] 클럽 삭제 완료: ${deletedName} (${clubId})`);
+        console.log(`👑 [슈퍼 관리자] 클럽 삭제 완료: ${deletedName} (${cleanId})`);
         callback({ success: true, message: `[${deletedName}] 클럽이 삭제되었습니다.` });
     });
 });
@@ -4964,9 +5187,10 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
 function broadcastOnlineCount(targetClubId) {
     if (!io || !io.sockets || !io.sockets.adapter) return;
 
-    const allClubIds = (typeof clubs !== 'undefined' && Object.keys(clubs).length > 0) 
-        ? Object.keys(clubs) 
-        : ['unjeong', 'daewon'];
+    // 🏢 [멀티테넌트 수정] 실제 존재하는 clubs 키만 순회 (삭제된 클럽 자동 재생성 방지)
+    const allClubIds = (typeof clubs !== 'undefined' && clubs && Object.keys(clubs).length > 0)
+        ? Object.keys(clubs)
+        : ['unjeong'];
     const superAdminSummary = {};
 
     allClubIds.forEach((clubId) => {
@@ -4981,6 +5205,9 @@ function broadcastOnlineCount(targetClubId) {
             room.forEach((socketId) => {
                 const userSocket = io.sockets.sockets.get(socketId);
                 if (!userSocket) return;
+
+                // 🏢 [멀티테넌트 수정] 다른 구장으로 소속이 바뀐 소켓이 잔류한 경우 집계 제외
+                if (userSocket.clubId && userSocket.clubId !== clubId) return;
 
                 const userKey = userSocket.username || 
                                 userSocket.userIdentifier || 
@@ -5020,7 +5247,8 @@ function broadcastOnlineCount(targetClubId) {
 
         // 3. 게임(대기열 + 코트) 인원 산출
         let gameCount = 0;
-        const club = (typeof getClub === 'function') ? getClub(clubId) : (typeof clubs === 'object' ? clubs[clubId] : null);
+        // 🏢 [멀티테넌트 수정] getClub() 대신 clubs[clubId] 직접 조회로 부수 효과 차단
+        const club = (typeof clubs === 'object' && clubs) ? clubs[clubId] : null;
         const cCourts = (club && Array.isArray(club.courtsData)) ? club.courtsData : [];
         const cGameQueue = (club && Array.isArray(club.gameQueue)) ? club.gameQueue : [];
         const cNantaQueue = (club && Array.isArray(club.nantaQueue)) ? club.nantaQueue : [];
@@ -5077,6 +5305,8 @@ function broadcastOnlineCount(targetClubId) {
         const totalInGym = wifiUsers.size;
 
         const countPayload = {
+            // 🏢 [멀티테넌트 수정] 클라이언트 구장 일치 검증용 clubId 동봉
+            clubId: clubId,
             connected: totalConnected,
             inGym: totalInGym,
             game: gameCount,
@@ -5086,8 +5316,10 @@ function broadcastOnlineCount(targetClubId) {
             total: totalConnected
         };
 
-        // 개별 클럽 방 전송
-        io.to(roomName).emit('updateOnlineCount', countPayload);
+        // 🏢 [멀티테넌트 수정] targetClubId가 지정된 경우 해당 구장 방에만 전송 (미지정 시 전체 구장 개별 전송)
+        if (!targetClubId || clubId === targetClubId) {
+            io.to(roomName).emit('updateOnlineCount', countPayload);
+        }
 
         // 슈퍼 관리자용 종합 데이터 수집
         superAdminSummary[clubId] = countPayload;

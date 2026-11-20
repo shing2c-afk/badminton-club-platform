@@ -836,7 +836,8 @@ input:checked + .slider:before {
 <script>
     // 🏢 [멀티 테넌트] URL 파라미터에서 관리 대상 클럽 식별 (기본값: 'unjeong')
     const urlParams = new URLSearchParams(window.location.search);
-    const currentClubId = urlParams.get('club') || 'unjeong';
+    // 🏢 [멀티테넌트 수정] ?club= 및 ?clubId= 파라미터 모두 인식
+    const currentClubId = urlParams.get('club') || urlParams.get('clubId') || 'unjeong';
     window.currentClubId = currentClubId;
 
     // 🏢 클럽별 명칭 매핑
@@ -846,17 +847,32 @@ input:checked + .slider:before {
     };
 
     // 🏷️ 관리자 페이지 타이틀 및 상단 헤더 클럽명 자동 표시
-function updateAdminHeader() {
+async function updateAdminHeader() {
     // 🏢 1. 브라우저 캐시 또는 전역변수에서 한글 이름 즉시 조회
     const cachedName = localStorage.getItem(`admin_club_name_${currentClubId}`);
-    const clubDisplayName = window.currentClubName || 
-                            cachedName || 
-                            (typeof clubNames !== 'undefined' && clubNames[currentClubId]) || 
-                            '';
+    let clubDisplayName = window.currentClubName || 
+                          cachedName || 
+                          (typeof clubNames !== 'undefined' && clubNames[currentClubId]) || 
+                          '';
+
+    // 🏢 [멀티테넌트 수정] 신규 클럽 최초 접속 시 /api/clubs에서 등록된 한글 클럽명 조회
+    if (!clubDisplayName) {
+        try {
+            const res = await fetch('/api/clubs');
+            const data = await res.json();
+            if (data.success && Array.isArray(data.clubs)) {
+                const matched = data.clubs.find(c => c.id === currentClubId);
+                if (matched && matched.name) {
+                    clubDisplayName = matched.name;
+                    window.currentClubName = matched.name;
+                }
+            }
+        } catch (e) {}
+    }
 
     // 🏢 2. 서버에서 전달된 한글 이름이 있다면 브라우저 캐시에 즉시 보관
-    if (window.currentClubName) {
-        localStorage.setItem(`admin_club_name_${currentClubId}`, window.currentClubName);
+    if (clubDisplayName) {
+        localStorage.setItem(`admin_club_name_${currentClubId}`, clubDisplayName);
     }
 
     // 🏢 3. 한글 이름이 아직 없으면 영문 임시값을 띄우지 않고 기본 타이틀 유지
@@ -884,11 +900,14 @@ if (document.readyState === 'loading') {
 }
 
     // 💡 소켓 접속 시 해당 클럽 식별자를 쿼리로 서버에 전달 (필수)
+    // 🏢 [멀티테넌트 수정] club/clubId 동시 전달 및 window.socket 전역 고정
     const socket = io({
         query: {
-            club: currentClubId
+            club: currentClubId,
+            clubId: currentClubId
         }
     });
+    window.socket = socket;
 
     let localCourts = [];
     let isInitialized = false; 
@@ -944,6 +963,9 @@ if (document.readyState === 'loading') {
     }
 
     socket.on('stateUpdated', (data) => {
+    // 🏢 [멀티테넌트 수정] 현재 관리 중인 구장(currentClubId) 데이터만 반영하여 타 구장 설정 덮어쓰기 차단
+    if (data && data.clubId && data.clubId !== currentClubId) return;
+
         // 🏢 [클럽명 수신] 서버에서 전달된 한글 클럽명 저장 및 헤더 갱신
     if (data && (data.clubName || data.name)) {
         window.currentClubName = data.clubName || data.name;
@@ -1111,6 +1133,9 @@ if (document.readyState === 'loading') {
 
     if (adminSocket && wifiToggle) {
         adminSocket.on('syncConfig', (configData) => {
+            // 🏢 [멀티테넌트 수정] 타 구장 설정 동기화 신호 무시
+            if (configData && configData.clubId && configData.clubId !== currentClubId) return;
+
             if (configData && typeof configData.useWifiRestriction !== 'undefined') {
                 wifiToggle.checked = configData.useWifiRestriction;
                 localStorage.setItem(`useWifiRestriction_${currentClubId}`, configData.useWifiRestriction ? "true" : "false");
@@ -1159,6 +1184,9 @@ if (document.readyState === 'loading') {
         }
 
         adminSocket.on('syncConfig', (configData) => {
+            // 🏢 [멀티테넌트 수정] 타 구장 설정 동기화 신호 무시
+            if (configData && configData.clubId && configData.clubId !== currentClubId) return;
+
             if (configData) {
                 if (typeof configData.useWifiRestriction !== 'undefined' && wifiToggle) {
                     wifiToggle.checked = configData.useWifiRestriction;
@@ -1189,6 +1217,9 @@ if (document.readyState === 'loading') {
 
     if (adminSocket) {
         adminSocket.on('wifiStatus', (data) => {
+            // 🏢 [멀티테넌트 수정] 타 구장 Wi-Fi 상태 패킷 무시
+            if (data && data.clubId && data.clubId !== currentClubId) return;
+
             if (data && data.clientIp) {
                 myCurrentIp = data.clientIp;
                 if (currentIpEl) currentIpEl.textContent = myCurrentIp;
