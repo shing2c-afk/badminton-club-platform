@@ -528,11 +528,7 @@ async function handleRegisterSubmit(event) {
     const showTopAlert = async (msg) => {
         const customModal = document.getElementById('custom-modal');
         if (customModal) {
-            if (customModal.parentNode !== document.body) {
-                document.body.appendChild(customModal);
-            } else {
-                document.body.appendChild(customModal);
-            }
+            document.body.appendChild(customModal);
             customModal.style.setProperty('z-index', '2147483647', 'important');
         }
         if (typeof window.showAlert === 'function') {
@@ -551,23 +547,53 @@ async function handleRegisterSubmit(event) {
         }
     };
 
-    // 🏢 [멀티테넌트 수정] URL 파라미터(?club=) 및 window.currentClubId를 최우선으로 추출
+    // 입력값 실시간 정제 및 검증
+    const nameInput = document.getElementById('regName');
+    const phoneInput = document.getElementById('regPhone');
+    const birthInput = document.getElementById('regBirthDate');
+
+    const cleanName = String(nameInput ? nameInput.value : '').replace(/[^가-힣a-zA-Z]/g, '').trim();
+    const cleanPhone = String(phoneInput ? phoneInput.value : '').replace(/[^0-9]/g, '');
+    const cleanBirth = String(birthInput ? birthInput.value : '').replace(/[^0-9]/g, '');
+
+    if (cleanName.length < 2) {
+        await showTopAlert('이름은 한글 또는 영문 2자 이상 정확히 입력해 주세요.');
+        if (nameInput) nameInput.focus();
+        return;
+    }
+    if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+        await showTopAlert('전화번호는 하이픈 없이 숫자 10~11자리로 입력해 주세요.\n(예: 01012345678)');
+        if (phoneInput) phoneInput.focus();
+        return;
+    }
+    if (cleanBirth.length !== 8) {
+        await showTopAlert('생년월일은 숫자 8자리로 정확히 입력해 주세요.\n(예: 19780116)');
+        if (birthInput) birthInput.focus();
+        return;
+    }
+
+    // 🏢 [멀티테넌트] URL 파라미터(?club=) 및 window.currentClubId를 최우선으로 추출
     const urlParams = new URLSearchParams(window.location.search);
-    const clubId = urlParams.get('club') || 
-                   urlParams.get('clubId') || 
-                   (typeof window.currentClubId !== 'undefined' && window.currentClubId) || 
-                   localStorage.getItem('preferredClubId') || 
-                   'unjeong';
+    const clubId = String(
+        urlParams.get('club')
+        || urlParams.get('clubId')
+        || (typeof window.currentClubId !== 'undefined' && window.currentClubId)
+        || localStorage.getItem('preferredClubId')
+        || 'unjeong'
+    ).trim();
 
     const formData = {
-        name: document.getElementById('regName').value.trim(),
-        phone: document.getElementById('regPhone').value.trim(),
+        name: cleanName,
+        phone: cleanPhone,
         gender: document.getElementById('regGender').value,
-        birthDate: document.getElementById('regBirthDate').value.trim(),
+        birthDate: cleanBirth,
         grade: document.getElementById('regGrade').value,
         address: document.getElementById('regAddress') ? document.getElementById('regAddress').value.trim() : '',
         clubId: clubId
     };
+
+    const submitBtn = document.querySelector('#registerForm button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
 
     try {
         const response = await fetch('/api/register', {
@@ -598,48 +624,33 @@ async function handleRegisterSubmit(event) {
     } catch (error) {
         console.error('가입 신청 통신 오류:', error);
         await showTopAlert('서버와의 통신 중 오류가 발생했습니다.');
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
     }
 }
 
 window.handleRegisterSubmit = handleRegisterSubmit;
 
+// 입력칸 숫자/문자 전용 강제 잠금 (붙여넣기·모바일 키보드 포함)
 document.addEventListener('DOMContentLoaded', () => {
+    const nameInput = document.getElementById('regName');
+    if (nameInput) {
+        nameInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z]/g, '').slice(0, 10);
+        });
+    }
+
     const phoneInput = document.getElementById('regPhone');
     if (phoneInput) {
         phoneInput.addEventListener('input', (e) => {
-            let value = e.target.value.replace(/\D/g, '');
-            if (value.length > 11) value = value.slice(0, 11);
-
-            let formatted = '';
-            if (value.length < 4) {
-                formatted = value;
-            } else if (value.length < 8) {
-                formatted = value.slice(0, 3) + '-' + value.slice(3);
-            } else if (value.length < 11) {
-                formatted = value.slice(0, 3) + '-' + value.slice(3, 7) + '-' + value.slice(7);
-            } else {
-                formatted = value.slice(0, 3) + '-' + value.slice(3, 7) + '-' + value.slice(7, 11);
-            }
-            e.target.value = formatted;
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
         });
     }
 
     const birthInput = document.getElementById('regBirthDate');
     if (birthInput) {
         birthInput.addEventListener('input', (e) => {
-            let value = e.target.value.replace(/\D/g, '');
-            if (value.length > 8) value = value.slice(0, 8);
-
-            let formatted = '';
-            if (value.length <= 4) {
-                formatted = value;
-            } else if (value.length <= 6) {
-                formatted = value.slice(0, 4) + '-' + value.slice(4);
-            } else {
-                formatted = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
-            }
-            e.target.value = formatted;
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 8);
         });
     }
-});
 });

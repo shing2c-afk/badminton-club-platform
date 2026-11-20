@@ -266,26 +266,32 @@ body, button, input, select, textarea {
         </div>
       </form>
 
-      <!-- 2. 일일회원 입장 폼 (간격 슬림화) -->
+      <!-- 2. 일일회원 입장 폼 (입력 제한 및 키오스크/PG 결제승인번호 확장 대응) -->
       <form id="guestLoginForm" style="display: none; padding-bottom: 20px;">
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
           <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">이름(*필수)</label>
-          <input type="text" id="guestName" lang="ko" placeholder="이름 입력" required maxlength="10" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+          <input type="text" id="guestName" lang="ko" placeholder="한글/영문 실명 입력" required maxlength="10"
+                 oninput="this.value = this.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z]/g, '')"
+                 style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
         </div>
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
           <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">전화번호(*필수)</label>
-          <input type="tel" id="guestPhone" placeholder="010-1234-5678" required maxlength="13" oninput="formatPhone(this)" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+          <input type="tel" id="guestPhone" inputmode="numeric" placeholder="010-1234-5678" required maxlength="13"
+                 oninput="formatPhone(this)"
+                 style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
         </div>
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">결제인증번호(숫자 6자리 *필수)</label>
-          <input type="text" id="guestPayCode" placeholder="6자리 입력" required maxlength="6" oninput="validatePayCodeInput(this)" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+          <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">결제승인번호(숫자 6자리 *필수)</label>
+          <input type="tel" id="guestPayCode" inputmode="numeric" pattern="[0-9]{6}" placeholder="키오스크 승인번호 6자리" required maxlength="6"
+                 oninput="this.value = this.value.replace(/[^0-9]/g, ''); if (typeof validatePayCodeInput === 'function') validatePayCodeInput(this);"
+                 style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
         </div>
 
         <!-- 성별 / 연령대 / 급수 -->
         <div style="display: flex; gap: 6px; margin-bottom: 14px; text-align: left;">
           <div style="flex: 1; min-width: 0;">
             <label style="display: block; font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;">성별</label>
-            <select id="guestGender" style="width: 100%; padding: 8px 2px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center;">
+            <select id="guestGender" style="width: 100%; padding: 8px 2px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center; box-sizing: border-box;">
               <option value="">선택</option>
               <option value="남">남성</option>
               <option value="여">여성</option>
@@ -293,7 +299,7 @@ body, button, input, select, textarea {
           </div>
           <div style="flex: 1; min-width: 0;">
             <label style="display: block; font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;">연령대</label>
-            <select id="guestAge" style="width: 100%; padding: 8px 2px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center;">
+            <select id="guestAge" style="width: 100%; padding: 8px 2px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center; box-sizing: border-box;">
               <option value="">선택</option>
               <option value="20대">20대</option>
               <option value="30대">30대</option>
@@ -305,7 +311,7 @@ body, button, input, select, textarea {
           </div>
           <div style="flex: 1; min-width: 0;">
             <label style="display: block; font-size: 11px; color: #aaa; margin-bottom: 3px; white-space: nowrap;">급수</label>
-            <select id="guestLevel" style="width: 100%; padding: 8px 2px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center;">
+            <select id="guestLevel" style="width: 100%; padding: 8px 2px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; font-size: 12px; text-align: center; box-sizing: border-box;">
               <option value="">선택</option>
               <option value="초심">초심</option>
               <option value="D">D조</option>
@@ -585,43 +591,50 @@ body, button, input, select, textarea {
         <!-- 가입 신청 입력 폼 -->
         <form id="registerForm" onsubmit="handleRegisterSubmit(event)">
             <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">이름</label>
-                <input type="text" id="regName" placeholder="실명 입력" required maxlength="10" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">이름 (한글/영문 실명만 입력)</label>
+                <input type="text" id="regName" placeholder="예: 홍길동" required maxlength="10"
+                       oninput="this.value = this.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z]/g, '')"
+                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
             </div>
             
             <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">전화번호 (숫자만 입력)</label>
-                <input type="tel" id="regPhone" placeholder="01012345678" required maxlength="13" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">전화번호 (하이픈 없이 숫자만 입력)</label>
+                <input type="tel" id="regPhone" inputmode="numeric" pattern="[0-9]{10,11}" placeholder="01012345678" required maxlength="11"
+                       oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
             </div>
 
             <div class="input-group" style="margin-bottom: 10px; text-align: left;">
                 <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">성별</label>
-                <select id="regGender" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;">
+                <select id="regGender" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
                     <option value="남">남</option>
                     <option value="여">여</option>
                 </select>
             </div>
 
             <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">생년월일 (숫자 8자리 입력)</label>
-                <input type="tel" id="regBirthDate" placeholder="20000101" required maxlength="10" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;" />
+                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">생년월일 (숫자 8자리만 입력, 예: 19780116)</label>
+                <input type="tel" id="regBirthDate" inputmode="numeric" pattern="[0-9]{8}" placeholder="19780116" required maxlength="8"
+                       oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
             </div>
 
             <div class="input-group" style="margin-bottom: 10px; text-align: left;">
                 <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">급수</label>
-                <select id="regGrade" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;">
+                <select id="regGrade" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
                     <option value="초심">초심</option>
                     <option value="D조">D조</option>
                     <option value="C조">C조</option>
                     <option value="B조">B조</option>
                     <option value="A조">A조</option>
-                     <option value="S조">S조</option>
+                    <option value="S조">S조</option>
                 </select>
             </div>
 
             <div class="input-group" style="margin-bottom: 16px; text-align: left;">
                 <label for="regAddress" style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">주소</label>
-                <input type="text" id="regAddress" placeholder="예: 경기 파주시 야동동" required style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px;">
+                <input type="text" id="regAddress" placeholder="예: 경기 파주시 와동동" required
+                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
             </div>
 
             <button type="submit" style="width: 100%; padding: 10px; background: #10b981; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">가입 신청하기</button>

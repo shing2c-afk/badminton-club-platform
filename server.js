@@ -457,38 +457,95 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// 생년월일(YYYY-MM-DD)을 받아 '40대', '50대' 등의 연령대 문자열로 변환하는 함수
-function calculateAgeGroup(birthDateStr) {
-    if (!birthDateStr) return '기타';
-    const birthYear = new Date(birthDateStr).getFullYear();
+// 생년월일(8자리 19780116, 6자리 780116, 4자리 1978, 하이픈 포함 등)을 표준 'YYYY-MM-DD'로 정규화
+function normalizeBirthDate(rawBirthDate) {
+    const digits = String(rawBirthDate || '').replace(/[^0-9]/g, '');
     const currentYear = new Date().getFullYear();
+    const currentTwoDigit = currentYear % 100;
+
+    if (digits.length === 8) {
+        const yyyy = parseInt(digits.slice(0, 4), 10);
+        const mm = parseInt(digits.slice(4, 6), 10);
+        const dd = parseInt(digits.slice(6, 8), 10);
+        if (yyyy >= 1920 && yyyy <= currentYear && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+            return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+        }
+    } else if (digits.length === 6) {
+        const yy = parseInt(digits.slice(0, 2), 10);
+        const mm = parseInt(digits.slice(2, 4), 10);
+        const dd = parseInt(digits.slice(4, 6), 10);
+        const yyyy = yy <= currentTwoDigit ? (2000 + yy) : (1900 + yy);
+        if (yyyy >= 1920 && yyyy <= currentYear && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+            return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+        }
+    } else if (digits.length === 4) {
+        const yyyy = parseInt(digits, 10);
+        if (yyyy >= 1920 && yyyy <= currentYear) {
+            return `${yyyy}-01-01`;
+        }
+    }
+    return '';
+}
+
+// 생년월일을 받아 '40대', '50대' 등의 정상 연령대 문자열로 변환하는 함수
+function calculateAgeGroup(birthDateStr) {
+    const normalized = normalizeBirthDate(birthDateStr);
+    if (!normalized) return '기타';
+
+    const birthYear = parseInt(normalized.slice(0, 4), 10);
+    const currentYear = new Date().getFullYear();
+    if (isNaN(birthYear) || birthYear < 1920 || birthYear > currentYear) {
+        return '기타';
+    }
+
     const age = currentYear - birthYear;
     const decade = Math.floor(age / 10) * 10;
-    return `${decade}대`;
+    return decade >= 10 ? `${decade}대` : '10대 미만';
 }
+
+// 🔧 서버 시작 시 기존 DB에 잘못 계산된 연령대(-778090대 등) 자동 복구
+setTimeout(() => {
+    if (typeof db === 'undefined') return;
+    db.all(
+        `SELECT id, birthDate, ageGroup FROM regular_members WHERE ageGroup LIKE '-%' OR ageGroup LIKE '%NaN%' OR ageGroup IS NULL OR ageGroup = ''`,
+        [],
+        (err, rows) => {
+            if (err || !Array.isArray(rows) || rows.length === 0) return;
+            rows.forEach((row) => {
+                const fixedBirth = normalizeBirthDate(row.birthDate);
+                const fixedAgeGroup = calculateAgeGroup(fixedBirth || row.birthDate);
+                if (fixedAgeGroup && fixedAgeGroup !== '기타') {
+                    db.run(
+                        `UPDATE regular_members SET birthDate = COALESCE(NULLIF(?, ''), birthDate), ageGroup = ? WHERE id = ?`,
+                        [fixedBirth, fixedAgeGroup, row.id]
+                    );
+                }
+            });
+        }
+    );
+}, 2000);
 
 // ==========================================
 // 정회원 가입 및 관리자 승인 관련 API
 // ==========================================
 
-// 1. 정회원 가입 신청 접수 API (구장별 격리 및 하이픈/띄어쓰기 완벽 호환 적용)
-// 💡 수정 후: 두 경로 모두 수신 가능하도록 지정
+// 1. 정회원 가입 신청 접수 API (구장별 격리, 입력값 정규화 및 유효성 검증 적용)
 app.post(['/api/register', '/api/register-request'], async (req, res) => {
     try {
         const { name: rawName, phone: rawPhone, gender, birthDate: rawBirthDate, grade, address: rawAddress, clubId: reqClubId, club } = req.body;
-        
-        // 💡 신청한 구장 식별자 추출 및 공백 제거 (기본값 unjeong)
+
         const clubId = String(reqClubId || club || 'unjeong').trim();
 
-        // 💡 이름, 주소, 생년월일 공백 제거 정리
-        const name = String(rawName || '').trim();
-        const address = String(rawAddress || '').trim();
-        const birthDigits = String(rawBirthDate || '').replace(/[^0-9]/g, '');
-        const birthDate = birthDigits.length === 8 
-            ? `${birthDigits.slice(0, 4)}-${birthDigits.slice(4, 6)}-${birthDigits.slice(6, 8)}` 
-            : String(rawBirthDate || '').trim();
+        // 💡 이름: 괄호·숫자·특수문자 제거 후 순수 한글/영문만 허용
+        const name = String(rawName || '')
+            .replace(/\([^)]*\)/g, '')
+            .replace(/[^가-힣a-zA-Z\s]/g, '')
+            .trim();
 
-        // 💡 전화번호 정규화: 숫자만 추출(digits) 및 표준 하이픈 포맷(formattedPhone) 동시 생성
+        const address = String(rawAddress || '').trim();
+        const birthDate = normalizeBirthDate(rawBirthDate);
+
+        // 💡 전화번호 정규화: 숫자만 추출 및 표준 하이픈 포맷 생성
         const phoneDigits = String(rawPhone || '').replace(/[^0-9]/g, '');
         let formattedPhone = String(rawPhone || '').trim();
         if (phoneDigits.length === 11) {
@@ -497,13 +554,20 @@ app.post(['/api/register', '/api/register-request'], async (req, res) => {
             formattedPhone = `${phoneDigits.slice(0, 3)}-${phoneDigits.slice(3, 6)}-${phoneDigits.slice(6, 10)}`;
         }
 
-        if (!name || !phoneDigits || !gender || !birthDate || !grade) {
-            return res.status(400).json({ success: false, message: '필수 항목을 모두 입력해주세요.' });
+        if (!name) {
+            return res.status(400).json({ success: false, message: '이름은 한글 또는 영문으로 정확히 입력해 주세요.' });
+        }
+        if (!birthDate) {
+            return res.status(400).json({ success: false, message: '생년월일은 8자리 숫자(예: 19780116)로 정확히 입력해 주세요.' });
+        }
+        if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+            return res.status(400).json({ success: false, message: '연락처는 숫자 10~11자리로 정확히 입력해 주세요.' });
+        }
+        if (!gender || !grade) {
+            return res.status(400).json({ success: false, message: '성별과 급수를 모두 선택해 주세요.' });
         }
 
         // 💡 1단계: 해당 구장(club_id)에 이미 정회원으로 등록되어 있는지 확인
-        // - DB에 하이픈이 있든 없든, 띄어쓰기가 섞여 있든 숫자 기준(REPLACE)으로 완벽하게 비교
-        // - 멀티 테넌트 구장별 격리를 유지하되, 기본 구장(unjeong)은 기존 회원의 club_id가 비어있는(NULL/'') 경우도 함께 체크
         const checkMemberSql = `
             SELECT * FROM regular_members 
             WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ? OR phone = ?)
@@ -520,7 +584,7 @@ app.post(['/api/register', '/api/register-request'], async (req, res) => {
                 return res.status(400).json({ success: false, message: '이미 해당 클럽에 정회원으로 등록되어 있는 연락처입니다.' });
             }
 
-            // 💡 2단계: 해당 구장(club_id) 대기 목록에 이미 신청되어 있는지 확인 (하이픈/띄어쓰기 무관하게 체크)
+            // 💡 2단계: 해당 구장(club_id) 대기 목록에 이미 신청되어 있는지 확인
             const checkPendingSql = `
                 SELECT * FROM pending_registrations 
                 WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ? OR phone = ?)
@@ -537,7 +601,7 @@ app.post(['/api/register', '/api/register-request'], async (req, res) => {
                     return res.status(400).json({ success: false, message: '이미 해당 클럽에 가입 대기 중인 연락처입니다. 관리자 승인을 기다려주세요.' });
                 }
 
-                // 💡 3단계: 표준 하이픈 전화번호(formattedPhone)와 club_id를 포함하여 대기 테이블에 INSERT
+                // 💡 3단계: 표준 포맷 데이터와 club_id를 포함하여 대기 테이블에 INSERT
                 const createdAt = new Date().toISOString();
                 const insertSql = `
                     INSERT INTO pending_registrations (name, phone, gender, birthDate, grade, address, status, createdAt, club_id) 
@@ -549,7 +613,7 @@ app.post(['/api/register', '/api/register-request'], async (req, res) => {
                         console.error('가입 신청 DB 저장 오류:', insertErr.message);
                         return res.status(500).json({ success: false, message: '데이터베이스 저장 중 오류가 발생했습니다.' });
                     }
-                    console.log(`📝 [신규 가입 신청 접수 - ${clubId}] ${name} (${formattedPhone})`);
+                    console.log(`📝 [신규 가입 신청 접수 - ${clubId}] ${name} (${formattedPhone}, ${birthDate})`);
                     res.json({ success: true, message: '정회원 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.' });
                 });
             });
