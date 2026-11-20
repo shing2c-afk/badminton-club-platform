@@ -896,7 +896,7 @@ body, button, input, select, textarea {
 </div>
 
 <style>
-/* 🏢 클럽 선택 모달 디자인 (모바일 최적화) */
+/* 🏢 클럽 선택 모달 디자인 (모바일 터치 잔상 제거 및 단일 선택 강조) */
 .club-modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(5px);
@@ -926,12 +926,21 @@ body, button, input, select, textarea {
     display: flex; align-items: center; justify-content: space-between;
     padding: 13px 15px; border: 1.5px solid #edf2f7; border-radius: 12px;
     background: #f8fafc; cursor: pointer; transition: all 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
 }
-.club-item-card:active, .club-item-card:hover {
-    background: #ebf8ff; border-color: #3182ce;
+.club-item-card:active {
+    background: #edf2f7;
+    transform: scale(0.99);
+}
+@media (hover: hover) and (pointer: fine) {
+    .club-item-card:hover {
+        background: #f1f5f9;
+        border-color: #cbd5e0;
+    }
 }
 .club-item-card.active {
-    border-color: #3182ce; background: #ebf8ff;
+    border-color: #3182ce;
+    background: #ebf8ff;
 }
 .club-item-info .club-item-name { font-size: 15px; font-weight: 700; color: #2d3748; }
 .club-item-info .club-item-courts { font-size: 12px; color: #718096; margin-top: 2px; }
