@@ -4510,7 +4510,15 @@ window.deleteCustomTitle = function(id) {
 // 4. [관리자 전용] 자체대회 대진표 작성용 정회원 기간별 전적 통계 엑셀(CSV) 다운로드
 // =========================================================================
 window.exportRegularMemberStatsCSV = function() {
-    const clubId = window.currentClubId || localStorage.getItem('selectedClubId') || 'unjeong';
+    const urlParams = new URLSearchParams(window.location.search);
+    const clubId = String(
+        urlParams.get('club')
+        || urlParams.get('clubId')
+        || window.currentClubId
+        || localStorage.getItem('selectedClubId')
+        || 'unjeong'
+    ).trim();
+
     const periodEl = document.getElementById('admin-export-stats-period');
     const selectedPeriod = periodEl ? periodEl.value : '3months';
 
@@ -4543,7 +4551,7 @@ window.exportRegularMemberStatsCSV = function() {
             return !u.includes('일일') && !u.includes('게스트') && !u.includes('GUEST');
         };
 
-        // 1) 정회원 개인 전적 필터링 및 정렬 (급수순 -> 승률순 -> 다승순)
+        // 1) 정회원 개인 전적 필터링
         const regularPlayers = allPlayers.filter(p => {
             const prof = memberMap[p.name] || {};
             return isRegularMember(p.memberType || prof.memberType);
@@ -4562,7 +4570,6 @@ window.exportRegularMemberStatsCSV = function() {
             return;
         }
 
-        // 정회원 이름 Set (파트너 통계 필터링용)
         const regularNamesSet = new Set(regularPlayers.map(p => p.name));
 
         // 2) 정회원 간 복식 파트너 전적 필터링
@@ -4572,7 +4579,6 @@ window.exportRegularMemberStatsCSV = function() {
             return pr.games > 0 && regularNamesSet.has(p1) && regularNamesSet.has(p2);
         });
 
-        // CSV 셀 이스케이프 헬퍼
         const escapeCsv = (val) => {
             if (val === null || val === undefined) return '""';
             const str = String(val).replace(/"/g, '""');
@@ -4608,7 +4614,11 @@ window.exportRegularMemberStatsCSV = function() {
 
         regularPlayers.forEach((p, idx) => {
             const pointDiff = (p.pointsFor || 0) - (p.pointsAgainst || 0);
-            const ageStr = p.ageGroup && p.ageGroup !== '-' ? `${p.ageGroup}대` : '-';
+            const rawAge = String(p.ageGroup || '').trim();
+            const ageStr = (rawAge && rawAge !== '-')
+                ? (rawAge.endsWith('대') ? rawAge : `${rawAge}대`)
+                : '-';
+
             csvRows.push([
                 idx + 1,
                 p.name,
@@ -4634,7 +4644,7 @@ window.exportRegularMemberStatsCSV = function() {
         csvRows.push('');
         csvRows.push('');
 
-        // [섹션 2] 정회원 복식 파트너 조합별 전적 (대진표 파트너 매칭 참고용)
+        // [섹션 2] 정회원 복식 파트너 조합별 전적
         csvRows.push([`■ 2. 정회원 복식 파트너(페어) 조합별 전적 (합작 다승 및 승률 순)`].map(escapeCsv).join(','));
         csvRows.push([
             '순위', '파트너 조합', '선수1(급수)', '선수2(급수)',
@@ -4664,14 +4674,13 @@ window.exportRegularMemberStatsCSV = function() {
             ].map(escapeCsv).join(','));
         });
 
-        // 엑셀 한글 깨짐 방지를 위한 UTF-8 BOM(\uFEFF) 추가
         const csvContent = '\uFEFF' + csvRows.join('\r\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
 
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `오늘민턴_정회원전적통계_${periodLabel}_${dateStr}.csv`);
+        link.setAttribute('download', `오늘민턴_${clubId}_정회원전적통계_${periodLabel}_${dateStr}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

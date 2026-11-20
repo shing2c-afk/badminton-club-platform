@@ -3805,32 +3805,39 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행 (저장자 실명 안내 및 중복 차단)
+    // 💾 [스코어 및 전적 DB 저장] 화면에서 점수 입력 후 '저장' 클릭 시 실행 (구장별 완전 격리 및 중복 차단)
     if (!global._recentScoreLocks) global._recentScoreLocks = new Map();
 
     socket.on('saveMatchScore', (data, callback) => {
         try {
-            const currentClubId = data.clubId || socket.clubId || 'unjeong';
-            const courtNumber = parseInt(data.courtId, 10) || 0;
-            const matchType = data.matchType || '자유복식';
-            const teamA = Array.isArray(data.teamA) ? data.teamA : [];
-            const teamB = Array.isArray(data.teamB) ? data.teamB : [];
-            const scoreA = parseInt(data.scoreA, 10) || 0;
-            const scoreB = parseInt(data.scoreB, 10) || 0;
+            const currentClubId = String((data && data.clubId) || socket.clubId || 'unjeong').trim();
+            const courtNumber = parseInt(data && data.courtId, 10) || 0;
+            const matchType = (data && data.matchType) || '자유복식';
+            const scoreA = parseInt(data && data.scoreA, 10) || 0;
+            const scoreB = parseInt(data && data.scoreB, 10) || 0;
 
             const normalizeName = (n) => String(n || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
-            const saverName = normalizeName(data.saverName) || '다른 플레이어';
+            const teamA = (Array.isArray(data && data.teamA) ? data.teamA : []).map(normalizeName).filter(Boolean);
+            const teamB = (Array.isArray(data && data.teamB) ? data.teamB : []).map(normalizeName).filter(Boolean);
+            const saverName = normalizeName(data && data.saverName) || '다른 플레이어';
 
             if (teamA.length === 0 || teamB.length === 0) {
                 if (callback) callback({ success: false, message: 'A팀과 B팀 선수를 선택해 주세요.' });
                 return;
             }
 
-            // 🔒 [중복 입력 방지] 같은 참가자 4명이 1분 이내에 중복 저장 시 먼저 저장한 회원명 안내
-            const playersKey = [...teamA, ...teamB].map(normalizeName).filter(Boolean).sort().join('|');
+            // 🔒 [중복 입력 방지] 같은 구장의 같은 참가자 4명이 1분 이내에 중복 저장 시 먼저 저장한 회원명 안내
+            const playersKey = [...teamA, ...teamB].sort().join('|');
             const lockKey = `${currentClubId}__${playersKey}`;
             const nowMs = Date.now();
-            const DUPLICATE_LIMIT_MS = 60 * 1000; // 1분(60초) 이내 중복 제출만 차단
+            const DUPLICATE_LIMIT_MS = 60 * 1000;
+
+            // 만료된 잠금 메모리 정리
+            for (const [k, v] of global._recentScoreLocks.entries()) {
+                if ((nowMs - v.time) >= DUPLICATE_LIMIT_MS) {
+                    global._recentScoreLocks.delete(k);
+                }
+            }
 
             const prevLock = global._recentScoreLocks.get(lockKey);
             if (prevLock && (nowMs - prevLock.time) < DUPLICATE_LIMIT_MS) {
@@ -3843,7 +3850,6 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            // 가장 먼저 도착한 요청 잠금 (저장자 이름과 점수 함께 보관)
             global._recentScoreLocks.set(lockKey, { time: nowMs, courtNumber, saverName, scoreA, scoreB });
 
             let winnerTeam = 'DRAW';
@@ -3887,12 +3893,15 @@ io.on('connection', (socket) => {
                         if (callback) callback({ success: false, message: '전적 저장 중 오류가 발생했습니다.' });
                     } else {
                         console.log(`🏆 [전적 저장 완료] 구장:${currentClubId}, 저장자:${saverName}, 종목:${matchType}, ${teamA.join(',')} (${scoreA}) vs ${teamB.join(',')} (${scoreB})`);
-                        if (typeof addNotification === 'function') {
-                            addNotification(`🏆 [전적 기록] ${courtNumber}번 코트 (${matchType}) ${teamA.join('·')} [${scoreA} : ${scoreB}] ${teamB.join('·')}`, currentClubId);
+                        const noticeMsg = `🏆 [전적 기록] ${courtNumber}번 코트 (${matchType}) ${teamA.join('·')} [${scoreA} : ${scoreB}] ${teamB.join('·')}`;
+                        if (typeof addNotificationForClub === 'function') {
+                            addNotificationForClub(currentClubId, noticeMsg);
+                        } else if (typeof addNotification === 'function') {
+                            addNotification(noticeMsg, currentClubId);
                         }
 
-                        // 같은 경기의 스코어 창을 열고 있는 다른 플레이어들에게 저장 완료 알림 전송
-                        socket.broadcast.emit('matchScoreSavedNotice', {
+                        // 같은 구장 룸(club_${currentClubId})의 다른 플레이어들에게만 저장 완료 알림 전송
+                        socket.to(`club_${currentClubId}`).emit('matchScoreSavedNotice', {
                             clubId: currentClubId,
                             courtId: courtNumber,
                             playersKey: playersKey,
@@ -4122,10 +4131,10 @@ io.on('connection', (socket) => {
         return qualified;
     };
 
-    // 1) 전적 통계 및 타이틀 랭킹 조회
+    // 1) 전적 통계 및 타이틀 랭킹 조회 (멀티테넌트 구장별 완전 격리 적용)
     socket.on('getMatchStats', (params, callback) => {
         try {
-            const currentClubId = (params && params.clubId) || socket.clubId || 'unjeong';
+            const currentClubId = String((params && params.clubId) || socket.clubId || 'unjeong').trim();
             const period = (params && params.period) || 'all'; // 'month', 'last_month', '3months', 'all', 'YYYY-MM'
             const minGamesDefault = parseInt((params && params.minGames) || 10, 10);
 
@@ -4137,7 +4146,7 @@ io.on('connection', (socket) => {
             const currentMonthPrefix = `${curYear}-${curMonth}`;
 
             let dateFilterSql = '';
-            let queryParams = [currentClubId];
+            let queryParams = [currentClubId, currentClubId];
 
             if (period === 'month') {
                 dateFilterSql = ` AND strftime('%Y-%m', played_at) = ?`;
@@ -4167,7 +4176,7 @@ io.on('connection', (socket) => {
                 queryParams.push(startStr, endStr);
             }
 
-            // badminton.db 내 모든 회원 관련 테이블 + clubs-data.json + userDictionary.js 자동 통합 조회
+            // 현재 구장(currentClubId) 전용 회원 프로필 통합 조회
             const loadMemberProfiles = (done) => {
                 const profileMap = {};
                 const normalizeGrade = (g) => {
@@ -4270,20 +4279,32 @@ io.on('connection', (socket) => {
                                 });
                             }
                         };
-                        scanObj(clubsData);
+
+                        // 현재 구장(currentClubId) 데이터만 선별 스캔 (타 구장 데이터 유입 차단)
+                        if (clubsData && clubsData.clubs && clubsData.clubs[currentClubId]) {
+                            scanObj(clubsData.clubs[currentClubId]);
+                        } else if (clubsData && clubsData[currentClubId] && typeof clubsData[currentClubId] === 'object') {
+                            scanObj(clubsData[currentClubId]);
+                        } else if (currentClubId === 'unjeong') {
+                            scanObj(clubsData);
+                        }
                     }
-                    const dictPath = path.join(__dirname, 'userDictionary.js');
-                    if (fs.existsSync(dictPath)) {
-                        const dictData = require(dictPath);
-                        if (typeof dictData === 'object') {
-                            Object.entries(dictData).forEach(([k, v]) => {
-                                if (typeof v === 'object') registerProfile({ name: v.name || k, ...v }, 'REGULAR');
-                            });
+
+                    // 레거시 userDictionary.js는 기본 구장(unjeong)에만 적용
+                    if (currentClubId === 'unjeong') {
+                        const dictPath = path.join(__dirname, 'userDictionary.js');
+                        if (fs.existsSync(dictPath)) {
+                            const dictData = require(dictPath);
+                            if (typeof dictData === 'object') {
+                                Object.entries(dictData).forEach(([k, v]) => {
+                                    if (typeof v === 'object') registerProfile({ name: v.name || k, ...v }, 'REGULAR');
+                                });
+                            }
                         }
                     }
                 } catch (e) {}
 
-                db.all(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'match_records' AND name != 'custom_titles'`, [], (tErr, tables) => {
+                db.all(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('match_records', 'custom_titles', 'notices')`, [], (tErr, tables) => {
                     if (tErr || !Array.isArray(tables) || tables.length === 0) {
                         return done(profileMap);
                     }
@@ -4300,7 +4321,9 @@ io.on('connection', (socket) => {
                         db.all(`SELECT * FROM "${tableName}"`, [], (rErr, tRows) => {
                             if (!rErr && Array.isArray(tRows)) {
                                 tRows.forEach(row => {
-                                    if (!row.club_id || row.club_id === currentClubId) {
+                                    const rowClub = String(row.club_id || row.clubId || '').trim();
+                                    const isBelongToClub = (rowClub === currentClubId) || (currentClubId === 'unjeong' && rowClub === '');
+                                    if (isBelongToClub) {
                                         registerProfile(row, hint);
                                     }
                                 });
@@ -4470,7 +4493,7 @@ io.on('connection', (socket) => {
 
             ensureCustomTitlesSchema(() => {
                 loadMemberProfiles((profileMap) => {
-                    const sql = `SELECT * FROM match_records WHERE club_id = ?${dateFilterSql} ORDER BY played_at ASC`;
+                    const sql = `SELECT * FROM match_records WHERE (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))${dateFilterSql} ORDER BY played_at ASC`;
 
                     db.all(sql, queryParams, (err, rows) => {
                         if (err) {
@@ -4486,53 +4509,53 @@ io.on('connection', (socket) => {
                             const monthBuilt = (period === 'month') ? periodBuilt : buildStatsFromRows(monthRows, profileMap);
 
                             const allKnownNames = new Set([
-                            ...Object.keys(profileMap),
-                            ...(periodBuilt.playersStats || []).map(p => p.name)
-                        ]);
-                        const membersList = Array.from(allKnownNames).map(name => {
-                            const bare = String(name).replace(/\([^)]*\)/g, '').trim();
-                            const prof = profileMap[name] || profileMap[bare];
-                            return prof ? { name, ...prof } : { name, grade: '', gender: '', ageGroup: '', memberType: '일일회원' };
-                        });
+                                ...Object.keys(profileMap),
+                                ...(periodBuilt.playersStats || []).map(p => p.name)
+                            ]);
+                            const membersList = Array.from(allKnownNames).map(name => {
+                                const bare = String(name).replace(/\([^)]*\)/g, '').trim();
+                                const prof = profileMap[name] || profileMap[bare];
+                                return prof ? { name, ...prof } : { name, grade: '', gender: '', ageGroup: '', memberType: '일일회원' };
+                            });
 
-                            db.all(`SELECT * FROM custom_titles WHERE club_id = ? AND is_active = 1 ORDER BY id DESC`, [currentClubId], (tErr, customRows) => {
-                                // 🔍 server.js에서 아래 부분을 찾아 덮어쓰기 하세요.
-const customTitlesEvaluated = (customRows || []).map(ct => {
-    let parsedCond = {};
-    try {
-        if (ct.condition_json) parsedCond = JSON.parse(ct.condition_json);
-    } catch (e) {}
+                            const titleSql = `SELECT * FROM custom_titles WHERE (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))) AND is_active = 1 ORDER BY id DESC`;
+                            db.all(titleSql, [currentClubId, currentClubId], (tErr, customRows) => {
+                                const customTitlesEvaluated = (customRows || []).map(ct => {
+                                    let parsedCond = {};
+                                    try {
+                                        if (ct.condition_json) parsedCond = JSON.parse(ct.condition_json);
+                                    } catch (e) {}
 
-    const cond = {
-        scope: parsedCond.scope || 'player',
-        targetMatchType: ct.target_match_type || parsedCond.targetMatchType || 'ALL',
-        gradeFilter: parsedCond.gradeFilter || 'ALL',
-        ageFilter: parsedCond.ageFilter || 'ALL',
-        genderFilter: parsedCond.genderFilter || 'ALL',
-        minGames: Number(ct.min_games || parsedCond.minGames) || 1,
-        metricType: ct.metric_type || parsedCond.metricType || 'most_wins'
-    };
+                                    const cond = {
+                                        scope: parsedCond.scope || 'player',
+                                        targetMatchType: ct.target_match_type || parsedCond.targetMatchType || 'ALL',
+                                        gradeFilter: parsedCond.gradeFilter || 'ALL',
+                                        ageFilter: parsedCond.ageFilter || 'ALL',
+                                        genderFilter: parsedCond.genderFilter || 'ALL',
+                                        minGames: Number(ct.min_games || parsedCond.minGames) || 1,
+                                        metricType: ct.metric_type || parsedCond.metricType || 'most_wins'
+                                    };
 
-    const candidates = evaluateEventTitleCandidates(cond, monthBuilt.regularPlayers, monthBuilt.regularPairs);
-    const topCandidate = candidates[0] || null;
-    const autoWinnerText = topCandidate ? `${topCandidate.displayName} · ${topCandidate.metricText}` : '집계 중';
+                                    const candidates = evaluateEventTitleCandidates(cond, monthBuilt.regularPlayers, monthBuilt.regularPairs);
+                                    const topCandidate = candidates[0] || null;
+                                    const autoWinnerText = topCandidate ? `${topCandidate.displayName} · ${topCandidate.metricText}` : '집계 중';
 
-    const manualWinner = (ct.manual_winner && String(ct.manual_winner).trim()) || '';
-    const status = ct.status || (manualWinner ? 'published' : 'pending');
+                                    const manualWinner = (ct.manual_winner && String(ct.manual_winner).trim()) || '';
+                                    const status = ct.status || (manualWinner ? 'published' : 'pending');
 
-    return {
-        id: ct.id,
-        titleName: ct.title_name,
-        description: ct.description || parsedCond.description || '',
-        prizeInfo: ct.prize_info || parsedCond.prizeInfo || '', // 🎁 포상 상품 데이터 전달!
-        status: status,
-        manualWinner: manualWinner,
-        autoWinner: autoWinnerText,
-        theme: ct.badge_theme || 'gold',
-        winner: manualWinner || (status === 'published' ? autoWinnerText : '집계 중'),
-        condition: cond
-    };
-});
+                                    return {
+                                        id: ct.id,
+                                        titleName: ct.title_name,
+                                        description: ct.description || parsedCond.description || '',
+                                        prizeInfo: ct.prize_info || parsedCond.prizeInfo || '',
+                                        status: status,
+                                        manualWinner: manualWinner,
+                                        autoWinner: autoWinnerText,
+                                        theme: ct.badge_theme || 'gold',
+                                        winner: manualWinner || (status === 'published' ? autoWinnerText : '집계 중'),
+                                        condition: cond
+                                    };
+                                });
 
                                 if (callback) {
                                     callback({
@@ -4555,8 +4578,8 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                             evaluateTitlesWithMonthRows(rows);
                         } else {
                             db.all(
-                                `SELECT * FROM match_records WHERE club_id = ? AND strftime('%Y-%m', played_at) = ? ORDER BY played_at ASC`,
-                                [currentClubId, currentMonthPrefix],
+                                `SELECT * FROM match_records WHERE (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))) AND strftime('%Y-%m', played_at) = ? ORDER BY played_at ASC`,
+                                [currentClubId, currentClubId, currentMonthPrefix],
                                 (mErr, mRows) => evaluateTitlesWithMonthRows(mRows || [])
                             );
                         }
@@ -4569,9 +4592,10 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
         }
     });
 
+    // 1) [관리자 전용] 이벤트 타이틀 등록 및 수정 (구장별 완전 격리)
     socket.on('saveCustomTitle', (data, callback) => {
         try {
-            const clubId = (data && data.clubId) || socket.clubId || 'unjeong';
+            const clubId = String((data && data.clubId) || socket.clubId || 'unjeong').trim();
             const {
                 id, titleName, description, prizeInfo, targetMatchType, minGames,
                 metricType, badgeTheme, manualWinner, status, condition
@@ -4597,12 +4621,12 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                 if (id) {
                     db.run(
                         `UPDATE custom_titles 
-                         SET title_name = ?, description = ?, prize_info = ?, target_match_type = ?, min_games = ?, metric_type = ?, badge_theme = ?, manual_winner = ?, status = ?, condition_json = ?
-                         WHERE id = ? AND club_id = ?`,
+                         SET title_name = ?, description = ?, prize_info = ?, target_match_type = ?, min_games = ?, metric_type = ?, badge_theme = ?, manual_winner = ?, status = ?, condition_json = ?, club_id = ?
+                         WHERE id = ? AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))`,
                         [
                             String(titleName).trim(),
                             description || '',
-                            prizeInfo || '', // 🎁 수정 시 바인딩
+                            prizeInfo || '',
                             condObj.targetMatchType || 'ALL',
                             Number(condObj.minGames) || 3,
                             condObj.metricType || 'most_wins',
@@ -4610,7 +4634,9 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                             manualWinner || null,
                             cleanStatus,
                             condJsonStr,
+                            clubId,
                             id,
+                            clubId,
                             clubId
                         ],
                         function(err) {
@@ -4626,7 +4652,7 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                             clubId,
                             String(titleName).trim(),
                             description || '',
-                            prizeInfo || '', // 🎁 등록 시 바인딩
+                            prizeInfo || '',
                             condObj.targetMatchType || 'ALL',
                             Number(condObj.minGames) || 3,
                             condObj.metricType || 'most_wins',
@@ -4647,12 +4673,48 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
         }
     });
 
-    // 3) [관리자 전용] 이벤트 타이틀 삭제
+    // 2) [관리자 전용] 간편 커스텀 타이틀 생성
+    socket.on('createCustomTitle', (data, callback) => {
+        const currentClubId = String((data && data.clubId) || socket.clubId || 'unjeong').trim();
+        const titleName = ((data && data.titleName) || '').trim();
+        const metricType = (data && data.metricType) || 'most_wins';
+        const targetMatchType = (data && data.targetMatchType) || 'ALL';
+        const minGames = parseInt((data && data.minGames), 10) || 3;
+        const badgeTheme = (data && data.badgeTheme) || 'gold';
+
+        if (!titleName) {
+            return callback && callback({ success: false, message: '타이틀 이름을 입력해 주세요.' });
+        }
+
+        ensureCustomTitlesSchema(() => {
+            const sql = `
+                INSERT INTO custom_titles (club_id, title_name, metric_type, target_match_type, min_games, badge_theme, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, 1)
+            `;
+            db.run(sql, [currentClubId, titleName, metricType, targetMatchType, minGames, badgeTheme], function(err) {
+                if (err) {
+                    console.error('❌ 커스텀 타이틀 생성 실패:', err.message);
+                    return callback && callback({ success: false, message: '타이틀 생성 실패' });
+                }
+                if (callback) callback({ success: true, id: this.lastID });
+            });
+        });
+    });
+
+    // 3) [관리자 전용] 이벤트 타이틀 삭제 (중복 리스너 단일화 및 구장 격리)
     socket.on('deleteCustomTitle', (data, callback) => {
         try {
-            const clubId = (data && data.clubId) || socket.clubId || 'unjeong';
-            const { id } = data || {};
-            db.run(`DELETE FROM custom_titles WHERE id = ? AND club_id = ?`, [id, clubId], (err) => {
+            const clubId = String((data && data.clubId) || socket.clubId || 'unjeong').trim();
+            const id = data && data.id;
+            if (!id) {
+                return callback && callback({ success: false, message: '삭제할 타이틀 ID가 없습니다.' });
+            }
+
+            const sql = `
+                DELETE FROM custom_titles 
+                WHERE id = ? AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+            `;
+            db.run(sql, [id, clubId, clubId], (err) => {
                 if (err) return callback && callback({ success: false, message: '삭제 실패' });
                 callback && callback({ success: true });
             });
@@ -4661,48 +4723,20 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
         }
     });
 
-    // 2) 관리자 커스텀 반짝이 타이틀 생성
-    socket.on('createCustomTitle', (data, callback) => {
-        const currentClubId = (data && data.clubId) || socket.clubId || 'unjeong';
-        const titleName = (data.titleName || '').trim();
-        const metricType = data.metricType || 'most_wins';
-        const targetMatchType = data.targetMatchType || 'ALL';
-        const minGames = parseInt(data.minGames, 10) || 3;
-        const badgeTheme = data.badgeTheme || 'gold';
-
-        if (!titleName) {
-            return callback && callback({ success: false, message: '타이틀 이름을 입력해 주세요.' });
-        }
-
-        const sql = `
-            INSERT INTO custom_titles (club_id, title_name, metric_type, target_match_type, min_games, badge_theme, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
-        `;
-        db.run(sql, [currentClubId, titleName, metricType, targetMatchType, minGames, badgeTheme], function(err) {
-            if (err) {
-                console.error('❌ 커스텀 타이틀 생성 실패:', err.message);
-                return callback && callback({ success: false, message: '타이틀 생성 실패' });
-            }
-            if (callback) callback({ success: true, id: this.lastID });
-        });
-    });
-
-    // 3) 관리자 커스텀 타이틀 삭제
-    socket.on('deleteCustomTitle', ({ id, clubId }, callback) => {
-        const currentClubId = clubId || socket.clubId || 'unjeong';
-        db.run(`DELETE FROM custom_titles WHERE id = ? AND club_id = ?`, [id, currentClubId], function(err) {
-            if (err) {
-                return callback && callback({ success: false, message: '삭제 실패' });
-            }
-            if (callback) callback({ success: true });
-        });
-    });
-
-    socket.on('adminForceExit', ({ targetType, targetId, index }) => {
+    // 4) [관리자 전용] 대기 방 및 코트 강제 퇴장 처리 (구장별 알림 격리 적용)
+    socket.on('adminForceExit', ({ targetType, targetId, index, clubId: reqClubId } = {}) => {
         try {
-            // 💡 현재 소켓이 속한 클럽 아이디 가져오기
-            const clubId = socket.clubId || 'unjeong';
+            const clubId = String(reqClubId || socket.clubId || 'unjeong').trim();
             const club = getClub(clubId);
+            if (!club) return;
+
+            const notifyClub = (msg) => {
+                if (typeof addNotificationForClub === 'function') {
+                    addNotificationForClub(clubId, msg);
+                } else if (typeof addNotification === 'function') {
+                    addNotification(msg);
+                }
+            };
 
             if (targetType === 'gameQueue' || targetType === 'nantaQueue') {
                 const queue = targetType === 'gameQueue' ? club.gameQueue : club.nantaQueue;
@@ -4710,23 +4744,16 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                 if (slot && slot.players[index] !== undefined) {
                     const kickedName = slot.players[index];
                     slot.players[index] = '';
-                    
+
                     if (getValidPlayers(slot.players).length === 0) {
                         const qIndex = queue.findIndex(s => s.id === targetId);
                         if (qIndex !== -1) queue.splice(qIndex, 1);
                     }
-                    
-                    // 클럽별 알림 추가 함수가 있다면 활용, 또는 기존 방식 유지
-                    if (typeof addNotificationForClub === 'function') {
-                        addNotificationForClub(clubId, `⚠️ [관리자 강제퇴장] ${kickedName} 님이 대기 방에서 강제 퇴장되었습니다.`);
-                    } else if (typeof addNotification === 'function') {
-                        addNotification(`⚠️ [관리자 강제퇴장] ${kickedName} 님이 대기 방에서 강제 퇴장되었습니다.`);
-                    }
 
-                    broadcastState(clubId); // 💡 클럽 아이디 전달
+                    notifyClub(`⚠️ [관리자 강제퇴장] ${kickedName} 님이 대기 방에서 강제 퇴장되었습니다.`);
+                    broadcastState(clubId);
                 }
-            } 
-            else if (targetType === 'court') {
+            } else if (targetType === 'court') {
                 const court = club.courtsData.find(c => c.id === targetId);
                 if (court) {
                     if (court.type === 'game') {
@@ -4734,20 +4761,16 @@ const customTitlesEvaluated = (customRows || []).map(ct => {
                         court.players = '';
                         court.startTime = null;
                         court.remainingSeconds = 0;
-                        if (typeof addNotification === 'function') {
-                            addNotification(`⚠️ [관리자 강제퇴장] 게임 코트(${court.id}번)가 강제 종료 및 비워졌습니다.`);
-                        }
+                        notifyClub(`⚠️ [관리자 강제퇴장] 게임 코트(${court.id}번)가 강제 종료 및 비워졌습니다.`);
                     } else if (court.type === 'nanta') {
                         if (index === 'A' && court.sideA) {
                             court.sideA = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
                         } else if (index === 'B' && court.sideB) {
                             court.sideB = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0 };
                         }
-                        if (typeof addNotification === 'function') {
-                            addNotification(`⚠️ [관리자 강제퇴장] 난타 코트(${court.id}번 - ${index}면)가 강제 비워졌습니다.`);
-                        }
+                        notifyClub(`⚠️ [관리자 강제퇴장] 난타 코트(${court.id}번 - ${index}면)가 강제 비워졌습니다.`);
                     }
-                    broadcastState(clubId); // 💡 클럽 아이디 전달
+                    broadcastState(clubId);
                 }
             }
         } catch (err) {
