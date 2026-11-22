@@ -548,11 +548,6 @@ async function handleRegisterSubmit(event) {
     };
 
     const nameInput = document.getElementById('regName');
-    if (nameInput) {
-        nameInput.addEventListener('blur', (e) => {
-            e.target.value = e.target.value.replace(/[^가-힣a-zA-Z]/g, '').trim().slice(0, 10);
-        });
-    }
     const phoneInput = document.getElementById('regPhone');
     const birthInput = document.getElementById('regBirthDate');
 
@@ -658,8 +653,8 @@ window.handleRegisterSubmit = handleRegisterSubmit;
 document.addEventListener('DOMContentLoaded', () => {
     const nameInput = document.getElementById('regName');
     if (nameInput) {
-        nameInput.addEventListener('input', (e) => {
-            e.target.value = e.target.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z]/g, '').slice(0, 10);
+        nameInput.addEventListener('blur', (e) => {
+            e.target.value = e.target.value.replace(/[^가-힣a-zA-Z]/g, '').trim().slice(0, 10);
         });
     }
 
