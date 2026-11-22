@@ -525,8 +525,19 @@ function showToast(message, isSuccess = true) {
 async function handleRegisterSubmit(event) {
     if (event) event.preventDefault();
 
-    const showTopAlert = async (msg) => {
-        alert(msg);
+    const regErrorEl = document.getElementById('regErrorMsg');
+    if (regErrorEl) {
+        regErrorEl.style.display = 'none';
+        regErrorEl.textContent = '';
+    }
+
+    const showTopAlert = async (msg, isError = true) => {
+        if (isError && regErrorEl) {
+            regErrorEl.textContent = msg;
+            regErrorEl.style.display = 'block';
+        } else {
+            alert(msg);
+        }
     };
 
     const hideRegisterModal = () => {

@@ -271,7 +271,7 @@ body, button, input, select, textarea {
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
           <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">이름(*필수)</label>
           <input type="text" id="guestName" lang="ko" placeholder="한글/영문 실명 입력" required maxlength="10"
-       onblur="this.value = this.value.replace(/[^가-힣a-zA-Z]/g, '').trim()"
+       onblur="this.value = this.value.replace(/\([^)]*\)/g, '').replace(/[^가-힣a-zA-Z]/g, '').trim()"
        style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
         </div>
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
@@ -589,56 +589,57 @@ body, button, input, select, textarea {
         </div>
         
         <!-- 가입 신청 입력 폼 -->
-        <form id="registerForm" onsubmit="handleRegisterSubmit(event)">
-            <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">이름 (한글/영문 실명만 입력)</label>
-                <input type="text" id="regName" placeholder="예: 홍길동" required maxlength="10"
-       onblur="this.value = this.value.replace(/\([^)]*\)/g, '').replace(/[^가-힣a-zA-Z]/g, '').trim()"
-       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
-            </div>
-            
-            <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">전화번호 (하이픈 없이 숫자만 입력)</label>
-                <input type="tel" id="regPhone" inputmode="numeric" pattern="[0-9]{10,11}" placeholder="01012345678" required maxlength="11"
-                       oninput="this.value = this.value.replace(/[^0-9]/g, '')"
-                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
-            </div>
+<form id="registerForm" novalidate onsubmit="handleRegisterSubmit(event)">
+    <div class="input-group" style="margin-bottom: 10px; text-align: left;">
+        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">이름 (한글/영문 실명만 입력)</label>
+        <input type="text" id="regName" placeholder="예: 홍길동" required maxlength="10"
+               onblur="this.value = this.value.replace(/\([^)]*\)/g, '').replace(/[^가-힣a-zA-Z]/g, '').trim()"
+               style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    
+    <div class="input-group" style="margin-bottom: 10px; text-align: left;">
+        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">전화번호 (하이픈 없이 숫자만 입력)</label>
+        <input type="tel" id="regPhone" inputmode="numeric" pattern="[0-9]{10,11}" placeholder="01012345678" required maxlength="11"
+               oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+               style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
+    </div>
 
-            <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">성별</label>
-                <select id="regGender" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
-                    <option value="남">남</option>
-                    <option value="여">여</option>
-                </select>
-            </div>
+    <div class="input-group" style="margin-bottom: 10px; text-align: left;">
+        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">성별</label>
+        <select id="regGender" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
+            <option value="남">남</option>
+            <option value="여">여</option>
+        </select>
+    </div>
 
-            <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">생년월일 (숫자 8자리만 입력, 예: 19780116)</label>
-                <input type="tel" id="regBirthDate" inputmode="numeric" pattern="[0-9]{8}" placeholder="19780116" required maxlength="8"
-                       oninput="this.value = this.value.replace(/[^0-9]/g, '')"
-                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
-            </div>
+    <div class="input-group" style="margin-bottom: 10px; text-align: left;">
+        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">생년월일 (숫자 8자리만 입력, 예: 19780116)</label>
+        <input type="tel" id="regBirthDate" inputmode="numeric" pattern="[0-9]{8}" placeholder="19780116" required maxlength="8"
+               oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+               style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
+    </div>
 
-            <div class="input-group" style="margin-bottom: 10px; text-align: left;">
-                <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">급수</label>
-                <select id="regGrade" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
-                    <option value="초심">초심</option>
-                    <option value="D조">D조</option>
-                    <option value="C조">C조</option>
-                    <option value="B조">B조</option>
-                    <option value="A조">A조</option>
-                    <option value="S조">S조</option>
-                </select>
-            </div>
+    <div class="input-group" style="margin-bottom: 10px; text-align: left;">
+        <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">급수</label>
+        <select id="regGrade" style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
+            <option value="초심">초심</option>
+            <option value="D조">D조</option>
+            <option value="C조">C조</option>
+            <option value="B조">B조</option>
+            <option value="A조">A조</option>
+            <option value="S조">S조</option>
+        </select>
+    </div>
 
-            <div class="input-group" style="margin-bottom: 16px; text-align: left;">
-                <label for="regAddress" style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">주소</label>
-                <input type="text" id="regAddress" placeholder="예: 경기 파주시 와동동" required
-                       style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
-            </div>
+    <div class="input-group" style="margin-bottom: 16px; text-align: left;">
+        <label for="regAddress" style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">주소</label>
+        <input type="text" id="regAddress" placeholder="예: 경기 파주시 와동동" required
+               style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;">
+    </div>
 
-            <button type="submit" style="width: 100%; padding: 10px; background: #10b981; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">가입 신청하기</button>
-        </form>
+    <div id="regErrorMsg" style="display: none; color: #f87171; font-size: 12px; font-weight: bold; margin-bottom: 10px; text-align: center; white-space: pre-line;"></div>
+    <button type="submit" style="width: 100%; padding: 10px; background: #10b981; border: none; border-radius: 4px; color: white; font-weight: bold; cursor: pointer;">가입 신청하기</button>
+</form>
     </div>
 </div>
 
