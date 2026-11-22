@@ -526,16 +526,7 @@ async function handleRegisterSubmit(event) {
     if (event) event.preventDefault();
 
     const showTopAlert = async (msg) => {
-        const customModal = document.getElementById('custom-modal');
-        if (customModal) {
-            document.body.appendChild(customModal);
-            customModal.style.setProperty('z-index', '2147483647', 'important');
-        }
-        if (typeof window.showAlert === 'function') {
-            await window.showAlert(msg);
-        } else {
-            alert(msg);
-        }
+        alert(msg);
     };
 
     const hideRegisterModal = () => {
@@ -551,7 +542,10 @@ async function handleRegisterSubmit(event) {
     const phoneInput = document.getElementById('regPhone');
     const birthInput = document.getElementById('regBirthDate');
 
-    const cleanName = String(nameInput ? nameInput.value : '').replace(/[^가-힣a-zA-Z]/g, '').trim();
+    const cleanName = String(nameInput ? nameInput.value : '')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/[^가-힣a-zA-Z]/g, '')
+        .trim();
     const cleanPhone = String(phoneInput ? phoneInput.value : '').replace(/[^0-9]/g, '');
     const cleanBirth = String(birthInput ? birthInput.value : '').replace(/[^0-9]/g, '');
 
@@ -654,7 +648,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const nameInput = document.getElementById('regName');
     if (nameInput) {
         nameInput.addEventListener('blur', (e) => {
-            e.target.value = e.target.value.replace(/[^가-힣a-zA-Z]/g, '').trim().slice(0, 10);
+            e.target.value = e.target.value
+                .replace(/\([^)]*\)/g, '')
+                .replace(/[^가-힣a-zA-Z]/g, '')
+                .trim()
+                .slice(0, 10);
         });
     }
 
