@@ -271,7 +271,6 @@ body, button, input, select, textarea {
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
           <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">이름(*필수)</label>
           <input type="text" id="guestName" lang="ko" placeholder="한글/영문 실명 입력" required maxlength="10"
-       oninput="this.value = this.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\u119E\u11A2\u318D\u00B7a-zA-Z]/g, '')"
        onblur="this.value = this.value.replace(/[^가-힣a-zA-Z]/g, '').trim()"
        style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
         </div>
@@ -594,7 +593,6 @@ body, button, input, select, textarea {
             <div class="input-group" style="margin-bottom: 10px; text-align: left;">
                 <label style="display: block; font-size: 12px; color: #ccc; margin-bottom: 3px;">이름 (한글/영문 실명만 입력)</label>
                 <input type="text" id="regName" placeholder="예: 홍길동" required maxlength="10"
-       oninput="this.value = this.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\u119E\u11A2\u318D\u00B7a-zA-Z]/g, '')"
        onblur="this.value = this.value.replace(/[^가-힣a-zA-Z]/g, '').trim()"
        style="width: 100%; padding: 7px 10px; background: #222; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;" />
             </div>
