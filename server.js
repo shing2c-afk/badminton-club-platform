@@ -457,6 +457,27 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
+// 실제 달력에 존재하는 유효한 날짜(윤년·월별 일수·미래 날짜 차단)인지 검증하는 헬퍼
+function isValidCalendarDate(yyyy, mm, dd) {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    if (yyyy < 1920 || yyyy > currentYear || mm < 1 || mm > 12 || dd < 1 || dd > 31) {
+        return false;
+    }
+    const testDate = new Date(yyyy, mm - 1, dd);
+    if (
+        testDate.getFullYear() !== yyyy ||
+        testDate.getMonth() + 1 !== mm ||
+        testDate.getDate() !== dd
+    ) {
+        return false; // 예: 1990-02-30, 1990-04-31, 평년 02-29 차단
+    }
+    if (testDate > now) {
+        return false; // 오늘 이후의 미래 날짜 차단
+    }
+    return true;
+}
+
 // 생년월일(8자리 19780116, 6자리 780116, 4자리 1978, 하이픈 포함 등)을 표준 'YYYY-MM-DD'로 정규화
 function normalizeBirthDate(rawBirthDate) {
     const digits = String(rawBirthDate || '').replace(/[^0-9]/g, '');
@@ -467,7 +488,7 @@ function normalizeBirthDate(rawBirthDate) {
         const yyyy = parseInt(digits.slice(0, 4), 10);
         const mm = parseInt(digits.slice(4, 6), 10);
         const dd = parseInt(digits.slice(6, 8), 10);
-        if (yyyy >= 1920 && yyyy <= currentYear && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+        if (isValidCalendarDate(yyyy, mm, dd)) {
             return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
         }
     } else if (digits.length === 6) {
@@ -475,7 +496,7 @@ function normalizeBirthDate(rawBirthDate) {
         const mm = parseInt(digits.slice(2, 4), 10);
         const dd = parseInt(digits.slice(4, 6), 10);
         const yyyy = yy <= currentTwoDigit ? (2000 + yy) : (1900 + yy);
-        if (yyyy >= 1920 && yyyy <= currentYear && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+        if (isValidCalendarDate(yyyy, mm, dd)) {
             return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
         }
     } else if (digits.length === 4) {
@@ -503,11 +524,15 @@ function calculateAgeGroup(birthDateStr) {
     return decade >= 10 ? `${decade}대` : '10대 미만';
 }
 
-// 🔧 서버 시작 시 기존 DB에 잘못 계산된 연령대(-778090대 등) 자동 복구
+// 🔧 서버 시작 시 기존 DB에 잘못 계산된 연령대(-778090대, 0대, 기타, NaN 등) 자동 복구
 setTimeout(() => {
     if (typeof db === 'undefined') return;
     db.all(
-        `SELECT id, birthDate, ageGroup FROM regular_members WHERE ageGroup LIKE '-%' OR ageGroup LIKE '%NaN%' OR ageGroup IS NULL OR ageGroup = ''`,
+        `SELECT id, birthDate, ageGroup FROM regular_members 
+         WHERE ageGroup LIKE '-%' 
+            OR ageGroup LIKE '%NaN%' 
+            OR ageGroup IN ('0대', '기타', '') 
+            OR ageGroup IS NULL`,
         [],
         (err, rows) => {
             if (err || !Array.isArray(rows) || rows.length === 0) return;
@@ -3039,36 +3064,68 @@ io.on('connection', (socket) => {
         });
     });
 
-    // 🔑 일일회원 로그인 처리 소켓 이벤트 (DB 자동 저장 및 재방문 연동)
-    socket.on('loginGuest', ({ name, phone, payCode, gender, ageGroup, grade, clubId }, callback) => {
-        if (!payCode || payCode.length !== 6) {
-            return callback({ success: false, message: '유효한 결제인증번호 6자리를 입력하세요.' });
+    // 🔑 일일회원 로그인 처리 소켓 이벤트 (입력값 서버 검증, DB 자동 저장 및 재방문 연동)
+    socket.on('loginGuest', (payload = {}, callback) => {
+        const reply = (res) => {
+            if (typeof callback === 'function') callback(res);
+        };
+
+        const { name, phone, payCode, gender, ageGroup, grade, clubId } = payload || {};
+
+        // 1) 입력값 정제 및 서버 측 최종 유효성 검증
+        const cleanName = String(name || '')
+            .replace(/\([^)]*\)/g, '')
+            .replace(/[^가-힣a-zA-Z]/g, '')
+            .trim();
+        const cleanPhone = String(phone || '').replace(/[^0-9]/g, '');
+        const cleanPayCode = String(payCode || '').replace(/[^0-9]/g, '');
+
+        if (cleanName.length < 2) {
+            return reply({ success: false, message: '이름은 한글 또는 영문 2자 이상 정확히 입력해 주세요.' });
+        }
+        if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+            return reply({ success: false, message: '전화번호는 숫자 10~11자리로 정확히 입력해 주세요.' });
+        }
+        if (!/^\d{6}$/.test(cleanPayCode)) {
+            return reply({ success: false, message: '유효한 결제승인번호 숫자 6자리를 입력해 주세요.' });
         }
 
-        // 🏢 [멀티테넌트 수정] 클라이언트가 전달한 clubId를 최우선 사용하고, 없을 때만 socket.clubId 참조
+        // TODO: 추후 키오스크/PG 결제승인번호 API 연동 시 cleanPayCode 검증 로직 추가 위치
+
+        // 🏢 [멀티테넌트] 클라이언트가 전달한 clubId를 최우선 사용하고, 없을 때만 socket.clubId 참조
         const currentClubId = (clubId && String(clubId).trim()) || socket.clubId;
         if (!currentClubId) {
-            return callback({ success: false, message: '접속 구장 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.' });
+            return reply({ success: false, message: '접속 구장 정보를 확인할 수 없습니다. 새로고침 후 다시 시도해 주세요.' });
         }
 
-        const cleanName = (name || '').trim();
-        const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+        // 선택 항목 화이트리스트 정제
+        const cleanGender = ['남', '여'].includes(gender) ? gender : '-';
+        const cleanAgeGroup = ['10대', '20대', '30대', '40대', '50대', '60대', '70대'].includes(ageGroup) ? ageGroup : '-';
 
         // 🎯 [급수 표기 정리] '(일)' 접미사 없이 순수 급수만 깔끔하게 생성
         let formattedGrade = '일반';
         if (grade) {
-            if (grade === '초심' || grade.endsWith('조')) {
-                formattedGrade = grade;
+            const rawGrade = String(grade).trim();
+            if (rawGrade === '초심' || rawGrade.endsWith('조')) {
+                formattedGrade = rawGrade;
             } else {
-                formattedGrade = `${grade}조`;
+                formattedGrade = `${rawGrade}조`;
             }
         }
 
-        // 1) 기존 daily_guests 테이블에도 오늘 방문 기록 추가 (관리자 호환용)
-        const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        // 한국 시간(KST) 기준 방문 일시 생성
+        const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const nowStr = nowKr.getFullYear() + '-' +
+            String(nowKr.getMonth() + 1).padStart(2, '0') + '-' +
+            String(nowKr.getDate()).padStart(2, '0') + ' ' +
+            String(nowKr.getHours()).padStart(2, '0') + ':' +
+            String(nowKr.getMinutes()).padStart(2, '0') + ':' +
+            String(nowKr.getSeconds()).padStart(2, '0');
+
+        // 1) 기존 daily_guests 테이블에 오늘 방문 기록 추가 (관리자 호환용)
         db.run(
             `INSERT OR REPLACE INTO daily_guests (id, club_id, type, name, phone, gender, ageGroup, grade, visitedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [`guest_${Date.now()}`, currentClubId, '일일회원', cleanName, cleanPhone, gender || '-', ageGroup || '-', formattedGrade, nowStr],
+            [`guest_${Date.now()}`, currentClubId, '일일회원', cleanName, cleanPhone, cleanGender, cleanAgeGroup, formattedGrade, nowStr],
             () => {}
         );
 
@@ -3084,7 +3141,7 @@ io.on('connection', (socket) => {
                 last_visit = CURRENT_TIMESTAMP
         `;
 
-        db.run(upsertSql, [currentClubId, cleanName, cleanPhone, gender || '-', ageGroup || '-', formattedGrade], function(err) {
+        db.run(upsertSql, [currentClubId, cleanName, cleanPhone, cleanGender, cleanAgeGroup, formattedGrade], function(err) {
             if (err) {
                 console.error('⚠️ 일일회원 DB 저장 오류:', err.message);
             }
@@ -3093,7 +3150,7 @@ io.on('connection', (socket) => {
                 `SELECT id, visit_count FROM guest_members WHERE club_id = ? AND name = ? AND phone = ?`,
                 [currentClubId, cleanName, cleanPhone],
                 (selectErr, row) => {
-                    // 🏢 [멀티테넌트 수정] 일일회원 입장 성공 시 현재 소켓의 구장 소속 확정
+                    // 🏢 [멀티테넌트] 일일회원 입장 성공 시 현재 소켓의 구장 소속 확정
                     if (socket.clubId && socket.clubId !== currentClubId) {
                         socket.leave(`club_${socket.clubId}`);
                     }
@@ -3109,8 +3166,8 @@ io.on('connection', (socket) => {
                         name: cleanName,
                         rawName: cleanName,
                         displayName: cleanName,
-                        gender: gender || '-',
-                        ageGroup: ageGroup || '-',
+                        gender: cleanGender,
+                        ageGroup: cleanAgeGroup,
                         grade: formattedGrade,
                         level: formattedGrade,
                         isGuest: true,
@@ -3119,7 +3176,7 @@ io.on('connection', (socket) => {
                     };
 
                     console.log(`👤 [일일회원 입장/DB저장] 구장:${currentClubId}, 이름:${cleanName}, ID:${guestId}, 누적방문:${user.visitCount}회`);
-                    callback({ success: true, user });
+                    reply({ success: true, user });
                 }
             );
         });

@@ -572,6 +572,25 @@ async function handleRegisterSubmit(event) {
         return;
     }
 
+    // 실제 달력에 존재하는 날짜(윤년·월별 일수·미래 날짜)인지 클라이언트 1차 검증
+    const bYear = parseInt(cleanBirth.slice(0, 4), 10);
+    const bMonth = parseInt(cleanBirth.slice(4, 6), 10);
+    const bDay = parseInt(cleanBirth.slice(6, 8), 10);
+    const bDate = new Date(bYear, bMonth - 1, bDay);
+    const today = new Date();
+    const isValidBirth =
+        bYear >= 1920 &&
+        bDate <= today &&
+        bDate.getFullYear() === bYear &&
+        bDate.getMonth() + 1 === bMonth &&
+        bDate.getDate() === bDay;
+
+    if (!isValidBirth) {
+        await showTopAlert('존재하지 않거나 올바르지 않은 생년월일입니다.\n다시 확인해 주세요. (예: 19780116)');
+        if (birthInput) birthInput.focus();
+        return;
+    }
+
     // 🏢 [멀티테넌트] URL 파라미터(?club=) 및 window.currentClubId를 최우선으로 추출
     const urlParams = new URLSearchParams(window.location.search);
     const clubId = String(
