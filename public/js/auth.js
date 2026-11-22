@@ -549,6 +549,15 @@ async function handleRegisterSubmit(event) {
 
     // 입력값 실시간 정제 및 검증
     const nameInput = document.getElementById('regName');
+    if (nameInput) {
+        nameInput.addEventListener('input', (e) => {
+            if (e.isComposing) return;
+            e.target.value = e.target.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\u119E\u11A2\u318D\u00B7a-zA-Z]/g, '').slice(0, 10);
+        });
+        nameInput.addEventListener('blur', (e) => {
+            e.target.value = e.target.value.replace(/[^가-힣a-zA-Z]/g, '').trim().slice(0, 10);
+        });
+    }
     const phoneInput = document.getElementById('regPhone');
     const birthInput = document.getElementById('regBirthDate');
 
