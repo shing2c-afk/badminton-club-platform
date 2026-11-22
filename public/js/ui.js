@@ -421,14 +421,38 @@ function renderCourts() {
                     `;
                 }
 
+                const hasBalancedTeams = court.teams
+                    && Array.isArray(court.teams.teamA) && court.teams.teamA.length > 0
+                    && Array.isArray(court.teams.teamB) && court.teams.teamB.length > 0;
+
+                const teamModeBadge = hasBalancedTeams
+                    ? `<span style="margin-left: 6px; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 999px; background: rgba(102, 252, 241, 0.14); color: #66fcf1; border: 1px solid rgba(102, 252, 241, 0.35);">${court.teams.isMixedDoubles ? '추천 혼복' : '추천 팀'}</span>`
+                    : '';
+
+                const playersContentHtml = hasBalancedTeams
+                    ? `
+                        <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                            <div style="padding: 6px 8px; border-radius: 6px; background: rgba(56, 189, 248, 0.14); border: 1px solid #38bdf8;">
+                                <div style="font-size: 11px; font-weight: 800; color: #38bdf8; margin-bottom: 2px;">A팀</div>
+                                ${formatPlayersToLines(court.teams.teamA)}
+                            </div>
+                            <div style="padding: 6px 8px; border-radius: 6px; background: rgba(251, 146, 60, 0.14); border: 1px solid #fb923c;">
+                                <div style="font-size: 11px; font-weight: 800; color: #fb923c; margin-bottom: 2px;">B팀</div>
+                                ${formatPlayersToLines(court.teams.teamB)}
+                            </div>
+                        </div>
+                    `
+                    : formatPlayersToLines(court.players);
+
                 html = `
                     <div class="court-row">
                         <div class="court-head-info">
                             <span class="court-num">${court.id}번 코트</span>
                             <span class="type-badge badge-game">게임 코트</span>
+                            ${teamModeBadge}
                         </div>
                         <div class="court-body-game">
-                            <div class="court-players">${formatPlayersToLines(court.players)}</div>
+                            <div class="court-players">${playersContentHtml}</div>
                             <div class="court-timer-off"></div>
                             <div>
                                 ${gameActionBtns}
@@ -1855,11 +1879,15 @@ window.showScoreInputPopup = function(data) {
     const players = data.players || [];
     if (players.length < 2) return;
 
-    const cleanName = (raw) => String(raw || '').replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').split('/')[0].trim();
+    const cleanName = (raw) => String(raw || '')
+        .replace(/\|?guest/gi, '')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/\[[^\]]*\]/g, '')
+        .split('/')[0]
+        .trim();
 
     // 1. 현재 로그인한(버튼을 누른) 본인 이름 찾기
     const findMyName = () => {
-        // 화면 상단 헤더의 로그인 이름 추출 (다중 브라우저/탭 환경에서 가장 정확)
         let domUserName = '';
         const headerEl = document.getElementById('current-user-name') || document.querySelector('.user-name, #user-info, header');
         if (headerEl && headerEl.innerText) {
@@ -1899,6 +1927,44 @@ window.showScoreInputPopup = function(data) {
     const myCleanName = findMyName();
     const myIndex = players.findIndex(p => cleanName(p) === myCleanName);
 
+    // ⚖️ [현황판 A팀/B팀 그대로 유지 + 본인 소속 팀(myTeam) 판별]
+    const defaultTeamAIndices = new Set();
+    let myTeam = myIndex !== -1 ? 'A' : null; // 추천 팀 정보 없을 때 기본값
+
+    if (data.teams && Array.isArray(data.teams.teamA) && Array.isArray(data.teams.teamB)) {
+        const teamAClean = (data.teams.teamANames || data.teams.teamA).map(cleanName);
+        const teamBClean = (data.teams.teamBNames || data.teams.teamB).map(cleanName);
+
+        players.forEach((p, idx) => {
+            if (teamAClean.includes(cleanName(p)) && defaultTeamAIndices.size < 2) {
+                defaultTeamAIndices.add(idx);
+            }
+        });
+
+        if (myIndex !== -1) {
+            if (teamBClean.includes(myCleanName) && !defaultTeamAIndices.has(myIndex)) {
+                myTeam = 'B';
+            } else {
+                myTeam = 'A';
+            }
+        }
+    }
+
+    // 추천 팀 정보가 없으면 기존 방식(본인 1명만 A팀 체크)으로 폴백
+    if (defaultTeamAIndices.size === 0) {
+        defaultTeamAIndices.add(myIndex !== -1 ? myIndex : 0);
+        myTeam = myIndex !== -1 ? 'A' : null;
+    }
+
+    const hasAutoBalancedDefault = (players.length >= 4 && defaultTeamAIndices.size === 2);
+
+    // 전역 상태 저장 (파트너 클릭 시 A팀/B팀 고정 제어용)
+    window._scoreModalState = {
+        myTeam,          // 'A' | 'B' | null
+        myIndex,         // 본인 인덱스 (-1이면 미확인)
+        totalPlayers: players.length
+    };
+
     // 2. 4명 성별 판별하여 기본 종목(남복/여복/혼복/자유복식) 계산하는 함수
     const normalizeGender = (g) => {
         const s = String(g || '').trim().toUpperCase();
@@ -1909,6 +1975,8 @@ window.showScoreInputPopup = function(data) {
 
     const detectMatchTypeByGender = (extraMembers) => {
         if (players.length < 4) return '단식';
+        if (data.teams && data.teams.isMixedDoubles) return '혼복';
+
         const genderMap = {};
         const registerG = (name, gender) => {
             const cn = cleanName(name);
@@ -1969,6 +2037,18 @@ window.showScoreInputPopup = function(data) {
 
     const defaultMatchType = detectMatchTypeByGender();
 
+    // 안내 문구 구성 (본인이 A팀이면 A팀 기준, B팀이면 B팀 기준으로 안내)
+    const myTeamColor = myTeam === 'B' ? '#fb923c' : '#38bdf8';
+    const myTeamLabel = myTeam === 'B' ? 'B팀' : 'A팀';
+    const otherTeamColor = myTeam === 'B' ? '#38bdf8' : '#fb923c';
+    const otherTeamLabel = myTeam === 'B' ? 'A팀' : 'B팀';
+
+    const teamGuideHtml = hasAutoBalancedDefault
+        ? (myTeam
+            ? `<strong style="color:${myTeamColor};">${myTeamLabel}(내 팀)</strong> 고정 · 파트너 변경 시 함께 친 선수를 터치하세요`
+            : `<strong style="color:#38bdf8;">추천 팀</strong>이 자동 적용되었습니다 (팀 변경 시 선수 터치)`)
+        : `<strong style="color:${myTeamColor};">${myTeamLabel} 파트너 1명</strong>을 선택하세요 (나머지 2명은 자동 <strong style="color:${otherTeamColor};">${otherTeamLabel}</strong>)`;
+
     const modalHtml = `
         <div id="match-score-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.78); display:flex; justify-content:center; align-items:center; z-index:99999; font-family:inherit;">
             <div style="background:#1f2937; color:#fff; width:92%; max-width:420px; padding:22px; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.6); border:1px solid #374151;">
@@ -1987,21 +2067,23 @@ window.showScoreInputPopup = function(data) {
                     </select>
                 </div>
 
-                <!-- 2. 선수 팀 배정 (본인 1명 기본 선택 + 파트너 1명 추가 선택) -->
+                <!-- 2. 선수 팀 배정 (현황판 팀 유지 + 내 팀 고정, 파트너 1터치 교체) -->
                 <div style="margin-bottom:14px;">
                     <label style="font-size:12px; color:#9ca3af; display:block; margin-bottom:6px;">
-                        <strong style="color:#38bdf8;">A팀 파트너 1명</strong>을 선택하세요 (나머지 2명은 자동 <strong style="color:#f43f5e;">B팀</strong>)
+                        ${teamGuideHtml}
                     </label>
                     <div id="modal-player-checkboxes" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                         ${players.map((p, idx) => {
                             const isMe = (myIndex !== -1 && idx === myIndex);
-                            // 버튼을 누른 본인 1명만 기본 체크 (본인 미확인 시 첫 번째 선수 1명만 체크)
-                            const isChecked = (myIndex !== -1) ? isMe : (idx === 0);
+                            const isCheckedTeamA = defaultTeamAIndices.has(idx);
+                            const displayLabel = cleanName(p) || p;
+                            const meColor = myTeam === 'B' ? '#fb923c' : '#38bdf8';
                             return `
-                                <label class="player-select-label" style="display:flex; align-items:center; background:#374151; padding:10px; border-radius:8px; cursor:pointer; border:2px solid ${isChecked ? '#38bdf8' : '#4b5563'}; transition:0.2s;">
-                                    <input type="checkbox" name="teamA_player" value="${p}" data-idx="${idx}" data-isme="${isMe ? '1' : '0'}" ${isChecked ? 'checked' : ''} style="margin-right:8px; width:16px; height:16px; accent-color:#38bdf8;" onchange="window.handleTeamASelect(this)">
-                                    <span style="font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${p}${isMe ? ' <small style="color:#38bdf8;">(나)</small>' : ''}</span>
-                                </label>
+                                <div class="player-select-label" onclick="window.handleTeamCardClick(${idx})" style="display:flex; align-items:center; gap:6px; background:#374151; padding:10px; border-radius:8px; cursor:pointer; border:2px solid #4b5563; transition:0.2s; user-select:none;">
+                                    <input type="checkbox" name="teamA_player" value="${p}" data-idx="${idx}" data-isme="${isMe ? '1' : '0'}" ${isCheckedTeamA ? 'checked' : ''} style="display:none;">
+                                    <span class="team-pill" style="font-size:11px; font-weight:800; padding:2px 6px; border-radius:999px; white-space:nowrap;">A팀</span>
+                                    <span style="font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${displayLabel}${isMe ? ` <small style="color:${meColor};">(나)</small>` : ''}</span>
+                                </div>
                             `;
                         }).join('')}
                     </div>
@@ -2009,15 +2091,19 @@ window.showScoreInputPopup = function(data) {
                     <div id="team-match-preview" style="margin-top:8px; padding:8px; background:#111827; border-radius:6px; font-size:12px; text-align:center; line-height:1.5;"></div>
                 </div>
 
-                <!-- 3. 점수 입력 -->
+                <!-- 3. 점수 입력 (A팀 파랑 / B팀 오렌지, 내 팀 표시) -->
                 <div style="display:flex; gap:12px; margin-bottom:20px;">
                     <div style="flex:1; text-align:center;">
-                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px; font-weight:bold;">A팀 점수</label>
+                        <label style="font-size:12px; color:#38bdf8; display:block; margin-bottom:4px; font-weight:bold;">
+                            A팀 점수${myTeam === 'A' ? ' (내 팀)' : ''}
+                        </label>
                         <input type="number" id="modal-score-a" value="" placeholder="점수" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #38bdf8; border-radius:8px;">
                     </div>
                     <div style="flex:1; text-align:center;">
-                        <label style="font-size:12px; color:#f43f5e; display:block; margin-bottom:4px; font-weight:bold;">B팀 점수</label>
-                        <input type="number" id="modal-score-b" value="" placeholder="점수" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #f43f5e; border-radius:8px;">
+                        <label style="font-size:12px; color:#fb923c; display:block; margin-bottom:4px; font-weight:bold;">
+                            B팀 점수${myTeam === 'B' ? ' (내 팀)' : ''}
+                        </label>
+                        <input type="number" id="modal-score-b" value="" placeholder="점수" min="0" max="99" style="width:100%; box-sizing:border-box; padding:10px; text-align:center; font-size:20px; font-weight:bold; background:#374151; color:#fff; border:2px solid #fb923c; border-radius:8px;">
                     </div>
                 </div>
 
@@ -2052,27 +2138,46 @@ window.showScoreInputPopup = function(data) {
     }
 };
 
-// 본인은 A팀 고정 + 파트너는 1명만 선택되도록 제어하는 함수
-window.handleTeamASelect = function(clickedCb) {
+// 내 팀(A팀 또는 B팀) 고정 상태에서 파트너를 1터치로 변경하는 함수
+// (체크박스 checked === true 는 항상 A팀, false 는 항상 B팀으로 유지)
+window.handleTeamCardClick = function(clickedIdx) {
     const allCbs = Array.from(document.querySelectorAll('#modal-player-checkboxes input[name="teamA_player"]'));
-    const meCb = allCbs.find(cb => cb.getAttribute('data-isme') === '1');
+    const clickedCb = allCbs.find(cb => Number(cb.getAttribute('data-idx')) === Number(clickedIdx));
+    if (!clickedCb) return;
 
-    // 본인 체크박스를 해제하려고 하면 다시 체크 상태로 고정
-    if (meCb && clickedCb === meCb && !meCb.checked) {
-        meCb.checked = true;
-        window.updateTeamBDisplay();
-        return;
-    }
+    const state = window._scoreModalState || { myTeam: null, myIndex: -1 };
+    const { myTeam, myIndex } = state;
 
-    if (meCb) {
-        // 본인이 고정된 상태에서 다른 선수를 체크하면, 그 선수만 파트너로 체크되고 나머지 후보들은 자동 해제
-        if (clickedCb !== meCb && clickedCb.checked) {
+    if (myTeam === 'A' && myIndex !== -1) {
+        // 내가 A팀 고정: 본인을 누르면 변동 없음
+        if (Number(clickedIdx) === myIndex) return;
+
+        // 이미 내 A팀 파트너인 선수를 다시 누르면 파트너 해제, 다른 선수를 누르면 즉시 내 A팀 파트너로 교체
+        if (clickedCb.checked) {
+            clickedCb.checked = false;
+        } else {
             allCbs.forEach(cb => {
-                if (cb !== meCb && cb !== clickedCb) cb.checked = false;
+                const idx = Number(cb.getAttribute('data-idx'));
+                cb.checked = (idx === myIndex || idx === Number(clickedIdx));
+            });
+        }
+    } else if (myTeam === 'B' && myIndex !== -1) {
+        // 내가 B팀 고정: 본인을 누르면 변동 없음
+        if (Number(clickedIdx) === myIndex) return;
+
+        // 이미 내 B팀 파트너(checked === false)인 선수를 다시 누르면 파트너 해제(A팀 대기),
+        // 다른 선수(현재 A팀)를 누르면 즉시 내 B팀 파트너로 교체 (나머지 2명은 자동 A팀)
+        if (!clickedCb.checked) {
+            clickedCb.checked = true;
+        } else {
+            allCbs.forEach(cb => {
+                const idx = Number(cb.getAttribute('data-idx'));
+                cb.checked = !(idx === myIndex || idx === Number(clickedIdx));
             });
         }
     } else {
-        // 본인 특정이 안 된 경우에도 최대 2명까지만 선택 허용 (3번째 선택 시 기존 선택 1명 자동 교체)
+        // 본인 미확인 시 자유롭게 A팀 최대 2명 선택
+        clickedCb.checked = !clickedCb.checked;
         const checkedList = allCbs.filter(cb => cb.checked);
         if (checkedList.length > 2) {
             const toUncheck = checkedList.find(cb => cb !== clickedCb);
@@ -2083,44 +2188,96 @@ window.handleTeamASelect = function(clickedCb) {
     window.updateTeamBDisplay();
 };
 
-// 체크박스 터치 시 A팀(파란 테두리)과 B팀(빨간 테두리)을 즉시 시각적으로 구분해 주는 함수
+// A팀(파랑) / B팀(오렌지) 카드 스타일과 미리보기를 즉시 반영하는 함수
 window.updateTeamBDisplay = function() {
-    const allLabels = document.querySelectorAll('#modal-player-checkboxes .player-select-label');
+    const allCards = Array.from(document.querySelectorAll('#modal-player-checkboxes .player-select-label'));
+    const state = window._scoreModalState || { myTeam: null, myIndex: -1 };
+    const cleanLabel = (raw) => String(raw || '').replace(/\|?guest/gi, '').split('/')[0].trim();
+
     const teamA = [];
     const teamB = [];
 
-    allLabels.forEach(label => {
-        const cb = label.querySelector('input[name="teamA_player"]');
-        if (cb && cb.checked) {
-            teamA.push(cb.value);
-        } else if (cb) {
-            teamB.push(cb.value);
-        }
+    allCards.forEach(card => {
+        const cb = card.querySelector('input[name="teamA_player"]');
+        if (!cb) return;
+        if (cb.checked) teamA.push(cleanLabel(cb.value));
+        else teamB.push(cleanLabel(cb.value));
     });
 
-    // A팀 2명이 모두 선택되면 나머지 2명을 B팀(빨간 테두리)으로 확정하고, 파트너 선택 전(1명)이면 대기(회색 테두리)로 표시
-    const isTeamAComplete = (teamA.length >= 2);
-    allLabels.forEach(label => {
-        const cb = label.querySelector('input[name="teamA_player"]');
-        if (cb && cb.checked) {
-            label.style.borderColor = '#38bdf8';
-        } else if (cb) {
-            label.style.borderColor = isTeamAComplete ? '#f43f5e' : '#4b5563';
+    const targetSize = allCards.length >= 4 ? 2 : 1;
+    const isComplete = (teamA.length === targetSize && teamB.length === (allCards.length - targetSize));
+
+    allCards.forEach(card => {
+        const cb = card.querySelector('input[name="teamA_player"]');
+        const pill = card.querySelector('.team-pill');
+        if (!cb || !pill) return;
+
+        const idx = Number(cb.getAttribute('data-idx'));
+        const isMe = (state.myIndex !== -1 && idx === state.myIndex);
+
+        if (isComplete) {
+            if (cb.checked) {
+                card.style.borderColor = '#38bdf8';
+                card.style.background = 'rgba(56, 189, 248, 0.14)';
+                pill.textContent = 'A팀';
+                pill.style.background = 'rgba(56, 189, 248, 0.25)';
+                pill.style.color = '#38bdf8';
+            } else {
+                card.style.borderColor = '#fb923c';
+                card.style.background = 'rgba(251, 146, 60, 0.14)';
+                pill.textContent = 'B팀';
+                pill.style.background = 'rgba(251, 146, 60, 0.25)';
+                pill.style.color = '#fb923c';
+            }
+        } else {
+            // 파트너 선택 대기 상태: 본인만 소속 팀 색상 유지, 나머지는 선택 대기(회색)
+            if (isMe && state.myTeam === 'B') {
+                card.style.borderColor = '#fb923c';
+                card.style.background = 'rgba(251, 146, 60, 0.14)';
+                pill.textContent = 'B팀';
+                pill.style.background = 'rgba(251, 146, 60, 0.25)';
+                pill.style.color = '#fb923c';
+            } else if (isMe && state.myTeam === 'A') {
+                card.style.borderColor = '#38bdf8';
+                card.style.background = 'rgba(56, 189, 248, 0.14)';
+                pill.textContent = 'A팀';
+                pill.style.background = 'rgba(56, 189, 248, 0.25)';
+                pill.style.color = '#38bdf8';
+            } else if (!state.myTeam && cb.checked) {
+                card.style.borderColor = '#38bdf8';
+                card.style.background = 'rgba(56, 189, 248, 0.14)';
+                pill.textContent = 'A팀';
+                pill.style.background = 'rgba(56, 189, 248, 0.25)';
+                pill.style.color = '#38bdf8';
+            } else {
+                card.style.borderColor = '#4b5563';
+                card.style.background = '#374151';
+                pill.textContent = '선택';
+                pill.style.background = 'rgba(156, 163, 175, 0.2)';
+                pill.style.color = '#9ca3af';
+            }
         }
     });
 
     const previewEl = document.getElementById('team-match-preview');
     if (previewEl) {
-        if (!isTeamAComplete) {
-            previewEl.innerHTML = `
-                <span style="color:#38bdf8; font-weight:bold;">A팀: ${teamA.join(', ') || '없음'}</span>
-                <span style="color:#9ca3af; margin-left:6px;">(파트너 1명을 선택해 주세요)</span>
-            `;
+        if (!isComplete) {
+            if (state.myTeam === 'B') {
+                previewEl.innerHTML = `
+                    <span style="color:#fb923c; font-weight:bold;">B팀: ${teamB.join(', ') || '없음'}</span>
+                    <span style="color:#9ca3af; margin-left:6px;">(함께 친 파트너 1명을 선택해 주세요)</span>
+                `;
+            } else {
+                previewEl.innerHTML = `
+                    <span style="color:#38bdf8; font-weight:bold;">A팀: ${teamA.join(', ') || '없음'}</span>
+                    <span style="color:#9ca3af; margin-left:6px;">(함께 친 파트너 1명을 선택해 주세요)</span>
+                `;
+            }
         } else {
             previewEl.innerHTML = `
                 <span style="color:#38bdf8; font-weight:bold;">A팀: ${teamA.join(', ')}</span>
                 <span style="color:#9ca3af; margin:0 6px;">vs</span>
-                <span style="color:#f43f5e; font-weight:bold;">B팀: ${teamB.join(', ')}</span>
+                <span style="color:#fb923c; font-weight:bold;">B팀: ${teamB.join(', ')}</span>
             `;
         }
     }

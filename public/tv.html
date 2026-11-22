@@ -841,6 +841,28 @@ function renderTVCourts(courts) {
             } else {
                 if (court.isEmpty || !court.players) {
                     teamsHtml = `<div class="empty-text">비어있음</div>`;
+                } else if (court.teams && Array.isArray(court.teams.teamA) && court.teams.teamA.length > 0 && Array.isArray(court.teams.teamB) && court.teams.teamB.length > 0) {
+                    // ⚖️ 자동 밸런싱 팀 구분 표시 (A팀 블루 / B팀 오렌지)
+                    const formattedTeamA = formatPlayersHorizontal(court.teams.teamA.join(', '));
+                    const formattedTeamB = formatPlayersHorizontal(court.teams.teamB.join(', '));
+                    const matchLabel = court.teams.isMixedDoubles ? '[추천 혼복]' : '[추천 팀]';
+
+                    teamsHtml = `
+                        <div class="team-row" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 2px 4px; border-radius: 4px; width: 100%;">
+                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                                <span style="font-size: 12px; color: #66fcf1; font-weight: bold;">${matchLabel}</span>
+                                <span class="timer-text">⏱️ 이용중</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; border-radius: 6px; background: rgba(56, 189, 248, 0.16); border: 1.5px solid #38bdf8; box-sizing: border-box;">
+                                <span style="font-size: 12px; font-weight: 800; color: #38bdf8; white-space: nowrap;">A팀</span>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1;">${formattedTeamA}</div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; border-radius: 6px; background: rgba(251, 146, 60, 0.16); border: 1.5px solid #fb923c; box-sizing: border-box;">
+                                <span style="font-size: 12px; font-weight: 800; color: #fb923c; white-space: nowrap;">B팀</span>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1;">${formattedTeamB}</div>
+                            </div>
+                        </div>
+                    `;
                 } else {
                     const formattedGame = formatPlayersHorizontal(court.players);
                     teamsHtml = `

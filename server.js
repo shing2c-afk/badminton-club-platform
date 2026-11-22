@@ -10,6 +10,7 @@ const fs = require('fs');
 const multer = require('multer');
 const readline = require('readline');
 const gymSessionManager = require('./gymSessionManager');
+const { balanceTeams } = require('./utils/teamBalancer');
 
 // ==========================================
 // 💾 영구 디스크 및 데이터베이스/설정 파일 경로 설정 (Render 대응)
@@ -86,6 +87,154 @@ db.serialize(() => {
         }
     });
 });
+
+// =========================================================================
+// ⚖️ [복식 팀 자동 밸런싱] 코트 입장 시 회원 정보 + 전적 기반 팀 편성 헬퍼
+// =========================================================================
+const enteringCourtLocks = new Set();
+
+function dbAllAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+}
+
+function extractCleanPlayerName(rawPlayer) {
+    return String(rawPlayer || '')
+        .replace(/\|?guest/gi, '') // 👈 이 한 줄만 추가
+        .split('/')[0]
+        .replace(/\(일일\)|\[일일\]|\(게스트\)/g, '')
+        .trim();
+}
+
+async function buildBalancedTeamsForCourt(clubId, validPlayers) {
+    if (!Array.isArray(validPlayers) || validPlayers.length !== 4) return null;
+
+    const cleanNames = validPlayers.map(extractCleanPlayerName);
+    const placeholders = cleanNames.map(() => '?').join(', ');
+
+    // 1) 정회원 정보 조회
+    const regularRows = await dbAllAsync(
+        `SELECT name, gender, birthDate, ageGroup, grade
+         FROM regular_members
+         WHERE (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+           AND name IN (${placeholders})`,
+        [clubId, clubId, ...cleanNames]
+    );
+    const regularMap = new Map();
+    regularRows.forEach(r => {
+        if (r.name && !regularMap.has(r.name.trim())) {
+            regularMap.set(r.name.trim(), r);
+        }
+    });
+
+    // 2) 일일회원 정보 조회 (정회원에 없는 이름 대비)
+    const guestRows = await dbAllAsync(
+        `SELECT name, gender, age_group, grade
+         FROM guest_members
+         WHERE club_id = ?
+           AND name IN (${placeholders})
+         ORDER BY last_visit DESC`,
+        [clubId, ...cleanNames]
+    );
+    const guestMap = new Map();
+    guestRows.forEach(g => {
+        if (g.name && !guestMap.has(g.name.trim())) {
+            guestMap.set(g.name.trim(), g);
+        }
+    });
+
+    // 3) 해당 클럽의 경기 기록에서 4명의 승/패/득실차 집계
+    const statsMap = new Map();
+    cleanNames.forEach(name => {
+        statsMap.set(name, { wins: 0, losses: 0, pointDiff: 0 });
+    });
+
+    const matchRows = await dbAllAsync(
+        `SELECT team_a_p1, team_a_p2, team_b_p1, team_b_p2, score_a, score_b
+         FROM match_records
+         WHERE club_id = ?`,
+        [clubId]
+    );
+
+    matchRows.forEach(m => {
+        const scoreA = Number(m.score_a) || 0;
+        const scoreB = Number(m.score_b) || 0;
+        if (scoreA === 0 && scoreB === 0) return;
+
+        const teamAPlayers = [m.team_a_p1, m.team_a_p2].map(extractCleanPlayerName).filter(Boolean);
+        const teamBPlayers = [m.team_b_p1, m.team_b_p2].map(extractCleanPlayerName).filter(Boolean);
+
+        statsMap.forEach((st, playerName) => {
+            if (teamAPlayers.includes(playerName)) {
+                st.pointDiff += (scoreA - scoreB);
+                if (scoreA > scoreB) st.wins += 1;
+                else if (scoreB > scoreA) st.losses += 1;
+            } else if (teamBPlayers.includes(playerName)) {
+                st.pointDiff += (scoreB - scoreA);
+                if (scoreB > scoreA) st.wins += 1;
+                else if (scoreA > scoreB) st.losses += 1;
+            }
+        });
+    });
+
+    // 4) teamBalancer.js 입력 형식으로 조립
+    const playerInputs = validPlayers.map((raw, idx) => {
+        const cleanName = cleanNames[idx];
+        const reg = regularMap.get(cleanName);
+        const guest = !reg ? guestMap.get(cleanName) : null;
+        const st = statsMap.get(cleanName) || { wins: 0, losses: 0, pointDiff: 0 };
+
+        // 표시 문자열에 '이름/C조' 형태로 급수가 붙어있을 경우 보조 추출
+        const slashParts = String(raw || '').split('/');
+        const fallbackGrade = slashParts.length > 1 ? slashParts[1].trim() : null;
+
+        if (reg) {
+            return {
+                displayName: raw,
+                name: cleanName,
+                grade: reg.grade || fallbackGrade,
+                gender: reg.gender,
+                ageGroup: reg.ageGroup,
+                birthDate: reg.birthDate,
+                wins: st.wins,
+                losses: st.losses,
+                pointDiff: st.pointDiff,
+                isGuest: false
+            };
+        }
+
+        return {
+            displayName: raw,
+            name: cleanName,
+            grade: (guest && guest.grade && guest.grade !== '일반') ? guest.grade : fallbackGrade,
+            gender: guest ? guest.gender : null,
+            ageGroup: guest ? guest.age_group : null,
+            birthDate: null,
+            wins: 0,
+            losses: 0,
+            pointDiff: 0,
+            isGuest: true
+        };
+    });
+
+    // 5) 최적 팀 분배 실행
+    const balanced = balanceTeams(playerInputs);
+
+    return {
+        teamA: balanced.teamA.map(p => p.displayName),
+        teamB: balanced.teamB.map(p => p.displayName),
+        teamANames: balanced.teamA.map(p => p.name),
+        teamBNames: balanced.teamB.map(p => p.name),
+        teamAScore: balanced.teamAScore,
+        teamBScore: balanced.teamBScore,
+        scoreDiff: balanced.scoreDiff,
+        isMixedDoubles: balanced.isMixedDoubles
+    };
+}
 
 // 유저별 활성 소켓 ID 관리 맵 (username -> socketId)
 const activeUserSockets = new Map();
@@ -3664,10 +3813,14 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🏟️ [코트 입장 처리] (멀티 테넌트 반영)
-    socket.on('enterCourtFromSlot', ({ type, slotId }) => {
+    // 🏟️ [코트 입장 처리] (멀티 테넌트 + 자동 팀 밸런싱 반영)
+    socket.on('enterCourtFromSlot', async ({ type, slotId }) => {
+        const currentClubId = socket.clubId || 'unjeong';
+        const lockKey = `${currentClubId}:${type}:${slotId}`;
+        if (enteringCourtLocks.has(lockKey)) return;
+        enteringCourtLocks.add(lockKey);
+
         try {
-            const currentClubId = socket.clubId || 'unjeong';
             const club = clubs[currentClubId] || clubs['unjeong'];
             const clubCourts = club.courtsData || [];
 
@@ -3683,12 +3836,27 @@ io.on('connection', (socket) => {
                 const emptyCourt = clubCourts.find(c => c.type === 'game' && c.isEmpty);
                 if (!emptyCourt) return;
 
+                // ⚖️ 자동 팀 밸런싱 계산 (오류 시에도 코트 입장은 정상 진행)
+                let balancedTeams = null;
+                try {
+                    balancedTeams = await buildBalancedTeamsForCourt(currentClubId, validPlayers);
+                } catch (balanceErr) {
+                    console.error('팀 밸런싱 계산 에러 (기본 순서로 입장):', balanceErr);
+                }
+
+                // await 이후 최신 슬롯/코트 상태 재확인
+                const latestSlotIdx = queue.findIndex(s => s.id === slotId);
+                if (latestSlotIdx === -1 || !emptyCourt.isEmpty) return;
+
                 emptyCourt.isEmpty = false;
-                emptyCourt.players = validPlayers.join(', ');
+                emptyCourt.teams = balancedTeams;
+                emptyCourt.players = balancedTeams
+                    ? [...balancedTeams.teamA, ...balancedTeams.teamB].join(', ')
+                    : validPlayers.join(', ');
                 emptyCourt.startTime = Date.now();
                 emptyCourt.remainingSeconds = 0;
 
-                queue.splice(slotIdx, 1);
+                queue.splice(latestSlotIdx, 1);
 
                 // 다른 큐 및 난타 코트에서 중복 플레이어 정리
                 validPlayers.forEach(p => {
@@ -3718,7 +3886,8 @@ io.on('connection', (socket) => {
                 });
 
                 if (typeof addNotification === 'function') {
-                    addNotification(`🏟️ [코트 입장] 게임 코트 (${emptyCourt.id}번)에 팀이 입장했습니다.`, currentClubId);
+                    const mixedTag = balancedTeams && balancedTeams.isMixedDoubles ? ' (혼복 자동편성)' : '';
+                    addNotification(`🏟️ [코트 입장] 게임 코트 (${emptyCourt.id}번)에 팀이 입장했습니다.${mixedTag}`, currentClubId);
                 }
                 if (typeof broadcastState === 'function') {
                     broadcastState(currentClubId);
@@ -3770,6 +3939,8 @@ io.on('connection', (socket) => {
             }
         } catch (err) {
             console.error('코트 입장 처리 에러:', err);
+        } finally {
+            enteringCourtLocks.delete(lockKey);
         }
     });
 
@@ -3812,8 +3983,9 @@ io.on('connection', (socket) => {
 
             const court = clubCourts.find(c => c.id === courtId && c.type === 'game');
             if (court) {
-                // 💡 코트를 비우기 전에 방금 게임한 선수 명단 백업 (스코어 입력창 전달용)
+                // 💡 코트를 비우기 전에 방금 게임한 선수 명단 및 팀 정보 백업 (스코어 입력창 전달용)
                 const finishedPlayersRaw = court.players || '';
+                const finishedTeams = court.teams || null;
                 const finishedPlayersList = finishedPlayersRaw
                     .split(',')
                     .map(p => p.split('/')[0].trim())
@@ -3831,6 +4003,7 @@ io.on('connection', (socket) => {
                 // ⚡ [최우선 처리] 코트 즉시 비우기 (다음 대기팀 즉시 배정 가능)
                 court.isEmpty = true;
                 court.players = '';
+                court.teams = null;
                 court.startTime = null;
                 court.remainingSeconds = 0;
 
@@ -3848,7 +4021,8 @@ io.on('connection', (socket) => {
                         courtId: court.id,
                         actionType: 'end',
                         players: finishedPlayersList,
-                        rawPlayers: finishedPlayersRaw.split(',').map(p => p.trim()).filter(Boolean)
+                        rawPlayers: finishedPlayersRaw.split(',').map(p => p.trim()).filter(Boolean),
+                        teams: finishedTeams
                     });
                 }
             }
@@ -3870,6 +4044,7 @@ io.on('connection', (socket) => {
             const playersArr = court.players.split(',').map(p => p.trim()).filter(Boolean);
             if (playersArr.length === 0) return;
 
+            const finishedTeams = court.teams || null;
             const finishedPlayersList = playersArr.map(p => p.split('/')[0].trim()).filter(Boolean);
 
             // 한게임 더 클릭 시에도 방금 게임을 마친 선수들의 종료 시각 기록
@@ -3901,6 +4076,7 @@ io.on('connection', (socket) => {
             // ⚡ [최우선 처리] 코트 즉시 비우기
             court.isEmpty = true;
             court.players = '';
+            court.teams = null;
             court.startTime = null;
             court.remainingSeconds = 0;
 
@@ -3918,7 +4094,8 @@ io.on('connection', (socket) => {
                     courtId: court.id,
                     actionType: 'extend',
                     players: finishedPlayersList,
-                    rawPlayers: playersArr
+                    rawPlayers: playersArr,
+                    teams: finishedTeams
                 });
             }
         } catch (err) {
