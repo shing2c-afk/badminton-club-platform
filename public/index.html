@@ -267,7 +267,7 @@ body, button, input, select, textarea {
       </form>
 
       <!-- 2. 일일회원 입장 폼 (입력 제한 및 키오스크/PG 결제승인번호 확장 대응) -->
-      <form id="guestLoginForm" style="display: none; padding-bottom: 20px;">
+      <form id="guestLoginForm" novalidate style="display: none; padding-bottom: 20px;">
         <div class="input-group" style="margin-bottom: 10px; text-align: left;">
           <label style="display: block; font-size: 11px; color: #ccc; margin-bottom: 3px;">이름(*필수)</label>
           <input type="text" id="guestName" lang="ko" placeholder="한글/영문 실명 입력" required maxlength="10"
@@ -435,7 +435,10 @@ body, button, input, select, textarea {
 
         <!-- 공지사항 바 (하단 마진/패딩 강제 초기화) -->
         <div class="container" style="padding-top: 8px !important; padding-bottom: 0px !important; margin-bottom: 0px !important;">
-            <a href="/notice" class="notice-bar block hover:opacity-80 transition cursor-pointer" style="text-decoration: none; color: inherit; margin-bottom: 0px !important; display: block;">
+            <a href="/notice"
+               onclick="event.preventDefault(); const p = new URLSearchParams(window.location.search); const cid = String(p.get('club') || p.get('clubId') || (typeof window.currentClubId !== 'undefined' && window.currentClubId) || localStorage.getItem('preferredClubId') || 'unjeong').trim(); window.location.href = '/notice?club=' + encodeURIComponent(cid);"
+               class="notice-bar block hover:opacity-80 transition cursor-pointer"
+               style="text-decoration: none; color: inherit; margin-bottom: 0px !important; display: block;">
                 <div id="index-notice-text" class="notice-text">📢 공지사항을 불러오는 중...</div>
             </a>
         </div>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>클럽 공지사항 - 운정배드민턴클럽</title>
+    <title>클럽 공지사항</title>
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- 🌐 브라우저 기본 alert을 가로채어 URL 노출을 없애고 모바일 풀 폭으로 띄우는 전역 커스텀 모달 스크립트 -->
@@ -27,10 +27,10 @@
     <div style="width: 100%; max-width: 680px;">
         <!-- 상단 헤더 -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
-            <h1 style="display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin: 0;">
+            <h1 id="notice-page-title" style="display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; margin: 0;">
                 <span style="font-size: 22px;">📢</span> 클럽 공지사항
             </h1>
-            <a href="/" style="background: #1f2937; color: #93c5fd; border: 1px solid rgba(147, 197, 253, 0.2); padding: 9px 16px; border-radius: 50px; font-size: 13px; font-weight: 600; text-decoration: none; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);">메인으로 돌아가기</a>
+            <a id="back-to-main-link" href="/" style="background: #1f2937; color: #93c5fd; border: 1px solid rgba(147, 197, 253, 0.2); padding: 9px 16px; border-radius: 50px; font-size: 13px; font-weight: 600; text-decoration: none; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);">메인으로 돌아가기</a>
         </div>
 
         <!-- 공지사항 리스트 영역 (조회 전용) -->
@@ -48,9 +48,28 @@
     </div>
 
     <script>
+        // 🏢 [멀티테넌트] 현재 접속 중인 클럽 ID 추출 (URL 파라미터 최우선 -> localStorage -> 기본값)
+        function getCurrentClubId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return String(
+                urlParams.get('club')
+                || urlParams.get('clubId')
+                || localStorage.getItem('preferredClubId')
+                || 'unjeong'
+            ).trim();
+        }
+
+        const currentClubId = getCurrentClubId();
+
+        // 메인으로 돌아가기 링크에 현재 클럽 파라미터 유지
+        const backLink = document.getElementById('back-to-main-link');
+        if (backLink) {
+            backLink.href = `/?club=${encodeURIComponent(currentClubId)}`;
+        }
+
         async function fetchNotices() {
             try {
-                const response = await fetch('/api/notices');
+                const response = await fetch(`/api/notices?clubId=${encodeURIComponent(currentClubId)}`);
                 const notices = await response.json();
                 
                 const container = document.getElementById('notice-container');
