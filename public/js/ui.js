@@ -433,11 +433,9 @@ function renderCourts() {
                     ? `
                         <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
                             <div style="padding: 6px 8px; border-radius: 6px; background: rgba(56, 189, 248, 0.14); border: 1px solid #38bdf8;">
-                                <div style="font-size: 11px; font-weight: 800; color: #38bdf8; margin-bottom: 2px;">A팀</div>
                                 ${formatPlayersToLines(court.teams.teamA)}
                             </div>
                             <div style="padding: 6px 8px; border-radius: 6px; background: rgba(251, 146, 60, 0.14); border: 1px solid #fb923c;">
-                                <div style="font-size: 11px; font-weight: 800; color: #fb923c; margin-bottom: 2px;">B팀</div>
                                 ${formatPlayersToLines(court.teams.teamB)}
                             </div>
                         </div>
