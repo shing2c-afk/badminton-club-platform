@@ -2101,8 +2101,36 @@ function getClub(clubId) {
 // 5. 유틸리티 및 브로드캐스트 함수
 // ==========================================
 // ==========================================
-// 📡 [멀티 테넌트] 클럽별 실시간 상태 브로드캐스트
+// 📡 [멀티 테넌트] 클럽별 실시간 상태 브로드캐스트 (경량화 + 서명 기록)
 // ==========================================
+function buildClubStateSignature(cid, club, cCourtsData, cGameQueue, cNantaQueue) {
+    try {
+        const courtsSig = (cCourtsData || []).map(c => ({
+            id: c.id,
+            type: c.type,
+            isEmpty: !!c.isEmpty,
+            players: c.players || '',
+            teams: c.teams ? [c.teams.teamA, c.teams.teamB] : null,
+            sideA: c.sideA ? { e: !!c.sideA.isEmpty, p: c.sideA.players || '', s: c.sideA.startTime || 0 } : null,
+            sideB: c.sideB ? { e: !!c.sideB.isEmpty, p: c.sideB.players || '', s: c.sideB.startTime || 0 } : null
+        }));
+        const mapQueueSig = (q) => (q || []).map(s => ({
+            id: s.id,
+            p: s.players,
+            f: s.fullAt || 0,
+            pen: s.penaltyApplied || null
+        }));
+        return JSON.stringify({
+            clean: Boolean(club && club.isCleaningTime),
+            courts: courtsSig,
+            gq: mapQueueSig(cGameQueue),
+            nq: mapQueueSig(cNantaQueue)
+        });
+    } catch (e) {
+        return String(Date.now());
+    }
+}
+
 function broadcastState(targetClubId) {
     if (!io) return;
 
@@ -2122,24 +2150,26 @@ function broadcastState(targetClubId) {
             ? club.nantaQueue
             : (cid === 'unjeong' && typeof nantaQueue !== 'undefined' ? nantaQueue : []);
 
-        const cNotifications = (club && club.notifications) || (typeof notifications !== 'undefined' ? notifications : []);
         const cConfig = (club && club.config) || (typeof config !== 'undefined' ? config : {});
 
-       // 💡 [진단 로그 추가] 서버가 화면으로 실제로 보내고 있는 설정값 확인
-        // console.log(`📡 [${cid}] 화면 전송 설정값 -> 입장제한: ${cConfig.ENTRY_TIMEOUT_SEC}초, 비밀번호: ${cConfig.ADMIN_PASSWORD}`);
+        // 최신 전송 상태 서명 저장 (1초 루프에서 중복 전송 방지용)
+        if (club) {
+            club._lastBroadcastSignature = buildClubStateSignature(cid, club, cCourtsData, cGameQueue, cNantaQueue);
+        }
 
+        // 💡 notifications는 이미 'newNotification' 소켓으로 개별 실시간 전송되므로 stateUpdated에서는 빈 배열로 경량화
         io.to(`club_${cid}`).emit('stateUpdated', {
             clubId: (club && club.clubId) || cid,
-            // 🏢 [수정] 하드코딩 제거: clubName -> name -> cid 순서로 유연하게 매칭
             clubName: (club && (club.clubName || club.name)) || cid,
+            isCleaningTime: Boolean(club && club.isCleaningTime),
             courtsData: cCourtsData || [],
             gameQueue: cGameQueue || [],
             nantaQueue: cNantaQueue || [],
-            notifications: cNotifications,
+            notifications: [],
             config: cConfig
         });
 
-        // 💡 [추가] 대기열/코트 상태가 바뀔 때 상단 전광판(게임/난타 인원)도 즉시 동기화
+        // 💡 대기열/코트 상태가 실제로 바뀔 때만 상단 전광판(게임/난타 인원) 동기화
         if (typeof broadcastOnlineCount === 'function') {
             broadcastOnlineCount(cid);
         }
@@ -2242,6 +2272,7 @@ setInterval(() => {
 
     clubIdsToRun.forEach(cId => {
         const club = clubs[cId] || {};
+        let hasChanged = false; // ⚡ 실제로 화면 갱신이 필요한 상태 변화가 생겼을 때만 true
         
         // 💡 공용 config 기본값과 해당 클럽의 고유 config를 안전하게 병합 (타이머 설정값 누락/NaN 방지)
         const baseConfig = (typeof config !== 'undefined' && config) ? config : {};
@@ -2284,6 +2315,8 @@ setInterval(() => {
         if (activeSchedule && !club.isCleaningTime) {
             club.isCleaningTime = true;
             club.cleaningEndAlertSent = false;
+            hasChanged = true;
+
             const slotNum = activeSchedule.slot || (activeIdx + 1);
             club.activeCleaningSlot = slotNum;
 
@@ -2354,9 +2387,10 @@ setInterval(() => {
             club.isCleaningTime = false;
             club.activeCleaningSlot = null;
             club.cleaningEndAlertSent = false;
+            hasChanged = true;
         }
 
-        // 3) 청소 진행 중인 경우 해당 클럽의 타이머 동결 처리
+        // 3) 청소 진행 중인 경우 해당 클럽의 타이머 동결 처리 (시작 시점 1회 외에는 매초 브로드캐스트 생략)
         if (club.isCleaningTime) {
             if (Array.isArray(cGameQueue)) {
                 cGameQueue.forEach(slot => { if (slot.fullAt) slot.fullAt += 1000; });
@@ -2376,7 +2410,7 @@ setInterval(() => {
                 });
             }
 
-            if (typeof broadcastState === 'function') {
+            if (hasChanged && typeof broadcastState === 'function') {
                 broadcastState(cId);
             }
             return;
@@ -2398,10 +2432,17 @@ setInterval(() => {
                 
                 if (!slot.fullAt) {
                     slot.fullAt = now;
+                    hasChanged = true; // ⚡ 카운트다운 최초 시작
                 }
                 
+                const prevRem = slot.remainingSeconds;
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, entryTimeoutSec - elapsed);
+
+                // 관리자 설정 변경 등으로 남은 시간이 2초 이상 급변한 경우 재동기화
+                if (typeof prevRem === 'number' && Math.abs(slot.remainingSeconds - prevRem) > 2) {
+                    hasChanged = true;
+                }
 
                 const validPlayers = getValidPlayers(slot.players);
                 const memberNames = validPlayers.map(p => p.split('/')[0].trim());
@@ -2443,6 +2484,8 @@ setInterval(() => {
                     const targetIdx = cGameQueue.findIndex(s => s.id === slot.id);
                     if (targetIdx !== -1) {
                         const expiredTeam = cGameQueue.splice(targetIdx, 1)[0];
+                        hasChanged = true; // ⚡ 시간 초과로 대기방 삭제됨
+
                         const expiredValidPlayers = getValidPlayers(expiredTeam.players);
                         const expiredMemberNames = expiredValidPlayers.map(p => p.split('/')[0].trim());
 
@@ -2466,6 +2509,9 @@ setInterval(() => {
                     }
                 }
             } else {
+                if (slot.fullAt !== null || slot.remainingSeconds !== null) {
+                    hasChanged = true; // ⚡ 카운트다운 중단/초기화
+                }
                 slot.fullAt = null;
                 slot.remainingSeconds = null;
                 slot.announced = false;
@@ -2495,10 +2541,16 @@ setInterval(() => {
                 
                 if (!slot.fullAt) {
                     slot.fullAt = now;
+                    hasChanged = true; // ⚡ 난타 카운트다운 최초 시작
                 }
 
+                const prevRem = slot.remainingSeconds;
                 const elapsed = Math.floor((now - slot.fullAt) / 1000);
                 slot.remainingSeconds = Math.max(0, entryTimeoutSec - elapsed);
+
+                if (typeof prevRem === 'number' && Math.abs(slot.remainingSeconds - prevRem) > 2) {
+                    hasChanged = true;
+                }
 
                 const validPlayers = getValidPlayers(slot.players);
                 const memberNames = validPlayers.map(p => p.split('/')[0].trim());
@@ -2550,6 +2602,8 @@ setInterval(() => {
                     const index = cNantaQueue.findIndex(s => s.id === slot.id);
                     if (index !== -1) {
                         const expiredTeam = cNantaQueue.splice(index, 1)[0];
+                        hasChanged = true; // ⚡ 시간 초과로 난타 대기방 삭제됨
+
                         const expiredValidPlayers = getValidPlayers(expiredTeam.players);
                         const expiredMemberNames = expiredValidPlayers.map(p => p.split('/')[0].trim());
 
@@ -2573,6 +2627,9 @@ setInterval(() => {
                     }
                 }
             } else {
+                if (slot.fullAt !== null || slot.remainingSeconds !== null) {
+                    hasChanged = true;
+                }
                 slot.fullAt = null;
                 slot.remainingSeconds = null;
                 slot.announced = false;
@@ -2585,8 +2642,13 @@ setInterval(() => {
             if (court.type === 'nanta') {
                 ['sideA', 'sideB'].forEach(side => {
                     if (court[side] && !court[side].isEmpty && court[side].startTime) {
+                        const prevRem = court[side].remainingSeconds;
                         const elapsed = Math.floor((now - court[side].startTime) / 1000);
                         court[side].remainingSeconds = Math.max(0, nantaLimitSec - elapsed);
+
+                        if (typeof prevRem === 'number' && Math.abs(court[side].remainingSeconds - prevRem) > 2) {
+                            hasChanged = true;
+                        }
                         
                         if (court[side].remainingSeconds === 60 && !court[side].warned1Min) {
                             court[side].warned1Min = true;
@@ -2608,6 +2670,7 @@ setInterval(() => {
                         if (court[side].remainingSeconds === 0) {
                             const exitedPlayers = court[side].players;
                             court[side] = { isEmpty: true, players: '', startTime: null, remainingSeconds: 0, warned1Min: false };
+                            hasChanged = true; // ⚡ 난타 코트 시간 종료로 자동 비움
                             
                             if (typeof addNotification === 'function') {
                                 addNotification(`🔔 [난타종료] ${court.id}번 코트 (${side === 'sideA' ? 'A' : 'B'}면)${exitedPlayers} 난타 시간이 종료되었습니다.`, cId);
@@ -2622,14 +2685,23 @@ setInterval(() => {
                             court.players = (applyType === 'lesson') ? (court.note || '레슨 코트') : '';
                             delete court.sideA;
                             delete court.sideB;
+                            hasChanged = true; // ⚡ 예약된 코트 유형 전환 적용
                         }
                     }
                 });
             }
         });
 
-        // 4. 해당 클럽에만 최신 상태 실시간 전송
-        if (typeof broadcastState === 'function') {
+        // 🛡️ 안전망: 다른 핸들러에서 상태가 바뀌었으나 broadcastState가 누락된 경우 자동 감지
+        if (!hasChanged && typeof buildClubStateSignature === 'function') {
+            const currentSig = buildClubStateSignature(cId, club, cCourtsData, cGameQueue, cNantaQueue);
+            if (club._lastBroadcastSignature && club._lastBroadcastSignature !== currentSig) {
+                hasChanged = true;
+            }
+        }
+
+        // 4. 실제 상태 변경이 있을 때만 해당 클럽에 실시간 전송
+        if (hasChanged && typeof broadcastState === 'function') {
             broadcastState(cId);
         }
     });

@@ -595,13 +595,58 @@ socket.on('tvPopupAlert', (data) => {
 // 💡 전역 설정 객체 초기화
     window.currentConfig = window.currentConfig || {};
 
+    // ⏱️ TV 전광판 로컬 1초 카운트다운 엔진 (난타 60초 점멸 및 입장제한 실시간 반영)
+    if (!window._tvCountdownInitialized) {
+        window._tvCountdownInitialized = true;
+        window._tvLastSyncAt = Date.now();
+        window._tvIsCleaningTime = false;
+        window._tvLatestCourts = [];
+        window._tvLatestGameQueue = [];
+        window._tvLatestNantaQueue = [];
+
+        setInterval(() => {
+            if (window._tvIsCleaningTime) return;
+
+            const elapsedSec = Math.max(0, Math.floor((Date.now() - (window._tvLastSyncAt || Date.now())) / 1000));
+            let hasCourtTimer = false;
+            let hasQueueTimer = false;
+
+            (window._tvLatestCourts || []).forEach(court => {
+                if (court && court.type === 'nanta') {
+                    ['sideA', 'sideB'].forEach(side => {
+                        if (court[side] && !court[side].isEmpty && typeof court[side]._baseRemainingSeconds === 'number') {
+                            court[side].remainingSeconds = Math.max(0, court[side]._baseRemainingSeconds - elapsedSec);
+                            hasCourtTimer = true;
+                        }
+                    });
+                }
+            });
+
+            [...(window._tvLatestGameQueue || []), ...(window._tvLatestNantaQueue || [])].forEach(q => {
+                if (q && typeof q._baseRemainingSeconds === 'number') {
+                    q.remainingSeconds = Math.max(0, q._baseRemainingSeconds - elapsedSec);
+                    hasQueueTimer = true;
+                }
+            });
+
+            if (hasCourtTimer && typeof renderTVCourts === 'function') {
+                renderTVCourts(window._tvLatestCourts);
+            }
+            if (hasQueueTimer && typeof renderTVQueues === 'function') {
+                renderTVQueues(window._tvLatestGameQueue, window._tvLatestNantaQueue);
+            }
+        }, 1000);
+    }
+
     // 1. 서버 상태 업데이트 및 설정 동기화 수신
     socket.on('stateUpdated', (state) => {
         try {
-            // previousCourtStates 미선언으로 인한 중단 방지 안전장치
             if (typeof previousCourtStates === 'undefined') {
                 window.previousCourtStates = {};
             }
+
+            window._tvLastSyncAt = Date.now();
+            window._tvIsCleaningTime = Boolean(state && state.isCleaningTime);
 
             if (state && state.config) {
                 window.currentConfig = state.config;
@@ -621,8 +666,25 @@ socket.on('tvPopupAlert', (data) => {
             const gameQueue = state.gameQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'game') : []);
             const nantaQueue = state.nantaQueue || (Array.isArray(state.queues) ? state.queues.filter(q => q.type === 'nanta') : []);
 
-            // 💡 [코트운영설정 자동 로드] 
-            // 1초 타이머로 인한 입력창 리셋을 방지하기 위해, 최초 1회만 서버 코트 데이터를 localCourts에 담아 화면에 표시합니다.
+            // 로컬 카운트다운 기준 초 스냅샷 저장
+            courts.forEach(c => {
+                if (c && c.type === 'nanta') {
+                    ['sideA', 'sideB'].forEach(side => {
+                        if (c[side] && !c[side].isEmpty && typeof c[side].remainingSeconds === 'number') {
+                            c[side]._baseRemainingSeconds = c[side].remainingSeconds;
+                        }
+                    });
+                }
+            });
+            [...gameQueue, ...nantaQueue].forEach(q => {
+                q._baseRemainingSeconds = (typeof q.remainingSeconds === 'number') ? q.remainingSeconds : null;
+            });
+
+            window._tvLatestCourts = courts;
+            window._tvLatestGameQueue = gameQueue;
+            window._tvLatestNantaQueue = nantaQueue;
+
+            // 💡 [코트운영설정 자동 로드]
             if (!window.isCourtConfigLoaded && Array.isArray(courts) && courts.length > 0) {
                 if (typeof localCourts !== 'undefined') {
                     localCourts = courts.map(c => ({
