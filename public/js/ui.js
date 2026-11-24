@@ -369,27 +369,43 @@ function renderCourts() {
         return { isGuestUser, parts, joinedSlash: parts.join(' / ') };
     }
 
-    // 난타 코트(반코트) 및 기본 세로 목록용 함수 (기존 구조 유지)
+    // 난타 코트(반코트)용 슬림 2줄 표기 (이중 박스 제거, 얇은 구분선으로 2명 구분)
     function formatPlayersToLines(playersInput) {
         if (!playersInput) return '';
-        let pArray = [];
+        const pArray = Array.isArray(playersInput)
+            ? playersInput
+            : String(playersInput).split(',').map(item => item.trim());
 
-        if (Array.isArray(playersInput)) {
-            pArray = playersInput;
-        } else if (typeof playersInput === 'string') {
-            pArray = playersInput.split(',').map(item => item.trim());
-        }
+        const validList = pArray.filter(p => p && p.trim().length > 0);
+        if (validList.length === 0) return '';
 
-        return pArray
-            .filter(p => p && p.trim().length > 0)
-            .map(p => {
-                const { isGuestUser, joinedSlash } = normalizePlayerDisplay(p);
-                const guestClass = isGuestUser ? 'guest-text' : '';
-                const guestInlineStyle = isGuestUser ? 'style="color: #38bdf8 !important;"' : '';
+        const rowsHtml = validList.map((p, idx) => {
+            const { isGuestUser, parts } = normalizePlayerDisplay(p);
+            const guestClass = isGuestUser ? 'guest-text' : '';
+            const nameColorStyle = isGuestUser ? 'color: #38bdf8 !important;' : 'color: #f8fafc;';
+            const subColorStyle = isGuestUser ? 'color: #38bdf8 !important; opacity: 0.9;' : 'color: #cbd5e1;';
+            const dividerStyle = idx > 0
+                ? 'border-top: 1px solid rgba(148, 163, 184, 0.22); padding-top: 6px; margin-top: 6px;'
+                : '';
 
-                return `<div class="${guestClass}" ${guestInlineStyle}>${escapeHtml(joinedSlash)}</div>`;
-            })
-            .join('');
+            const nameText = escapeHtml(parts[0] || '');
+            const subText = parts.length >= 2 ? escapeHtml(parts.slice(1).join(' · ')) : '';
+
+            return `
+                <div class="${guestClass}" style="display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 2px; ${dividerStyle}">
+                    <div style="font-size: 13.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${nameColorStyle}">
+                        ${nameText}
+                    </div>
+                    ${subText ? `
+                        <div style="font-size: 11.5px; font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${subColorStyle}">
+                            ${subText}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `<div style="padding: 4px 2px; width: 100%; box-sizing: border-box;">${rowsHtml}</div>`;
     }
 
     // 게임 코트 팀 박스용 가로 2명 2줄(방식 B) 그리드 렌더링 함수
@@ -509,21 +525,22 @@ function renderCourts() {
             let isUserOnSideA = court.sideA ? exactMatchUser(court.sideA.players) : false;
             let isUserOnSideB = court.sideB ? exactMatchUser(court.sideB.players) : false;
 
+            const nantaBtnStyle = 'width: 100%; margin: 6px 0 0 0; box-sizing: border-box; padding: 8px 0; font-size: 12.5px; font-weight: 700; border-radius: 7px;';
             const sideABtn = isUserOnSideA ? 
-                `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')">난타 종료</button>` :
-                `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
+                `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideA')" style="${nantaBtnStyle}">난타 종료</button>` :
+                `<button class="btn-court-ctrl btn-end" disabled style="${nantaBtnStyle} background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
 
             const sideBBtn = isUserOnSideB ? 
-                `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')">난타 종료</button>` :
-                `<button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
+                `<button class="btn-court-ctrl btn-end" onclick="clickNantaEnd(${court.id}, 'sideB')" style="${nantaBtnStyle}">난타 종료</button>` :
+                `<button class="btn-court-ctrl btn-end" disabled style="${nantaBtnStyle} background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">난타 종료</button>`;
 
             const sideAContent = (court.sideA && court.sideA.isEmpty) ? 
                 `<div class="nanta-empty-text">+ A코트 (반 코트 이용)</div>` :
                 `<div class="nanta-card-head">
                     <span class="nanta-label">A코트</span>
-                    <span class="nanta-timer-badge">⏱ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
+                    <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideA ? court.sideA.remainingSeconds : 0)}</span>
                  </div>
-                 <div class="court-players">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
+                 <div class="court-players" style="width: 100%; box-sizing: border-box;">${formatPlayersToLines(court.sideA ? court.sideA.players : '')}</div>
                  ${sideABtn}`;
 
             const sideBContent = (court.sideB && court.sideB.isEmpty) ? 
@@ -532,7 +549,7 @@ function renderCourts() {
                     <span class="nanta-label">B코트</span>
                     <span class="nanta-timer-badge">⏱️ ${formatTime(court.sideB ? court.sideB.remainingSeconds : 0)}</span>
                  </div>
-                 <div class="court-players">${formatPlayersToLines(court.sideB ? court.sideB.players : '')}</div>
+                 <div class="court-players" style="width: 100%; box-sizing: border-box;">${formatPlayersToLines(court.sideB ? court.sideB.players : '')}</div>
                  ${sideBBtn}`;
 
             html = `
@@ -951,7 +968,7 @@ function renderNantaQueue() {
     function formatPlayerText(playerStr) {
         if (!playerStr) return '';
         // 💡 화면 출력 시 숨김 마커(|guest)를 깨끗하게 제거
-        let cleanStr = playerStr.replace('|guest', '').trim();
+        let cleanStr = playerStr.replace(/\|?guest/gi, '').trim();
         if (cleanStr.includes('/')) {
             return cleanStr.split('/').map(part => part.trim()).join(' / ');
         }
@@ -985,7 +1002,7 @@ function renderNantaQueue() {
 
     // 💡 난타 대기열에 내가 이미 참여 중인지 100% 확실하게 체크
     const amIActuallyInNanta = nantaQueue.some(slot => 
-    slot.players && slot.players.some(p => typeof isMePlayer === 'function' ? isMePlayer(p) : false)
+        slot.players && slot.players.some(p => typeof isMePlayer === 'function' ? isMePlayer(p) : false)
     );
 
     // 이미 난타 대기 중이거나 난타 경기 중일 때 비활성화
@@ -1010,38 +1027,73 @@ function renderNantaQueue() {
 
                 // 🎯 일일회원 판별: |guest 마커가 있거나 급수가 '일일'인 경우
                 const isGuestUser = p.includes('|guest') 
+                    || p.includes('guest')
                     || p.trim().endsWith('/ 일일') 
                     || p.trim().endsWith('/일일');
                 const guestClass = isGuestUser ? 'guest-text' : '';
 
-                // [난타종료 버튼]: 본인 칸만 활성화 (일일회원인 경우 guestClass 적용)
+                // 🏷️ 회원 게임 성향 말풍선 뱃지 및 클릭 이벤트 연결 (게임 대기열과 동일)
+                const cleanMemberName = p.replace(/\|?guest/gi, '').split('/')[0].replace(/\(일일\)/g, '').trim();
+                const styleBadgeHtml = (typeof window.getPlayerStyleBadgeHtml === 'function')
+                    ? window.getPlayerStyleBadgeHtml(cleanMemberName)
+                    : '';
+                const hasPlayerStyle = styleBadgeHtml !== '';
+                const styleClickAttr = hasPlayerStyle
+                    ? `onclick="openPlayerStyleView('${escapeHtml(cleanMemberName)}')"`
+                    : '';
+
+                // 📋 게임 대기열과 동일한 2줄 균형 배치 + 일일회원 '일반' -> '일일' 표시 보정
+                const playerParts = formattedPlayer.split('/').map(s => s.trim()).filter(Boolean);
+                if (isGuestUser && playerParts.length >= 2 && playerParts[playerParts.length - 1] === '일반') {
+                    playerParts[playerParts.length - 1] = '일일';
+                }
+
+                let innerTextHtml = '';
+                if (playerParts.length >= 2) {
+                    const rawPName = escapeHtml(playerParts[0]);
+                    const subInfoText = escapeHtml(playerParts.slice(1).join(' · '));
+                    const subInfoColor = isGuestUser ? 'opacity: 0.9;' : 'color: #cbd5e1;';
+                    innerTextHtml = `
+                        <div style="display:flex; flex-direction:column; justify-content:center; min-width:0; gap:3px;">
+                            <div style="display:flex; align-items:center; min-width:0; line-height:1.2;">
+                                <span style="font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${rawPName}</span>${styleBadgeHtml}
+                            </div>
+                            <div style="font-size:11.5px; font-weight:500; ${subInfoColor} white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.2;">${subInfoText}</div>
+                        </div>`;
+                } else {
+                    innerTextHtml = `<span style="font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">${escapeHtml(formattedPlayer)}</span>${styleBadgeHtml}`;
+                }
+
+                const playerInfoStyle = `${hasPlayerStyle ? 'cursor:pointer; ' : ''}display:flex; align-items:center; flex:1; min-width:0; overflow:hidden;`;
+
+                // [퇴장 버튼]: 본인 칸만 활성화 (게임 대기열과 동일한 비율 및 여백 적용)
                 if (isMe) {
                     playerCellsHtml += `
-                        <div class="player-cell">
-                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
-                            <button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})">퇴장</button>
+                        <div class="player-cell" style="display:flex; align-items:center; justify-content:space-between; min-width:0; overflow:hidden; gap:6px; padding:7px 9px 7px 11px;">
+                            <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
+                            <button class="btn-exit" onclick="exitNantaPlayer('${slot.id}', ${i})" style="white-space:nowrap; flex-shrink:0; padding:6px 8px; font-size:11.5px; border-radius:6px; line-height:1.1;">퇴장</button>
                         </div>`;
                 } else {
                     playerCellsHtml += `
-                        <div class="player-cell">
-                            <span class="player-info ${guestClass}">${escapeHtml(formattedPlayer)}</span>
-                            <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed;">퇴장</button>
+                        <div class="player-cell" style="display:flex; align-items:center; justify-content:space-between; min-width:0; overflow:hidden; gap:6px; padding:7px 9px 7px 11px;">
+                            <span class="player-info ${guestClass}" ${styleClickAttr} style="${playerInfoStyle}">${innerTextHtml}</span>
+                            <button class="btn-exit" disabled style="background:#444; color:#888; opacity:0.6; cursor:not-allowed; white-space:nowrap; flex-shrink:0; padding:6px 8px; font-size:11.5px; border-radius:6px; line-height:1.1;">퇴장</button>
                         </div>`;
                 }
             } else {
                 // [난타참여 버튼]: 이미 난타 대기 중이거나 경기 중이면 애초부터 회색으로 즉시 렌더링 (깜빡임 방지)
                 if (cannotJoinNanta) {
                     playerCellsHtml += `
-                    <div class="player-cell" data-cannot-join="true" style="background:#242730 !important; border:1px solid #333a48 !important; cursor:not-allowed !important;">
-                    <span class="empty-cell" style="color:#6b7280 !important; pointer-events:none !important; opacity:0.8 !important;">난타참여</span>
-                    </div>`;
-            } else {
+                        <div class="player-cell" data-cannot-join="true" style="background:#242730 !important; border:1px solid #333a48 !important; cursor:not-allowed !important;">
+                            <span class="empty-cell" style="color:#6b7280 !important; pointer-events:none !important; opacity:0.8 !important;">난타참여</span>
+                        </div>`;
+                } else {
                     playerCellsHtml += `
                         <div class="player-cell empty-slot" onclick="joinNantaCell('${slot.id}', ${i})">
-                        <span class="empty-cell">난타참여</span>
+                            <span class="empty-cell">난타참여</span>
                         </div>`;
-                    }
                 }
+            }
         }
 
         const validNantaCount = getValidPlayers(slot.players).length;
@@ -1065,7 +1117,7 @@ function renderNantaQueue() {
                     <span class="rank-badge" style="color:#f97316;">${rank}순위</span>
                     <span class="timer-badge ${timerClass}">${timerText}</span>
                 </div>
-                <div class="players-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">${playerCellsHtml}</div>
+                <div class="players-grid" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;">${playerCellsHtml}</div>
                 <div class="slot-footer">
                     ${nantaEnterBtnHtml}
                 </div>
