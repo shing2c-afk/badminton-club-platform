@@ -232,7 +232,8 @@ async function buildBalancedTeamsForCourt(clubId, validPlayers) {
         teamAScore: balanced.teamAScore,
         teamBScore: balanced.teamBScore,
         scoreDiff: balanced.scoreDiff,
-        isMixedDoubles: balanced.isMixedDoubles
+        isMixedDoubles: balanced.isMixedDoubles,
+        matchType: balanced.matchType || (balanced.isMixedDoubles ? '혼복' : '자유')
     };
 }
 
@@ -4182,7 +4183,8 @@ io.on('connection', (socket) => {
         try {
             const currentClubId = String((data && data.clubId) || socket.clubId || 'unjeong').trim();
             const courtNumber = parseInt(data && data.courtId, 10) || 0;
-            const matchType = (data && data.matchType) || '자유복식';
+            const rawMatchType = (data && data.matchType) ? String(data.matchType).trim() : '자유';
+            const matchType = (rawMatchType === '자유복식') ? '자유' : rawMatchType;
             const scoreA = parseInt(data && data.scoreA, 10) || 0;
             const scoreB = parseInt(data && data.scoreB, 10) || 0;
 
@@ -4807,7 +4809,8 @@ io.on('connection', (socket) => {
                 };
 
                 (matchRows || []).forEach(r => {
-                    const mType = r.match_type || '자유복식';
+                    const rawMType = r.match_type || '자유';
+                    const mType = (rawMType === '자유복식') ? '자유' : rawMType;
                     const sA = Number(r.score_a) || 0;
                     const sB = Number(r.score_b) || 0;
                     const aWin = r.winner_team === 'A';

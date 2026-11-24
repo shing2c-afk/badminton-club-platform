@@ -170,17 +170,27 @@ function balanceTeams(players) {
             teamAScore: 0,
             teamBScore: 0,
             scoreDiff: 0,
-            isMixedDoubles: false
+            isMixedDoubles: false,
+            matchType: '자유'
         };
     }
 
     // 각 플레이어 점수 계산
     const scored = players.map(calculatePlayerScore);
 
-    // 남2·여2 여부 판별 (성별 미입력자가 1명이라도 있으면 혼복 규칙 건너뜀)
+    // 성별 구성 판별 (성별 미입력자가 1명이라도 있으면 '자유'로 분류)
     const males = scored.filter(p => p.normalizedGender === '남');
     const females = scored.filter(p => p.normalizedGender === '여');
     const isMixedCandidate = BALANCE_CONFIG.preferMixedDoubles && males.length === 2 && females.length === 2;
+
+    let matchType = '자유';
+    if (males.length === 4) {
+        matchType = '남복';
+    } else if (females.length === 4) {
+        matchType = '여복';
+    } else if (isMixedCandidate) {
+        matchType = '혼복';
+    }
 
     let combinations = [];
 
@@ -213,7 +223,8 @@ function balanceTeams(players) {
                 teamAScore,
                 teamBScore,
                 scoreDiff,
-                isMixedDoubles: isMixedCandidate
+                isMixedDoubles: isMixedCandidate,
+                matchType
             };
         }
     }

@@ -486,8 +486,11 @@ function renderCourts() {
                     && Array.isArray(court.teams.teamA) && court.teams.teamA.length > 0
                     && Array.isArray(court.teams.teamB) && court.teams.teamB.length > 0;
 
+                const recommendedMatchType = hasBalancedTeams
+                    ? (court.teams.matchType || (court.teams.isMixedDoubles ? '혼복' : '자유'))
+                    : '';
                 const teamModeBadge = hasBalancedTeams
-                    ? `<span style="margin-left: 6px; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 999px; background: rgba(102, 252, 241, 0.14); color: #66fcf1; border: 1px solid rgba(102, 252, 241, 0.35);">${court.teams.isMixedDoubles ? '추천 혼복' : '추천 팀'}</span>`
+                    ? `<span style="margin-left: 6px; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 999px; background: rgba(102, 252, 241, 0.14); color: #66fcf1; border: 1px solid rgba(102, 252, 241, 0.35);">추천 ${recommendedMatchType}</span>`
                     : '';
 
                 const playersContentHtml = hasBalancedTeams
@@ -2071,6 +2074,9 @@ window.showScoreInputPopup = function(data) {
 
     const detectMatchTypeByGender = (extraMembers) => {
         if (players.length < 4) return '단식';
+        if (data.teams && data.teams.matchType) {
+            return data.teams.matchType === '자유복식' ? '자유' : data.teams.matchType;
+        }
         if (data.teams && data.teams.isMixedDoubles) return '혼복';
 
         const genderMap = {};
@@ -2128,7 +2134,7 @@ window.showScoreInputPopup = function(data) {
         if (maleCount === 4) return '남복';
         if (femaleCount === 4) return '여복';
         if (maleCount === 2 && femaleCount === 2) return '혼복';
-        return '자유복식';
+        return '자유';
     };
 
     const defaultMatchType = detectMatchTypeByGender();
@@ -2156,10 +2162,10 @@ window.showScoreInputPopup = function(data) {
                 <div style="margin-bottom:14px;">
                     <label style="font-size:12px; color:#9ca3af; display:block; margin-bottom:6px;">경기 종목 선택 (성별 자동 판별)</label>
                     <select id="modal-match-type" style="width:100%; padding:10px; background:#374151; color:#fff; border:1px solid #4b5563; border-radius:8px; font-size:14px; font-weight:bold;">
-                        <option value="남복" ${defaultMatchType==='남복'?'selected':''}>남성복식 (남복)</option>
-                        <option value="여복" ${defaultMatchType==='여복'?'selected':''}>여성복식 (여복)</option>
-                        <option value="혼복" ${defaultMatchType==='혼복'?'selected':''}>혼성복식 (혼복)</option>
-                        <option value="자유복식" ${defaultMatchType==='자유복식'?'selected':''}>자유복식 (자유)</option>
+                        <option value="남복" ${defaultMatchType==='남복'?'selected':''}>남복</option>
+                        <option value="여복" ${defaultMatchType==='여복'?'selected':''}>여복</option>
+                        <option value="혼복" ${defaultMatchType==='혼복'?'selected':''}>혼복</option>
+                        <option value="자유" ${defaultMatchType==='자유' || defaultMatchType==='자유복식'?'selected':''}>자유</option>
                     </select>
                 </div>
 
@@ -3268,7 +3274,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                     '남복': { games: 0, wins: 0, losses: 0 },
                     '여복': { games: 0, wins: 0, losses: 0 },
                     '혼복': { games: 0, wins: 0, losses: 0 },
-                    '자유복식': { games: 0, wins: 0, losses: 0 }
+                    '자유': { games: 0, wins: 0, losses: 0 }
                 }
             };
 
@@ -3398,16 +3404,18 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                 .slice(0, 5);
 
             // 종목별 전적 계산 (allMyMatches에서 직접 집계하여 정확도 보장)
+            // 수정 후 (3401~3441번 줄 전체 교체)
             const typeCountMap = {
                 '남복': { games: 0, wins: 0, losses: 0 },
                 '여복': { games: 0, wins: 0, losses: 0 },
                 '혼복': { games: 0, wins: 0, losses: 0 },
-                '자유복식': { games: 0, wins: 0, losses: 0 }
+                '자유': { games: 0, wins: 0, losses: 0 }
             };
 
             if (allMyMatches.length > 0) {
                 allMyMatches.forEach(m => {
-                    const t = m.match_type || '자유복식';
+                    const rawT = m.match_type || '자유';
+                    const t = (rawT === '자유복식') ? '자유' : rawT;
                     if (!typeCountMap[t]) typeCountMap[t] = { games: 0, wins: 0, losses: 0 };
                     typeCountMap[t].games += 1;
                     const isTeamA = (cleanName(m.team_a_p1) === myCleanName || cleanName(m.team_a_p2) === myCleanName);
@@ -3416,12 +3424,15 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
                     else if (m.winner_team === 'A' || m.winner_team === 'B') typeCountMap[t].losses += 1;
                 });
             } else if (myData && myData.byType) {
-                ['남복', '여복', '혼복', '자유복식'].forEach(k => {
+                ['남복', '여복', '혼복', '자유', '자유복식'].forEach(k => {
                     if (myData.byType[k]) {
+                        const targetKey = (k === '자유복식') ? '자유' : k;
                         const g = Number(myData.byType[k].games) || 0;
                         const w = Number(myData.byType[k].wins) || 0;
                         const l = typeof myData.byType[k].losses === 'number' ? myData.byType[k].losses : Math.max(0, g - w);
-                        typeCountMap[k] = { games: g, wins: w, losses: l };
+                        typeCountMap[targetKey].games += g;
+                        typeCountMap[targetKey].wins += w;
+                        typeCountMap[targetKey].losses += l;
                     }
                 });
             }
@@ -3438,7 +3449,7 @@ window.openMyStats = function(selectedPeriod = 'month', explicitName = '') {
             const menRow = makeTypeRow('남복', typeCountMap['남복']);
             const womenRow = makeTypeRow('여복', typeCountMap['여복']);
             const mixRow = makeTypeRow('혼복', typeCountMap['혼복']);
-            const freeRow = makeTypeRow('자유복식', typeCountMap['자유복식']);
+            const freeRow = makeTypeRow('자유', typeCountMap['자유']);
 
             const typeRows = [];
             if (myGender.startsWith('여') || (womenRow.games > 0 && menRow.games === 0)) {

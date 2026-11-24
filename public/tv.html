@@ -907,7 +907,8 @@ function renderTVCourts(courts) {
                     // ⚖️ 자동 밸런싱 팀 구분 표시 (A팀 블루 / B팀 오렌지)
                     const formattedTeamA = formatPlayersHorizontal(court.teams.teamA.join(', '));
                     const formattedTeamB = formatPlayersHorizontal(court.teams.teamB.join(', '));
-                    const matchLabel = court.teams.isMixedDoubles ? '[추천 혼복]' : '[추천 팀]';
+                    const recommendedType = court.teams.matchType || (court.teams.isMixedDoubles ? '혼복' : '자유');
+                    const matchLabel = `[추천 ${recommendedType}]`;
 
                     teamsHtml = `
                         <div class="team-row" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 2px 4px; border-radius: 4px; width: 100%;">
