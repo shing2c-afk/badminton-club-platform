@@ -356,6 +356,20 @@ function renderCourts() {
         } catch (e) {}
     }
 
+    // 일일회원 문자열 정리 + 화면 표시용 '일반' -> '일일' 보정 헬퍼
+    function normalizePlayerDisplay(rawStr) {
+        const isGuestUser = rawStr.includes('guest') || rawStr.includes('일일');
+        let cleanStr = rawStr.replace(/\|?guest/gi, '').trim();
+        let parts = cleanStr.split('/').map(part => part.trim()).filter(Boolean);
+
+        // 일일회원 급수가 '일반'으로 들어온 경우 '일일'로 표시 보정
+        if (isGuestUser && parts.length >= 2 && parts[parts.length - 1] === '일반') {
+            parts[parts.length - 1] = '일일';
+        }
+        return { isGuestUser, parts, joinedSlash: parts.join(' / ') };
+    }
+
+    // 난타 코트(반코트) 및 기본 세로 목록용 함수 (기존 구조 유지)
     function formatPlayersToLines(playersInput) {
         if (!playersInput) return '';
         let pArray = [];
@@ -369,22 +383,52 @@ function renderCourts() {
         return pArray
             .filter(p => p && p.trim().length > 0)
             .map(p => {
-                // 🎯 일일회원 판별: |guest 마커가 포함되어 있거나 '일일' 키워드가 들어있는 경우
-                const isGuestUser = p.includes('guest') || p.includes('일일');
-                
-                // 💡 화면 출력 시 숨김 마커(|guest) 제거 및 슬래시 간격 정리
-                let cleanStr = p.replace(/\|?guest/gi, '').trim();
-                if (cleanStr.includes('/')) {
-                    cleanStr = cleanStr.split('/').map(part => part.trim()).join(' / ');
-                }
-
-                // 🎨 일일회원은 클래스와 함께 직접 인라인 색상(하늘색)을 강제 적용
+                const { isGuestUser, joinedSlash } = normalizePlayerDisplay(p);
                 const guestClass = isGuestUser ? 'guest-text' : '';
                 const guestInlineStyle = isGuestUser ? 'style="color: #38bdf8 !important;"' : '';
 
-                return `<div class="${guestClass}" ${guestInlineStyle}>${escapeHtml(cleanStr)}</div>`;
+                return `<div class="${guestClass}" ${guestInlineStyle}>${escapeHtml(joinedSlash)}</div>`;
             })
             .join('');
+    }
+
+    // 게임 코트 팀 박스용 가로 2명 2줄(방식 B) 그리드 렌더링 함수
+    function formatTeamPlayersGrid(playersInput, dividerColor) {
+        if (!playersInput) return '';
+        const pArray = Array.isArray(playersInput)
+            ? playersInput
+            : String(playersInput).split(',').map(item => item.trim());
+
+        const validList = pArray.filter(p => p && p.trim().length > 0);
+        if (validList.length === 0) return '';
+
+        const cellsHtml = validList.map((p, idx) => {
+            const { isGuestUser, parts } = normalizePlayerDisplay(p);
+            const guestClass = isGuestUser ? 'guest-text' : '';
+            const nameColorStyle = isGuestUser ? 'color: #38bdf8 !important;' : 'color: #f8fafc;';
+            const subColorStyle = isGuestUser ? 'color: #38bdf8 !important; opacity: 0.9;' : 'color: #cbd5e1;';
+            const dividerStyle = (idx % 2 === 1 && dividerColor)
+                ? `border-left: 1px solid ${dividerColor}; padding-left: 10px;`
+                : '';
+
+            const nameText = escapeHtml(parts[0] || '');
+            const subText = parts.length >= 2 ? escapeHtml(parts.slice(1).join(' · ')) : '';
+
+            return `
+                <div class="${guestClass}" style="display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 2px; ${dividerStyle}">
+                    <div style="font-size: 13.5px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${nameColorStyle}">
+                        ${nameText}
+                    </div>
+                    ${subText ? `
+                        <div style="font-size: 11.5px; font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${subColorStyle}">
+                            ${subText}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; box-sizing: border-box;">${cellsHtml}</div>`;
     }
 
     // 💡 2. 만능 함수(isMyNameMatch)로 연결시키는 스위치
@@ -408,16 +452,17 @@ function renderCourts() {
             } else {
                 let isUserOnThisCourt = exactMatchUser(court.players);
 
+                const btnBaseStyle = 'width: 100%; margin: 0; box-sizing: border-box; padding: 9px 0; font-size: 13px; font-weight: 700; border-radius: 7px;';
                 let gameActionBtns = '';
                 if (isUserOnThisCourt) {
                     gameActionBtns = `
-                        <button class="btn-court-ctrl btn-again" onclick="clickAgain(${court.id})">한 게임 더</button>
-                        <button class="btn-court-ctrl btn-end" onclick="clickEnd(${court.id})">게임 종료</button>
+                        <button class="btn-court-ctrl btn-again" onclick="clickAgain(${court.id})" style="${btnBaseStyle}">한 게임 더</button>
+                        <button class="btn-court-ctrl btn-end" onclick="clickEnd(${court.id})" style="${btnBaseStyle}">게임 종료</button>
                     `;
                 } else {
                     gameActionBtns = `
-                        <button class="btn-court-ctrl btn-again" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">한 게임 더</button>
-                        <button class="btn-court-ctrl btn-end" disabled style="background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">게임 종료</button>
+                        <button class="btn-court-ctrl btn-again" disabled style="${btnBaseStyle} background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">한 게임 더</button>
+                        <button class="btn-court-ctrl btn-end" disabled style="${btnBaseStyle} background: #2a2a2a; color: #777; cursor: not-allowed; opacity: 0.6;">게임 종료</button>
                     `;
                 }
 
@@ -431,16 +476,18 @@ function renderCourts() {
 
                 const playersContentHtml = hasBalancedTeams
                     ? `
-                        <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
-                            <div style="padding: 6px 8px; border-radius: 6px; background: rgba(56, 189, 248, 0.14); border: 1px solid #38bdf8;">
-                                ${formatPlayersToLines(court.teams.teamA)}
+                        <div style="display: flex; flex-direction: column; gap: 7px; width: 100%; box-sizing: border-box;">
+                            <div style="padding: 8px 10px; border-radius: 7px; background: rgba(56, 189, 248, 0.14); border: 1px solid #38bdf8; width: 100%; box-sizing: border-box;">
+                                ${formatTeamPlayersGrid(court.teams.teamA, 'rgba(56, 189, 248, 0.3)')}
                             </div>
-                            <div style="padding: 6px 8px; border-radius: 6px; background: rgba(251, 146, 60, 0.14); border: 1px solid #fb923c;">
-                                ${formatPlayersToLines(court.teams.teamB)}
+                            <div style="padding: 8px 10px; border-radius: 7px; background: rgba(251, 146, 60, 0.14); border: 1px solid #fb923c; width: 100%; box-sizing: border-box;">
+                                ${formatTeamPlayersGrid(court.teams.teamB, 'rgba(251, 146, 60, 0.3)')}
                             </div>
                         </div>
                     `
-                    : formatPlayersToLines(court.players);
+                    : `<div style="padding: 8px 10px; border-radius: 7px; background: rgba(255, 255, 255, 0.04); border: 1px solid #334155; width: 100%; box-sizing: border-box;">
+                           ${formatTeamPlayersGrid(court.players, 'rgba(148, 163, 184, 0.25)')}
+                       </div>`;
 
                 html = `
                     <div class="court-row">
@@ -449,10 +496,9 @@ function renderCourts() {
                             <span class="type-badge badge-game">게임 코트</span>
                             ${teamModeBadge}
                         </div>
-                        <div class="court-body-game">
-                            <div class="court-players">${playersContentHtml}</div>
-                            <div class="court-timer-off"></div>
-                            <div>
+                        <div class="court-body-game" style="display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; box-sizing: border-box;">
+                            <div class="court-players" style="width: 100%; box-sizing: border-box;">${playersContentHtml}</div>
+                            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; box-sizing: border-box;">
                                 ${gameActionBtns}
                             </div>
                         </div>

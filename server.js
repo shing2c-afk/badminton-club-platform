@@ -210,7 +210,7 @@ async function buildBalancedTeamsForCourt(clubId, validPlayers) {
         return {
             displayName: raw,
             name: cleanName,
-            grade: (guest && guest.grade && guest.grade !== '일반') ? guest.grade : fallbackGrade,
+            grade: (guest && guest.grade && guest.grade !== '일반' && guest.grade !== '일일') ? guest.grade : fallbackGrade,
             gender: guest ? guest.gender : null,
             ageGroup: guest ? guest.age_group : null,
             birthDate: null,
@@ -1160,7 +1160,7 @@ function initDatabase() {
                 phone TEXT,
                 gender TEXT DEFAULT '-',
                 ageGroup TEXT DEFAULT '-',
-                grade TEXT DEFAULT '일반',
+                grade TEXT DEFAULT '일일',
                 address TEXT,
                 visitedAt TEXT
             )
@@ -1168,7 +1168,7 @@ function initDatabase() {
             db.run(`ALTER TABLE daily_guests ADD COLUMN club_id TEXT DEFAULT 'unjeong'`, () => {});
             db.run(`ALTER TABLE daily_guests ADD COLUMN gender TEXT DEFAULT '-'`, () => {});
             db.run(`ALTER TABLE daily_guests ADD COLUMN ageGroup TEXT DEFAULT '-'`, () => {});
-            db.run(`ALTER TABLE daily_guests ADD COLUMN grade TEXT DEFAULT '일반'`, () => {});
+            db.run(`ALTER TABLE daily_guests ADD COLUMN grade TEXT DEFAULT '일일'`, () => {});
         });
 
         // =========================================================================
@@ -1212,7 +1212,7 @@ function initDatabase() {
                 phone TEXT NOT NULL,
                 gender TEXT DEFAULT '-',
                 age_group TEXT DEFAULT '-',
-                grade TEXT DEFAULT '일반',
+                grade TEXT DEFAULT '일일',
                 visit_count INTEGER DEFAULT 1,
                 last_visit DATETIME DEFAULT CURRENT_TIMESTAMP,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -3324,12 +3324,12 @@ io.on('connection', (socket) => {
         const cleanAgeGroup = ['10대', '20대', '30대', '40대', '50대', '60대', '70대'].includes(ageGroup) ? ageGroup : '-';
 
         // 🎯 [급수 표기 정리] '(일)' 접미사 없이 순수 급수만 깔끔하게 생성
-        let formattedGrade = '일반';
+        let formattedGrade = '일일';
         if (grade) {
             const rawGrade = String(grade).trim();
-            if (rawGrade === '초심' || rawGrade.endsWith('조')) {
+            if (rawGrade === '초심' || rawGrade === '일일' || rawGrade.endsWith('조')) {
                 formattedGrade = rawGrade;
-            } else {
+            } else if (rawGrade !== '일반') {
                 formattedGrade = `${rawGrade}조`;
             }
         }
