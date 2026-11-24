@@ -12,62 +12,152 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
         background-color: #0a0c10; 
         color: #ffffff; 
-        padding: 6px; 
+        padding: 6px 8px; 
         overflow: hidden; 
         height: 100vh; 
         display: flex; 
         flex-direction: column; 
         justify-content: flex-start; 
-        gap: 8px; 
+        gap: 6px; 
     }
     
+    /* 1. 상단 타이틀 (시인성 유지 + 세로 여백 최적화) */
     .header { 
         text-align: center; 
         border-bottom: 2px solid #1f293d; 
-        padding-bottom: 2px; 
+        padding: 0 0 3px 0; 
         flex-shrink: 0; 
     }
-    .header h1 { color: #66fcf1; font-size: 40px; letter-spacing: 2px; }
+    .header h1 { 
+        color: #66fcf1; 
+        font-size: clamp(24px, 3.1vh, 36px); 
+        line-height: 1.15;
+        letter-spacing: 2px; 
+    }
 
+    /* 2. 공지사항 마퀴 바 (불필요한 하단 마진 제거) */
+    .notice-bar {
+        overflow: hidden;
+        white-space: nowrap;
+        width: 100%;
+        background: #161b22;
+        border-top: 1px solid #30363d;
+        border-bottom: 1px solid #30363d;
+        padding: 6px 0;
+        flex-shrink: 0;
+    }
+    .notice-marquee-track {
+        display: inline-block;
+        padding-left: 100%;
+        animation: marquee-scroll 35s linear infinite;
+    }
+    .notice-marquee-track:hover {
+        animation-play-state: paused;
+    }
+    #tv-notice-text {
+        color: #e6edf3;
+        font-size: clamp(16px, 1.85vh, 20px);
+        font-weight: bold;
+    }
+
+    /* 3. 코트 현황 그리드 (1순위 시인성 + 코트 수별 자동 유동 높이) */
     .court-grid { 
         display: grid; 
-        grid-template-columns: repeat(4, 1fr); 
-        grid-template-rows: repeat(2, 145px); 
-        align-content: start;                    
-        gap: 6px; 
+        grid-template-columns: repeat(4, minmax(0, 1fr)); 
+        grid-auto-rows: auto;
+        align-content: start;
+        gap: 7px; 
         width: 100%; 
-        flex-shrink: 0; 
+        flex: 0 0 auto; 
     }
     
     .court-card { 
         background: #141824; 
         border: 2px solid #232d42; 
-        border-radius: 6px; 
-        padding: 4px 6px; 
+        border-radius: 8px; 
+        padding: 6px 8px; 
         display: flex; 
         flex-direction: column; 
         justify-content: flex-start; 
-        gap: 2px; 
+        gap: 5px; 
         overflow: hidden; 
-        height: 145px; 
-        min-height: 145px; 
+        min-height: 165px;
     }
+
+    /* 코트 규모별 밀도 및 원거리 시인성 자동 조절 */
+    /* [1~4코트] 1줄 배치: 카드를 시원하게 키워 가독성 극대화 + 하단 대기열 약 65% 확보 */
+    .court-grid.density-xl .court-card {
+        min-height: clamp(185px, 23vh, 245px);
+        padding: 8px 10px;
+        gap: 7px;
+    }
+    .court-grid.density-xl .court-title { font-size: clamp(16px, 1.85vh, 20px); }
+    .court-grid.density-xl .type-badge { font-size: 12px; padding: 2px 7px; }
+    .court-grid.density-xl .tv-match-label { font-size: 14px; }
+    .court-grid.density-xl .timer-text { font-size: 14px; }
+    .court-grid.density-xl .tv-player-chip { font-size: clamp(15px, 1.75vh, 19px); padding: 4px 8px; }
+    .court-grid.density-xl .empty-text,
+    .court-grid.density-xl .lesson-text { font-size: 18px; }
+
+    /* [5~8코트] 2줄 배치: 1순위 코트 영역을 큼직하게 확보 + 하단 대기열 약 45% 확보 */
+    .court-grid.density-lg .court-card {
+        min-height: clamp(155px, 19.5vh, 205px);
+        padding: 6px 8px;
+        gap: 5px;
+    }
+    .court-grid.density-lg .court-title { font-size: clamp(15px, 1.65vh, 18px); }
+    .court-grid.density-lg .type-badge { font-size: 11px; padding: 2px 6px; }
+    .court-grid.density-lg .tv-match-label { font-size: 13px; }
+    .court-grid.density-lg .timer-text { font-size: 13px; }
+    .court-grid.density-lg .tv-player-chip { font-size: clamp(14px, 1.55vh, 17px); padding: 3px 7px; }
+    .court-grid.density-lg .empty-text,
+    .court-grid.density-lg .lesson-text { font-size: 16px; }
+
+    /* [9~12코트] 5~6열 × 2줄 배치: 카드 가로 폭 유지 + 하단 대기열 약 45% 방어 */
+    .court-grid.density-md { gap: 6px; }
+    .court-grid.density-md .court-card {
+        min-height: clamp(150px, 19vh, 200px);
+        padding: 5px 6px;
+        gap: 4px;
+    }
+    .court-grid.density-md .court-title { font-size: 14px; }
+    .court-grid.density-md .type-badge { font-size: 10.5px; padding: 1px 5px; }
+    .court-grid.density-md .tv-match-label { font-size: 12px; }
+    .court-grid.density-md .timer-text { font-size: 12px; }
+    .court-grid.density-md .tv-player-chip { font-size: 13.5px; padding: 2px 5px; }
+    .court-grid.density-md .empty-text,
+    .court-grid.density-md .lesson-text { font-size: 14px; }
+
+    /* [13~16코트 이상] 6열 × 3줄 배치: 8열 과다 축소 방지 + 하단 대기열 약 35~38% 확보 */
+    .court-grid.density-sm { gap: 5px; }
+    .court-grid.density-sm .court-card {
+        min-height: clamp(128px, 16vh, 172px);
+        padding: 4px 6px;
+        gap: 3px;
+    }
+    .court-grid.density-sm .court-title { font-size: 13px; margin-bottom: 0; }
+    .court-grid.density-sm .type-badge { font-size: 10px; padding: 1px 4px; }
+    .court-grid.density-sm .tv-match-label { font-size: 11px; }
+    .court-grid.density-sm .timer-text { font-size: 11px; }
+    .court-grid.density-sm .tv-team-box { padding: 3px 5px; }
+    .court-grid.density-sm .tv-player-chip { font-size: 12.5px; padding: 2px 4px; }
+    .court-grid.density-sm .empty-text,
+    .court-grid.density-sm .lesson-text { font-size: 13px; }
     
     .court-card.game { border-color: #3498db; }
     .court-card.nanta { border-color: #ffa500; }
     .court-card.lesson { border-color: #9b59b6; }
 
     .court-title { 
-        font-size: 13px; 
+        font-size: 15px; 
         font-weight: bold; 
-        margin-bottom: 2px; 
         display: flex; 
         justify-content: space-between; 
         align-items: center; 
         flex-shrink: 0; 
     }
     
-    .type-badge { font-size: 10px; padding: 1px 4px; border-radius: 3px; font-weight: bold; display: inline-flex; align-items: center; gap: 3px; }
+    .type-badge { font-size: 11px; padding: 2px 5px; border-radius: 4px; font-weight: bold; display: inline-flex; align-items: center; gap: 3px; }
     .badge-game { background: rgba(52, 152, 219, 0.15); color: #3498db; border: 1px solid #3498db; }
     .badge-nanta { background: rgba(255, 165, 0, 0.15); color: #ffa500; border: 1px solid #ffa500; }
     .badge-lesson { background: rgba(155, 89, 182, 0.15); color: #9b59b6; border: 1px solid #9b59b6; }
@@ -75,41 +165,183 @@
     .team-list { 
         display: flex; 
         flex-direction: column; 
-        gap: 2px; 
-        justify-content: flex-start; 
-        flex-grow: 0; 
+        gap: 4px; 
+        justify-content: center; 
+        flex: 1;
+        min-height: 0;
     }
     
     .team-row { 
         background: #1f2538; 
-        padding: 3px 6px; 
-        border-radius: 4px; 
-        font-size: 18px; 
+        padding: 4px 6px; 
+        border-radius: 5px; 
         font-weight: bold; 
         display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        width: 100%;
     }
-    .empty-text { text-align: center; color: #52607d; font-size: 14px; font-weight: bold; padding: 4px 0; }
-    .lesson-text { text-align: center; color: #d8b4fe; font-size: 14px; font-weight: bold; line-height: 1.2; padding: 4px 0; }
+    .team-row-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+    .tv-match-label { font-size: 13px; color: #66fcf1; font-weight: bold; }
+    .tv-team-box {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 4px 6px;
+        border-radius: 6px;
+        box-sizing: border-box;
+    }
+    .tv-team-box.team-blue {
+        background: rgba(56, 189, 248, 0.16);
+        border: 1.5px solid #38bdf8;
+    }
+    .tv-team-box.team-orange {
+        background: rgba(251, 146, 60, 0.16);
+        border: 1.5px solid #fb923c;
+    }
+    .tv-team-players {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    .tv-player-chip {
+        background: #2a344a;
+        padding: 3px 6px;
+        border-radius: 4px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #ffffff;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    .tv-player-chip.guest-text {
+        color: #38bdf8 !important;
+        font-weight: 700;
+    }
 
-    .timer-text { font-size: 11px; color: #00ff66; font-weight: bold; }
+    .empty-text { text-align: center; color: #52607d; font-size: 15px; font-weight: bold; padding: 8px 0; }
+    .lesson-text { text-align: center; color: #d8b4fe; font-size: 15px; font-weight: bold; line-height: 1.3; padding: 8px 4px; word-break: keep-all; }
 
+    .timer-text { font-size: 12px; color: #00ff66; font-weight: bold; white-space: nowrap; }
+
+    .urgent-flash {
+        animation: urgentFlash 1s ease-in-out infinite;
+        border: 1px solid #ef4444;
+    }
+    @keyframes urgentFlash {
+        0%, 100% { background: rgba(239, 68, 68, 0.18); }
+        50% { background: rgba(239, 68, 68, 0.42); }
+    }
+
+    /* 4. 하단 대기열 컨테이너 (남은 화면 100% 확장 + 게임 6 : 난타 4 비율) */
     .waiting-container { 
         display: grid; 
-        grid-template-columns: 1fr 1fr; 
+        grid-template-columns: 3fr 2fr; 
         gap: 8px; 
-        flex-grow: 1; 
+        flex: 1 1 auto; 
         min-height: 0; 
-        margin-top: 6px; 
+        width: 100%;
     }
-    .waiting-box { background: #141824; border: 1px solid #232d42; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; overflow: hidden; }
-    .waiting-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; color: #66fcf1; border-bottom: 1px solid #1f293d; padding-bottom: 3px; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .waiting-box { 
+        background: #141824; 
+        border: 1px solid #232d42; 
+        border-radius: 8px; 
+        padding: 8px 10px; 
+        display: flex; 
+        flex-direction: column; 
+        overflow: hidden; 
+        min-height: 0;
+    }
+    .waiting-title { 
+        font-size: clamp(15px, 1.7vh, 18px); 
+        font-weight: bold; 
+        margin-bottom: 6px; 
+        color: #66fcf1; 
+        border-bottom: 1px solid #1f293d; 
+        padding-bottom: 4px; 
+        display: flex; 
+        align-items: center; 
+        gap: 6px; 
+        flex-shrink: 0; 
+    }
     
-    .waiting-list { flex-grow: 1; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; max-height: none; }
-    
-    .waiting-card { background: #1f2538; border: 1px solid #2f3a52; padding: 5px 8px; border-radius: 4px; font-size: 18px; font-weight: bold; color: #ffffff; }
-    .empty-queue-text { color: #52607d; font-size: 15px; font-weight: bold; padding: 4px; }
+    /* 게임 대기열: 2열 그리드로 최대한 많은 팀을 깔끔하게 표시 */
+    .waiting-list { 
+        flex: 1 1 auto; 
+        min-height: 0;
+        overflow-y: auto; 
+        display: grid;
+        gap: 6px; 
+        align-content: start; 
+        padding-right: 2px;
+    }
+    .waiting-list.game-list-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .waiting-list.nanta-list-grid {
+        grid-template-columns: 1fr;
+    }
+    .waiting-list::-webkit-scrollbar { width: 6px; }
+    .waiting-list::-webkit-scrollbar-track { background: #0f1420; border-radius: 4px; }
+    .waiting-list::-webkit-scrollbar-thumb { background: #2c3852; border-radius: 4px; }
+
+    .waiting-card { 
+        background: #1f2538; 
+        border: 1px solid #2f3a52; 
+        padding: 6px 9px; 
+        border-radius: 6px; 
+        color: #ffffff;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 0;
+    }
+    .waiting-card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        gap: 6px;
+    }
+    .waiting-rank {
+        color: #66fcf1;
+        font-weight: 800;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    .waiting-timer {
+        font-size: 14px;
+        color: #f39c12;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .waiting-players-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px;
+        width: 100%;
+    }
+    .waiting-players-grid .tv-player-chip {
+        font-size: clamp(13.5px, 1.45vh, 16px);
+        padding: 3px 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .empty-queue-text { 
+        grid-column: 1 / -1;
+        color: #52607d; 
+        font-size: 15px; 
+        font-weight: bold; 
+        padding: 6px 4px; 
+    }
 
     #tv-cleaning-popup {
         display: none;
@@ -161,7 +393,12 @@
         from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); }
         to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
     }
-</style>
+
+    @keyframes marquee-scroll {
+        0%   { transform: translate(0, 0); }
+        100% { transform: translate(-100%, 0); }
+    }
+    </style>
     <script src="/js/audio.js"></script>
 </head>
 <body>
@@ -178,11 +415,9 @@
     </div>
 
     <!-- 📢 흘러가는 마퀴 애니메이션이 적용된 통합 공지 영역 -->
-    <div style="overflow: hidden; white-space: nowrap; width: 100%; box-sizing: border-box; background: #161b22; border-top: 1px solid #30363d; border-bottom: 1px solid #30363d; padding: 12px 0; margin-bottom: 15px;">
-        <div style="display: inline-block; padding-left: 100%; animation: marquee-scroll 35s linear infinite;">
-            <span id="tv-notice-text" style="color: #e6edf3; font-size: 20px; font-weight: bold;">
-                📢 공지사항을 불러오는 중...
-            </span>
+    <div class="notice-bar">
+        <div class="notice-marquee-track">
+            <span id="tv-notice-text">📢 공지사항을 불러오는 중...</span>
         </div>
     </div>
 
@@ -191,23 +426,13 @@
     <div class="waiting-container">
         <div class="waiting-box">
             <div class="waiting-title"><span style="color:#3498db;">🏸</span> 게임 대기팀 <span id="game-queue-count" style="color:#3498db;">(0팀)</span></div>
-            <div class="waiting-list" id="game-waiting-list"></div>
+            <div class="waiting-list game-list-grid" id="game-waiting-list"></div>
         </div>
         <div class="waiting-box">
             <div class="waiting-title"><span style="color:#ffa500;">🏸</span> 난타 대기팀 <span id="nanta-queue-count" style="color:#ffa500;">(0팀)</span></div>
-            <div class="waiting-list" id="nanta-waiting-list"></div>
+            <div class="waiting-list nanta-list-grid" id="nanta-waiting-list"></div>
         </div>
     </div>
-
-<style>
-@keyframes marquee-scroll {
-    0%   { transform: translate(0, 0); }
-    100% { transform: translate(-100%, 0); }
-}
-.notice-marquee-track:hover, div[style*="marquee-scroll"]:hover {
-    animation-play-state: paused; /* 마우스 올리면 잠시 멈춤 */
-}
-</style>
 
 <script>
 // 🏢 [멀티 테넌트] URL 파라미터에서 TV 전광판 대상 클럽 식별 (기본값: 'unjeong')
@@ -408,7 +633,6 @@ function enqueueTvPopup(popupObj) {
 function registerCurrentTV() {
     if (!socket || !socket.connected) return;
 
-    // 기존 tv.html 상단에 이미 정의된 currentClubId를 그대로 안전하게 재사용
     const targetClub = (typeof currentClubId !== 'undefined' && currentClubId) || 'unjeong';
 
     console.log(`[TV Socket] TV 등록 및 룸 조인 시도 - 구장: ${targetClub}`);
@@ -503,8 +727,12 @@ socket.on('tvPopupAlert', (data) => {
                 cleanMessage = cleanMessage.split(wrongWord).join(rightSound);
             });
 
-            // 💡 2. 10~12번이 '1일 번'으로 쪼개지지 않도록 두 자리 숫자(12, 11, 10)부터 먼저 한글로 치환
+            // 💡 2. 10~16번이 '1일 번'으로 쪼개지지 않도록 두 자리 숫자부터 먼저 한글로 치환
             let refinedMessage = cleanMessage
+                .replace(/16\s*번/g, '십육 번')
+                .replace(/15\s*번/g, '십오 번')
+                .replace(/14\s*번/g, '십사 번')
+                .replace(/13\s*번/g, '십삼 번')
                 .replace(/12\s*번/g, '십이 번')
                 .replace(/11\s*번/g, '십일 번')
                 .replace(/10\s*번/g, '십 번')
@@ -518,8 +746,7 @@ socket.on('tvPopupAlert', (data) => {
                 .replace(/8\s*번/g, '팔 번')
                 .replace(/9\s*번/g, '구 번');
 
-            // 💡 3. 공지/청소 안내문은 문장이 글자별로 쪼개지지 않도록 보호하고,
-            // 실제 호명 방송(앞부분이 순수 회원 이름 목록일 때)만 안전하게 띄어 읽기 적용!
+            // 💡 3. 공지/청소 안내문은 문장이 글자별로 쪼개지지 않도록 보호
             const isNoticeBroadcast = (announcementId === 'broadcast-cleaning') || 
                                       refinedMessage.includes('청소') || 
                                       refinedMessage.includes('휴장') || 
@@ -592,7 +819,7 @@ socket.on('tvPopupAlert', (data) => {
 
     let previousCourtStates = {};
 
-// 💡 전역 설정 객체 초기화
+    // 💡 전역 설정 객체 초기화
     window.currentConfig = window.currentConfig || {};
 
     // ⏱️ TV 전광판 로컬 1초 카운트다운 엔진 (난타 60초 점멸 및 입장제한 실시간 반영)
@@ -795,24 +1022,20 @@ socket.on('tvPopupAlert', (data) => {
 
             let allowVoice = true;
 
-            // 3. 청소 및 휴장 안내 토글이 꺼져 있으면 음성만 차단
             if (isCleaningNotice && config.soundScheduleNotice === false) {
                 console.log('[TV Audio Block] 🚫 청소/휴장 안내 음성 차단됨');
                 allowVoice = false;
             }
 
-            // 2. 난타 경고 토글이 꺼져 있으면 음성만 차단
             if (isNantaWarning && config.soundNantaWarning === false) {
                 console.log('[TV Audio Block] 🚫 난타 경고 음성 차단됨');
                 allowVoice = false;
             }
 
-            // 🔊 음성이 허용된 경우에만 재생 실행
             if (allowVoice) {
                 playVoiceAnnouncement(broadcastText, 0, 'broadcast-cleaning');
             }
 
-            // 📺 난타 1분 전 팝업은 음성 설정(토글)과 상관없이 항상 정상 출력!
             if (data.matchType === '난타1분전') {
                 enqueueTvPopup({
                     matchType: '난타임박',
@@ -824,7 +1047,7 @@ socket.on('tvPopupAlert', (data) => {
             return; 
         }
 
-       // B. 1. 코트 입장 안내 토글 검사
+        // B. 코트 입장 안내 토글 검사
         if (config.soundEntryNotice === false) {
             console.log('[TV Audio Block] 🚫 입장 안내 토글 꺼짐으로 코트 입장 방송 차단됨');
             return;
@@ -834,18 +1057,51 @@ socket.on('tvPopupAlert', (data) => {
         const namesString = (names && Array.isArray(names)) ? names.join(', ') : (names || '');
         const readableCourtNum = getReadableCourtName(courtNumber);
 
-        // 💡 [수정] 팝업 메시지와 동일하게 '지금' 멘트 추가
         const announcementText = `${namesString} 회원님! 지금 ${readableCourtNum} ${matchType || '게임'} 코트로 입장해 주세요!`;
         
         playVoiceAnnouncement(announcementText, 0, courtNumber);
     });
 
-function renderTVCourts(courts) {
+    // 📐 코트 수에 따라 시인성 최우선 그리드(열 수 + 밀도 클래스) 자동 결정
+    function applyCourtGridLayout(container, courtCount) {
+        const count = Math.max(1, Number(courtCount) || 1);
+        let cols = 4;
+        let densityClass = 'density-lg';
+
+        if (count <= 4) {
+            cols = count;          // 1~4코트: 1줄 꽉 채움 (대형 시인성)
+            densityClass = 'density-xl';
+        } else if (count <= 6) {
+            cols = 3;              // 5~6코트: 3열 × 2줄 (빈칸 최소화 + 대형 카드)
+            densityClass = 'density-lg';
+        } else if (count <= 8) {
+            cols = 4;              // 7~8코트: 4열 × 2줄
+            densityClass = 'density-lg';
+        } else if (count <= 10) {
+            cols = 5;              // 9~10코트: 5열 × 2줄
+            densityClass = 'density-md';
+        } else if (count <= 12) {
+            cols = 6;              // 11~12코트: 6열 × 2줄
+            densityClass = 'density-md';
+        } else {
+            cols = 6;              // 13~16코트 이상: 6열 × 3줄 (가로 폭 보호로 가독성 유지)
+            densityClass = 'density-sm';
+        }
+
+        container.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+        container.classList.remove('density-xl', 'density-lg', 'density-md', 'density-sm');
+        container.classList.add(densityClass);
+    }
+
+    function renderTVCourts(courts) {
         const container = document.getElementById('tv-court-grid');
         if (!container) return;
 
+        const safeCourts = Array.isArray(courts) ? courts : [];
+        applyCourtGridLayout(container, safeCourts.length);
+
         let html = "";
-        courts.forEach((court, idx) => {
+        safeCourts.forEach((court, idx) => {
             const courtNum = court.id || (idx + 1);
             const courtType = court.type || 'game';
             
@@ -873,12 +1129,12 @@ function renderTVCourts(courts) {
                         if (remainSecA <= 0 && court.sideA.startTime) { timerStrA = `⏱️ 시간초과`; isUrgentA = true; }
 
                         teamsHtml += `
-                            <div class="team-row ${isUrgentA ? 'urgent-flash' : ''}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 2px 4px; margin-bottom: 2px; border-radius: 4px;">
-                                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; position: relative;">
-                                    <span style="font-size: 12px; color: #ffa500; font-weight: bold;">[A코트]</span>
-                                    <span style="font-size: 15px; font-weight: bold; color: #00ff66; position: absolute; right: 0; top: 50%; transform: translateY(-50%);">${timerStrA}</span>
+                            <div class="team-row ${isUrgentA ? 'urgent-flash' : ''}">
+                                <div class="team-row-head">
+                                    <span class="tv-match-label" style="color: #ffa500;">[A코트]</span>
+                                    <span class="timer-text">${timerStrA}</span>
                                 </div>
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap; width: 100%; padding-right: 60px;">${formattedA}</div>
+                                <div class="tv-team-players">${formattedA}</div>
                             </div>
                         `;
                     }
@@ -890,12 +1146,12 @@ function renderTVCourts(courts) {
                         if (remainSecB <= 0 && court.sideB.startTime) { timerStrB = `⏱️ 시간초과`; isUrgentB = true; }
 
                         teamsHtml += `
-                            <div class="team-row ${isUrgentB ? 'urgent-flash' : ''}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 2px 4px; border-radius: 4px;">
-                                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; position: relative;">
-                                    <span style="font-size: 12px; color: #ffa500; font-weight: bold;">[B코트]</span>
-                                    <span style="font-size: 15px; font-weight: bold; color: #00ff66; position: absolute; right: 0; top: 50%; transform: translateY(-50%);">${timerStrB}</span>
+                            <div class="team-row ${isUrgentB ? 'urgent-flash' : ''}">
+                                <div class="team-row-head">
+                                    <span class="tv-match-label" style="color: #ffa500;">[B코트]</span>
+                                    <span class="timer-text">${timerStrB}</span>
                                 </div>
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap; width: 100%; padding-right: 60px;">${formattedB}</div>
+                                <div class="tv-team-players">${formattedB}</div>
                             </div>
                         `;
                     }
@@ -904,35 +1160,35 @@ function renderTVCourts(courts) {
                 if (court.isEmpty || !court.players) {
                     teamsHtml = `<div class="empty-text">비어있음</div>`;
                 } else if (court.teams && Array.isArray(court.teams.teamA) && court.teams.teamA.length > 0 && Array.isArray(court.teams.teamB) && court.teams.teamB.length > 0) {
-                    // ⚖️ 자동 밸런싱 팀 구분 표시 (A팀 블루 / B팀 오렌지)
+                    // ⚖️ 자동 밸런싱 팀 구분 표시 (블루 / 오렌지 색상 박스, A팀·B팀 텍스트 제거)
                     const formattedTeamA = formatPlayersHorizontal(court.teams.teamA.join(', '));
                     const formattedTeamB = formatPlayersHorizontal(court.teams.teamB.join(', '));
                     const recommendedType = court.teams.matchType || (court.teams.isMixedDoubles ? '혼복' : '자유');
                     const matchLabel = `[추천 ${recommendedType}]`;
 
                     teamsHtml = `
-                        <div class="team-row" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 2px 4px; border-radius: 4px; width: 100%;">
-                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                                <span style="font-size: 12px; color: #66fcf1; font-weight: bold;">${matchLabel}</span>
+                        <div class="team-row">
+                            <div class="team-row-head">
+                                <span class="tv-match-label">${matchLabel}</span>
                                 <span class="timer-text">⏱️ 이용중</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; border-radius: 6px; background: rgba(56, 189, 248, 0.16); border: 1.5px solid #38bdf8; box-sizing: border-box;">
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1;">${formattedTeamA}</div>
+                            <div class="tv-team-box team-blue">
+                                <div class="tv-team-players">${formattedTeamA}</div>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px; border-radius: 6px; background: rgba(251, 146, 60, 0.16); border: 1.5px solid #fb923c; box-sizing: border-box;">
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1;">${formattedTeamB}</div>
+                            <div class="tv-team-box team-orange">
+                                <div class="tv-team-players">${formattedTeamB}</div>
                             </div>
                         </div>
                     `;
                 } else {
                     const formattedGame = formatPlayersHorizontal(court.players);
                     teamsHtml = `
-                        <div class="team-row" style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 2px 4px; border-radius: 4px;">
-                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                                <span style="font-size: 12px; color: #3498db; font-weight: bold;">[게임팀]</span>
+                        <div class="team-row">
+                            <div class="team-row-head">
+                                <span class="tv-match-label" style="color: #3498db;">[게임팀]</span>
                                 <span class="timer-text">⏱️ 이용중</span>
                             </div>
-                            <div style="display: flex; gap: 4px; flex-wrap: wrap; width: 100%;">${formattedGame}</div>
+                            <div class="tv-team-players">${formattedGame}</div>
                         </div>
                     `;
                 }
@@ -958,10 +1214,13 @@ function renderTVCourts(courts) {
         const nantaContainer = document.getElementById('nanta-waiting-list');
         if (!gameContainer || !nantaContainer) return;
 
+        const safeGameQueue = Array.isArray(gameQueue) ? gameQueue : [];
+        const safeNantaQueue = Array.isArray(nantaQueue) ? nantaQueue : [];
+
         const gameCountEl = document.getElementById('game-queue-count');
         const nantaCountEl = document.getElementById('nanta-queue-count');
-        if (gameCountEl) gameCountEl.innerText = `(${gameQueue.length}팀)`;
-        if (nantaCountEl) nantaCountEl.innerText = `(${nantaQueue.length}팀)`;
+        if (gameCountEl) gameCountEl.innerText = `(${safeGameQueue.length}팀)`;
+        if (nantaCountEl) nantaCountEl.innerText = `(${safeNantaQueue.length}팀)`;
 
         const now = Date.now();
         const buildQueueHTML = (queue) => {
@@ -974,7 +1233,7 @@ function renderTVCourts(courts) {
                 if (q.remainingSeconds !== undefined && q.remainingSeconds !== null) {
                     const m = Math.floor(q.remainingSeconds / 60);
                     const s = q.remainingSeconds % 60;
-                    timeDisplayStr = q.remainingSeconds > 0 ? `⏱️ 입장제한: ${m}분 ${s < 10 ? '0' : ''}${s}초` : `⏱️ 입장제한: 시간 초과`;
+                    timeDisplayStr = q.remainingSeconds > 0 ? `⏱️ 입장제한 ${m}분 ${s < 10 ? '0' : ''}${s}초` : `⏱️ 시간 초과`;
                 } else if (q.startTime) {
                     const limitMinutes = q.limitMinutes || q.timeout || 3; 
                     const limitSecTotal = limitMinutes * 60;
@@ -983,66 +1242,58 @@ function renderTVCourts(courts) {
                     if (remainSec > 0) {
                         const m = Math.floor(remainSec / 60);
                         const s = remainSec % 60;
-                        timeDisplayStr = `⏱️ 입장제한: ${m}분 ${s < 10 ? '0' : ''}${s}초`;
+                        timeDisplayStr = `⏱️ 입장제한 ${m}분 ${s < 10 ? '0' : ''}${s}초`;
                     } else {
-                        timeDisplayStr = `⏱️ 입장제한: 시간 초과`;
+                        timeDisplayStr = `⏱️ 시간 초과`;
                     }
                 }
 
                 return `
-                    <div class="waiting-card" style="margin-bottom: 6px; width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 8px 12px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span style="color: #66fcf1; font-weight: bold; font-size: 15px;">[대기 ${idx + 1}순위]</span>
-                            <span style="font-size: 17px; color: #f39c12; font-weight: bold;">${timeDisplayStr}</span>
+                    <div class="waiting-card">
+                        <div class="waiting-card-head">
+                            <span class="waiting-rank">[대기 ${idx + 1}순위]</span>
+                            <span class="waiting-timer">${timeDisplayStr}</span>
                         </div>
-                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">${formattedPlayers}</div>
+                        <div class="waiting-players-grid">${formattedPlayers}</div>
                     </div>
                 `;
             }).join('');
         };
 
-        gameContainer.innerHTML = buildQueueHTML(gameQueue);
-        nantaContainer.innerHTML = buildQueueHTML(nantaQueue);
+        gameContainer.innerHTML = buildQueueHTML(safeGameQueue);
+        nantaContainer.innerHTML = buildQueueHTML(safeNantaQueue);
     }
 
-function formatPlayersHorizontal(players) {
-    let arr = [];
-    if (Array.isArray(players)) {
-        arr = players.filter(Boolean);
-    } else if (typeof players === 'string') {
-        arr = players.split(',').map(p => p.trim()).filter(Boolean);
-    }
-    
-    if (arr.length === 0) return '';
-
-    return arr.map(p => {
-        let rawStr = String(p).trim();
-
-        // 🎯 일일회원 판별: |guest 마커가 있거나 '일일' 키워드가 들어있는 경우
-        const isGuestUser = rawStr.includes('guest') || rawStr.includes('일일');
-
-        // 💡 화면 출력 시 숨김 마커(|guest) 깨끗하게 제거
-        let cleanStr = rawStr.replace(/\|?guest/gi, '').trim();
-        if (cleanStr.includes('/')) {
-            cleanStr = cleanStr.split('/').map(part => part.trim()).join(' / ');
+    function formatPlayersHorizontal(players) {
+        let arr = [];
+        if (Array.isArray(players)) {
+            arr = players.filter(Boolean);
+        } else if (typeof players === 'string') {
+            arr = players.split(',').map(p => p.trim()).filter(Boolean);
         }
+        
+        if (arr.length === 0) return '';
 
-        // 🎨 일일회원은 클래스와 인라인 하늘색(#38bdf8) 동시 강제 적용
-        const guestClass = isGuestUser ? 'guest-text' : '';
-        const guestColor = isGuestUser ? 'color: #38bdf8 !important; font-weight: 600;' : '';
+        return arr.map(p => {
+            let rawStr = String(p).trim();
 
-        return `<span class="${guestClass}" style="background: #2a344a; padding: 2px 6px; border-radius: 4px; font-size: 16px; ${guestColor}">${escapeHtml(cleanStr)}</span>`;
-    }).join(' ');
-}
+            // 🎯 일일회원 판별: |guest 마커가 있거나 '일일' 키워드가 들어있는 경우
+            const isGuestUser = rawStr.includes('guest') || rawStr.includes('일일');
 
-// 🎛️ [추가] TV 화면에서 실시간으로 음성 제어 설정 동기화 받기
-    if (typeof socket !== 'undefined') {
-        socket.on('syncConfig', (configData) => {
-            if (configData) {
-                window.currentConfig = configData;
-                console.log('[TV] 음성 제어 설정이 실시간으로 동기화되었습니다:', configData);
+            // 💡 화면 출력 시 숨김 마커(|guest) 제거 및 일일회원 '일반' -> '일일' 보정
+            let cleanStr = rawStr.replace(/\|?guest/gi, '').trim();
+            if (cleanStr.includes('/')) {
+                const parts = cleanStr.split('/').map(part => part.trim()).filter(Boolean);
+                if (isGuestUser && parts.length >= 2 && parts[parts.length - 1] === '일반') {
+                    parts[parts.length - 1] = '일일';
+                }
+                cleanStr = parts.join(' / ');
             }
-        });
+
+            const guestClass = isGuestUser ? 'guest-text' : '';
+
+            return `<span class="tv-player-chip ${guestClass}">${escapeHtml(cleanStr)}</span>`;
+        }).join(' ');
     }
 </script>
 
