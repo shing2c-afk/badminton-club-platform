@@ -552,14 +552,12 @@ function isGymWifiUser(socket, clubId) {
         return true; 
     }
 
-    // 💡 [핵심 추가] 프론트엔드 실시간 네트워크 검증(checkCurrentNetwork)을 통과하여 
-    // socket.inGym 또는 socket.isGymWifi가 true로 인증된 상태라면 박제된 IP와 무관하게 즉시 통과!
-    if (socket && (socket.inGym === true || socket.isGymWifi === true)) {
-        return true;
-    }
-
-    // 💡 2. IP 추출 및 정규화 (기존 로직)
-    let rawIp = typeof getClientIp === 'function' ? getClientIp(socket) : (socket && socket.handshake && (socket.handshake.headers['x-forwarded-for'] || socket.handshake.address)) || '';
+    // 💡 2. 최신 실제 IP 추출 및 정규화 (5G↔Wi-Fi 전환 시 verifiedClientIp 우선 반영, 토글 변경 시에도 실제 IP로 재검증)
+    let rawIp = (socket && socket.verifiedClientIp)
+        ? String(socket.verifiedClientIp)
+        : (typeof getClientIp === 'function'
+            ? getClientIp(socket)
+            : (socket && socket.handshake && (socket.handshake.headers['x-forwarded-for'] || socket.handshake.address)) || '');
     if (rawIp.includes(',')) {
         rawIp = rawIp.split(',')[0].trim();
     }
@@ -2202,6 +2200,38 @@ function buildClubStateSignature(cid, club, cCourtsData, cGameQueue, cNantaQueue
     }
 }
 
+// 📡 [신규] 새로 접속한 단일 소켓(관리자·회원·TV)에 초기 상태(코트·대기열·설정) 즉시 1회 전송
+function sendStateToSocket(targetSocket, cid) {
+    if (!targetSocket || !cid) return;
+    const club = (typeof getClub === 'function') ? getClub(cid) : (typeof clubs === 'object' ? clubs[cid] : {});
+    if (club && club.isDeleted) return;
+
+    const cCourtsData = (club && Array.isArray(club.courtsData) && club.courtsData.length > 0)
+        ? club.courtsData
+        : (cid === 'unjeong' && typeof courtsData !== 'undefined' ? courtsData : (club ? club.courtsData : []));
+
+    const cGameQueue = (club && Array.isArray(club.gameQueue))
+        ? club.gameQueue
+        : (cid === 'unjeong' && typeof gameQueue !== 'undefined' ? gameQueue : []);
+
+    const cNantaQueue = (club && Array.isArray(club.nantaQueue))
+        ? club.nantaQueue
+        : (cid === 'unjeong' && typeof nantaQueue !== 'undefined' ? nantaQueue : []);
+
+    const cConfig = (club && club.config) || (typeof config !== 'undefined' ? config : {});
+
+    targetSocket.emit('stateUpdated', {
+        clubId: (club && club.clubId) || cid,
+        clubName: (club && (club.clubName || club.name)) || cid,
+        isCleaningTime: Boolean(club && club.isCleaningTime),
+        courtsData: cCourtsData || [],
+        gameQueue: cGameQueue || [],
+        nantaQueue: cNantaQueue || [],
+        notifications: [],
+        config: cConfig
+    });
+}
+
 function broadcastState(targetClubId) {
     if (!io) return;
 
@@ -2832,6 +2862,18 @@ io.on('connection', (socket) => {
     socket.clubId = clientClubId;
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
+
+    // 📡 [신규] 신규 접속 소켓(관리자·회원·TV)에 초기 코트 현황 및 클럽 설정 즉시 1회 전송
+    if (typeof sendStateToSocket === 'function') {
+        sendStateToSocket(socket, clientClubId);
+    }
+
+    // 📶 [신규] 스마트폰 5G↔Wi-Fi 전환 시 최신 실측 IP 동기화 (토글 OFF 중 망 전환 추적용)
+    socket.on('updateClientIp', (data) => {
+        if (data && data.clientIp) {
+            socket.verifiedClientIp = String(data.clientIp).replace(/^.*:/, '').trim();
+        }
+    });
 
     // 🏢 [멀티테넌트 수정] 소켓의 소속 구장 룸을 안전하게 전환하는 헬퍼 (이전 구장 방 잔류 차단)
     const switchSocketClubRoom = (newClubId) => {
@@ -3514,16 +3556,39 @@ io.on('connection', (socket) => {
                 broadcastState(clubId);
             }
 
-            // 📡 3. 해당 클럽 방(club_${clubId})에 접속 중인 사용자들에게만 Wi-Fi 인증 상태 재검증 전송
+            // 📡 3. 해당 클럽 방(club_${clubId})에 접속 중인 사용자들에게 Wi-Fi 인증 상태·토글 설정·타이머 즉시 동기화
             const roomSockets = io.sockets.adapter.rooms.get(`club_${clubId}`);
+            const restrictionOn = club.config.useWifiRestriction !== false;
             if (roomSockets) {
                 roomSockets.forEach((sId) => {
                     const s = io.sockets.sockets.get(sId);
                     if (s) {
                         const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(s, clubId) : true;
-                        s.emit('wifiStatus', { isGymWifi: isGym, clientIp: (typeof getClientIp === 'function' ? getClientIp(s) : '') });
+                        const currentIp = s.verifiedClientIp || (typeof getClientIp === 'function' ? getClientIp(s) : '');
+                        s.inGym = isGym;
+                        s.isGymWifi = isGym;
+
+                        // ⏱️ 로그인 회원은 토글 변경에 맞춰 유예·만료 타이머 상태도 즉시 반영
+                        if (s.finalName && s.finalName !== '0100' && typeof gymSessionManager !== 'undefined') {
+                            if (isGym) {
+                                s.inGracePeriod = false;
+                                gymSessionManager.handleConnect(s, s.finalName, clubId);
+                            } else {
+                                gymSessionManager.handleDisconnect(s, s.finalName, clubId);
+                            }
+                        }
+
+                        s.emit('wifiStatus', {
+                            clubId: clubId,
+                            isGymWifi: isGym,
+                            clientIp: currentIp,
+                            useWifiRestriction: restrictionOn
+                        });
                     }
                 });
+            }
+            if (typeof broadcastOnlineCount === 'function') {
+                broadcastOnlineCount(clubId);
             }
         } catch (err) {
             console.error('Wi-Fi 설정 변경 에러:', err);
@@ -5353,6 +5418,9 @@ io.on('connection', (socket) => {
     // =================================================================
     socket.on('updateWifiState', async (data) => {
         const { inGym, clubId, userId, username, phone } = data || {};
+        if (data && data.clientIp) {
+            socket.verifiedClientIp = String(data.clientIp).replace(/^.*:/, '').trim();
+        }
         const targetClubId = clubId || socket.clubId || clientClubId || 'unjeong';
 
         const rawUser = socket.finalName || username || userId || phone || (typeof userSockets !== 'undefined' && userSockets[socket.id]) || socket.username;
@@ -5392,14 +5460,16 @@ io.on('connection', (socket) => {
                 gymSessionManager.handleConnect(socket, cleanUsername, targetClubId);
             }
         } else {
-            // 🔴 체육관 Wi-Fi 이탈 -> 즉시 1단계(유예) & 2단계(만료) 타이머 동시 가동 및 유예기간 동안 운동중 보존!
+            // 🔴 체육관 Wi-Fi 이탈 -> gymSessionManager가 구장 이력을 판단해 1단계(유예) & 2단계(만료) 타이머 및 inGracePeriod 제어
             socket.inGym = false;
             socket.isGymWifi = false;
-            socket.inGracePeriod = true;
             socket.verifiedWifi = false;
             if (typeof gymSessionManager !== 'undefined') {
                 gymSessionManager.handleDisconnect(socket, cleanUsername, targetClubId);
             }
+        }
+        if (typeof broadcastOnlineCount === 'function') {
+            broadcastOnlineCount(targetClubId);
         }
     });
 

@@ -244,6 +244,24 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
             const { myName, myPhone } = getLoggedUserInfo(clubId);
             const activeSocket = (typeof socket !== 'undefined' && socket) ? socket : window.socket;
 
+            // 📶 서버의 최신 Wi-Fi 제한 토글 설정을 항상 동기화
+            const prevRestriction = window.useWifiRestriction;
+            if (typeof data.useWifiRestriction === 'boolean') {
+                window.useWifiRestriction = data.useWifiRestriction;
+                localStorage.setItem(`useWifiRestriction_${clubId}`, data.useWifiRestriction ? "true" : "false");
+            }
+            if (prevRestriction !== window.useWifiRestriction && typeof updateWifiRestrictedButtons === 'function') {
+                updateWifiRestrictedButtons();
+            }
+
+            // 🌐 5G↔Wi-Fi 전환으로 실측 IP가 바뀌면 서버에도 최신 IP 동기화
+            if (data.clientIp && data.clientIp !== window._lastDetectedClientIp) {
+                window._lastDetectedClientIp = data.clientIp;
+                if (activeSocket && activeSocket.connected) {
+                    activeSocket.emit('updateClientIp', { clubId: clubId, clientIp: data.clientIp });
+                }
+            }
+
             // 🟢 Case 1: 구장 Wi-Fi 접속(복귀) 감지!
             if (data.isGymWifi && window.isGymWifiConnected !== true) {
                 console.log('🎉 [Wi-Fi 일치 감지] 구장 Wi-Fi 접속 확인 -> 타이머 즉시 초기화 및 버튼 활성화');
@@ -262,6 +280,7 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
                         activeSocket.emit('updateWifiState', { 
                             inGym: true, 
                             clubId: clubId, 
+                            clientIp: data.clientIp,
                             username: myName,
                             userId: myName || myPhone,
                             phone: myPhone
@@ -279,7 +298,7 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
                     updateWifiRestrictedButtons();
                 }
 
-                // 💡 [핵심 추가] 와이파이 불일치 감지 즉시 서버에 알려 유예시간 & 만료시간 타이머를 바로 가동!
+                // 💡 와이파이 불일치 감지 즉시 서버에 알려 유예시간 & 만료시간 타이머를 바로 가동!
                 if (activeSocket) {
                     if (!activeSocket.connected) {
                         activeSocket.connect();
@@ -288,6 +307,7 @@ socket.off('wifiStatus').on('wifiStatus', (data) => {
                         activeSocket.emit('updateWifiState', { 
                             inGym: false, 
                             clubId: clubId, 
+                            clientIp: data.clientIp,
                             username: myName,
                             userId: myName || myPhone,
                             phone: myPhone
