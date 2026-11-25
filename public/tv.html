@@ -500,6 +500,27 @@ const socket = io({
     }
 });
 
+// 🚫 마스터에서 현재 클럽이 삭제되었을 때 TV 현황판 즉시 차단
+socket.on('clubDeleted', (data = {}) => {
+    const targetId = String(data.clubId || currentClubId || '').trim();
+    try {
+        if (targetId) {
+            Object.keys(localStorage).forEach(k => {
+                if (k.includes(targetId)) localStorage.removeItem(k);
+            });
+        }
+    } catch (e) {}
+    try { socket.disconnect(); } catch (e) {}
+
+    document.body.innerHTML = `
+        <div style="width:100vw; height:100vh; background:#0a0c10; color:#f8fafc; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:18px;">
+            <div style="font-size:72px;">🚫</div>
+            <h1 style="font-size:42px; color:#f87171;">운영이 종료된 클럽입니다</h1>
+            <p style="font-size:24px; color:#cbd5e1;">${data.message || '해당 클럽은 삭제되어 현황판 표시가 중단되었습니다.'}</p>
+        </div>
+    `;
+});
+
 // 💡 [추가] 페이지 로드 시 서버로부터 해당 클럽의 최초 설정값을 받아오기 위한 함수
 async function loadInitialConfig() {
     try {

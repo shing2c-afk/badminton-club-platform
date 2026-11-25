@@ -1319,6 +1319,61 @@ function checkAndInsertDefaultData() {
 
 function insertDefaultDummyData() {}
 
+// 🛡️ 등록된 클럽 존재 여부 확인 헬퍼 (삭제된 클럽 자동 부활 방지)
+function isRegisteredClub(clubId) {
+    if (!clubId || typeof clubs !== 'object' || !clubs) return false;
+    const raw = String(clubId).trim();
+    const lower = raw.toLowerCase();
+    return Boolean(clubs[raw] || clubs[lower]);
+}
+
+// 🛡️ 삭제되었거나 존재하지 않는 클럽의 페이지 접속·새로고침 즉시 차단
+app.use((req, res, next) => {
+    if (req.method !== 'GET') return next();
+    const reqPath = req.path || '';
+    if (reqPath.startsWith('/api/') || reqPath.startsWith('/socket.io/') || reqPath.includes('super-admin')) {
+        return next();
+    }
+    const isHtmlPage = reqPath === '/' || reqPath === '/admin' || reqPath === '/tv' || reqPath.endsWith('.html');
+    const rawClub = req.query.club || req.query.clubId;
+
+    if (isHtmlPage && rawClub && !isRegisteredClub(rawClub)) {
+        const safeId = String(rawClub).replace(/[^a-zA-Z0-9_-]/g, '');
+        return res.status(404).send(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>클럽 운영 종료 안내</title>
+</head>
+<body style="margin:0; min-height:100vh; background:#0a0c10; color:#f8fafc; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; display:flex; align-items:center; justify-content:center; padding:24px; text-align:center;">
+  <div style="max-width:440px; width:100%; background:#141824; border:1px solid #334155; border-radius:16px; padding:36px 24px; box-shadow:0 20px 50px rgba(0,0,0,0.5);">
+    <div style="font-size:48px; margin-bottom:14px;">🚫</div>
+    <h2 style="margin:0 0 12px 0; font-size:22px; color:#f87171;">접근할 수 없는 클럽입니다</h2>
+    <p style="margin:0; font-size:15px; color:#cbd5e1; line-height:1.6;">
+      해당 클럽은 운영이 종료되었거나 삭제되었습니다.<br>
+      올바른 클럽 주소로 다시 접속해 주세요.
+    </p>
+  </div>
+  <script>
+    try {
+      const deletedId = ${JSON.stringify(safeId)};
+      if (deletedId) {
+        Object.keys(localStorage).forEach(k => {
+          if (k.includes(deletedId)) localStorage.removeItem(k);
+        });
+        const cur = localStorage.getItem('currentUser');
+        if (cur && cur.includes(deletedId)) localStorage.removeItem('currentUser');
+      }
+      sessionStorage.clear();
+    } catch (e) {}
+  </script>
+</body>
+</html>`);
+    }
+    next();
+});
+
 // 정적 파일 및 라우팅 설정
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -1326,14 +1381,15 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ⚙️ [멀티 테넌트] 클럽별 환경 설정 조회 API
 // ==========================================
 app.get('/api/config', (req, res) => {
-    // 🏢 [멀티테넌트 수정] club 및 clubId 파라미터 모두 수용
-    const clubId = req.query.clubId || req.query.club || 'unjeong';
-    const targetClub = getClub(clubId);
-    
-    if (targetClub && targetClub.config) {
+    const clubId = String(req.query.clubId || req.query.club || 'unjeong').trim();
+    const targetClub = (clubs && (clubs[clubId] || clubs[clubId.toLowerCase()])) || null;
+
+    if (!targetClub) {
+        return res.status(404).json({ error: 'club_deleted', message: '존재하지 않거나 삭제된 클럽입니다.' });
+    }
+    if (targetClub.config) {
         return res.json(targetClub.config);
     }
-    // 🏢 [멀티테넌트 수정] 타 구장 조회 시 전역 config(운정클럽) 유출 차단
     if (clubId !== 'unjeong') {
         return res.json({});
     }
@@ -2064,17 +2120,31 @@ function getClub(clubId) {
     };
 
     if (!clubs[id]) {
-        // 새 클럽이 처음 호출되면 기본 틀을 자동 생성
-        clubs[id] = {
-            clubId: id,
-            clubName: defaultClubNames[id] || `${id}배드민턴클럽`,
-            config: cloneDefaultConfig(),
-            courtsData: createCleanCourts(),
-            gameQueue: [],
-            nantaQueue: [],
-            notifications: [],
-            slotIdCounter: 1
-        };
+        if (id === 'unjeong') {
+            clubs[id] = {
+                clubId: id,
+                clubName: defaultClubNames[id] || `${id}배드민턴클럽`,
+                config: cloneDefaultConfig(),
+                courtsData: createCleanCourts(),
+                gameQueue: [],
+                nantaQueue: [],
+                notifications: [],
+                slotIdCounter: 1
+            };
+        } else {
+            // 🛡️ 삭제되었거나 마스터에 등록되지 않은 클럽은 clubs 메모리에 재생성하지 않음
+            return {
+                clubId: id,
+                clubName: '',
+                isDeleted: true,
+                config: {},
+                courtsData: [],
+                gameQueue: [],
+                nantaQueue: [],
+                notifications: [],
+                slotIdCounter: 1
+            };
+        }
     } else {
         // 🏢 [멀티테넌트 수정] 마스터 관리자에서 먼저 생성된 클럽이라도 필수 런타임 필드가 누락되지 않도록 자동 보강
         if (!clubs[id].clubId) clubs[id].clubId = id;
@@ -2745,8 +2815,20 @@ function sendPersonalNotification(targetIdentifier, message) {
 
 io.on('connection', (socket) => {
 
-    // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정 (구장 식별자를 먼저 설정)
-    const clientClubId = (socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId)) || 'unjeong';
+    // 🏢 [멀티 테넌트] 접속한 클라이언트의 클럽 룸 배정 (삭제된 구장은 즉시 차단)
+    const rawClubParam = socket.handshake.query && (socket.handshake.query.club || socket.handshake.query.clubId);
+    const clientClubId = (rawClubParam && String(rawClubParam).trim()) || 'unjeong';
+
+    if (rawClubParam && !isRegisteredClub(clientClubId)) {
+        console.warn(`🚫 [소켓 접속 차단] 존재하지 않거나 삭제된 클럽(${clientClubId})`);
+        socket.emit('clubDeleted', {
+            clubId: clientClubId,
+            message: '운영이 종료되었거나 삭제된 클럽입니다.'
+        });
+        setTimeout(() => socket.disconnect(true), 150);
+        return;
+    }
+
     socket.clubId = clientClubId;
     socket.join(`club_${clientClubId}`);
     console.log(`🏸 [클럽 입장] 소켓(${socket.id})이 club_${clientClubId} 룸에 참여했습니다.`);
@@ -5592,12 +5674,28 @@ io.on('connection', (socket) => {
 
         const deletedName = clubs[cleanId].clubName || clubs[cleanId].name || cleanId;
 
-        // 🏢 [멀티테넌트 수정] 삭제 대상 구장에 접속 중인 사용자 세션 정리 및 강제 종료 알림
-        io.to(`club_${cleanId}`).emit('forceLogout', {
+        // 🏢 [멀티테넌트 수정] 삭제 대상 구장에 접속 중인 모든 화면(관리자·회원·TV) 즉시 차단
+        const deletedPayload = {
             clubId: cleanId,
+            clubName: deletedName,
             reason: 'club_deleted',
-            message: '해당 클럽 운영이 종료되어 로그아웃됩니다.'
-        });
+            message: `[${deletedName}] 클럽이 삭제되어 접속이 종료됩니다.`
+        };
+        io.to(`club_${cleanId}`).emit('clubDeleted', deletedPayload);
+        io.to(`tv-room-${cleanId}`).emit('clubDeleted', deletedPayload);
+        io.to(`club_${cleanId}`).emit('forceLogout', deletedPayload);
+
+        // 안내 이벤트 수신 직후 해당 클럽의 모든 소켓 강제 종료
+        setTimeout(() => {
+            try {
+                if (typeof io.in === 'function') {
+                    io.in(`club_${cleanId}`).disconnectSockets(true);
+                    io.in(`tv-room-${cleanId}`).disconnectSockets(true);
+                }
+            } catch (e) {
+                console.error('[클럽 삭제 소켓 종료 오류]', e);
+            }
+        }, 300);
 
         if (typeof activeUserSockets !== 'undefined' && activeUserSockets.keys) {
             for (const key of Array.from(activeUserSockets.keys())) {
@@ -5606,6 +5704,8 @@ io.on('connection', (socket) => {
                 }
             }
         }
+        if (typeof clubAudioQueues !== 'undefined') delete clubAudioQueues[cleanId];
+        if (typeof clubVoicePlayingState !== 'undefined') delete clubVoicePlayingState[cleanId];
 
         delete clubs[cleanId];
 

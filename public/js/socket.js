@@ -554,12 +554,44 @@ const handleForceLogout = (data) => {
 };
 
 // 다른 파일이나 위쪽 코드에 먼저 등록된 구형 리스너를 제거하고 통합 함수로 강제 교체
+const handleClubDeleted = (data = {}) => {
+    const targetId = String(data.clubId || getSocketClubId() || '').trim();
+    try {
+        if (targetId) {
+            Object.keys(localStorage).forEach(k => {
+                if (k.includes(targetId)) localStorage.removeItem(k);
+            });
+            const cur = localStorage.getItem('currentUser');
+            if (cur && cur.includes(targetId)) localStorage.removeItem('currentUser');
+        }
+        sessionStorage.clear();
+    } catch (e) {}
+    try {
+        if (typeof socket !== 'undefined' && socket) socket.disconnect();
+        if (window.socket && window.socket !== socket) window.socket.disconnect();
+    } catch (e) {}
+
+    document.body.innerHTML = `
+        <div style="min-height:100vh; background:#0a0c10; color:#f8fafc; display:flex; align-items:center; justify-content:center; padding:24px; text-align:center;">
+            <div style="max-width:440px; width:100%; background:#141824; border:1px solid #334155; border-radius:16px; padding:36px 24px;">
+                <div style="font-size:48px; margin-bottom:14px;">🚫</div>
+                <h2 style="margin:0 0 12px 0; font-size:22px; color:#f87171;">접근할 수 없는 클럽입니다</h2>
+                <p style="margin:0; font-size:15px; color:#cbd5e1; line-height:1.6;">
+                    ${data.message || '해당 클럽은 운영이 종료되었거나 삭제되었습니다.'}
+                </p>
+            </div>
+        </div>
+    `;
+};
+
 const bindForceLogoutListeners = (targetSocket) => {
     if (!targetSocket || typeof targetSocket.on !== 'function') return;
     targetSocket.off('forceLogout');
     targetSocket.on('forceLogout', handleForceLogout);
     targetSocket.off('forceSessionExpire');
     targetSocket.on('forceSessionExpire', handleForceLogout);
+    targetSocket.off('clubDeleted');
+    targetSocket.on('clubDeleted', handleClubDeleted);
 };
 
 if (typeof socket !== 'undefined') bindForceLogoutListeners(socket);
