@@ -254,13 +254,11 @@ const onlineUsers = new Set();
 // 🔊 [구장별 격리] 서버 음성 안내 큐 및 재생 상태 관리
 // ==========================================
 const clubAudioQueues = {
-    'unjeong': [],
-    'daewon': []
+    'unjeong': []
 };
 
 const clubVoicePlayingState = {
-    'unjeong': false,
-    'daewon': false
+    'unjeong': false
 };
 
 // 💡 안전한 큐 삽입 헬퍼 함수 (외부 이벤트에서 호출용)
@@ -340,16 +338,6 @@ const clubs = {
         nantaQueue: [],
         notifications: [],
         slotIdCounter: 1
-    },
-    'daewon': {
-        clubId: 'daewon',
-        clubName: '대원배드민턴클럽',
-        config: { ...defaultConfig },
-        courtsData: [], // 💡 빈 배열로 초기화
-        gameQueue: [],
-        nantaQueue: [],
-        notifications: [],
-        slotIdCounter: 1000
     }
 };
 
@@ -4772,7 +4760,7 @@ io.on('connection', (socket) => {
                 try {
                     const fs = require('fs');
                     const path = require('path');
-                    const clubsJsonPath = path.join(__dirname, 'clubs-data.json');
+                    const clubsJsonPath = (typeof CLUBS_DATA_FILE !== 'undefined') ? CLUBS_DATA_FILE : path.join(__dirname, 'clubs-data.json');
                     if (fs.existsSync(clubsJsonPath)) {
                         const clubsData = JSON.parse(fs.readFileSync(clubsJsonPath, 'utf8'));
                         const scanObj = (obj, parentKey = '') => {
