@@ -96,6 +96,7 @@
             width: 100%;
             max-width: 420px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            max-height: 90vh; overflow-y: auto;
         }
         .status-modal-box h3 { margin: 0 0 6px 0; font-size: 17px; color: #fff; }
         .status-modal-sub { font-size: 13px; color: #9ca3af; margin-bottom: 16px; }
@@ -260,8 +261,25 @@
         </div>
 
         <div class="form-field" id="status-date-field" style="display: none;">
-            <label for="status-end-date">종료 예정일 (선택 · 참고용)</label>
-            <input type="date" id="status-end-date">
+            <label>종료 예정일 (선택 · 참고용)</label>
+            <input type="hidden" id="status-end-date" value="">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 7px;">
+                <button type="button" onclick="setQuickAdminDate(14, 0)" style="padding: 6px 0; border-radius: 6px; border: 1px solid #3f3f46; background: #141414; color: #d4d4d8; font-size: 11.5px; font-weight: bold; cursor: pointer;">+2주</button>
+                <button type="button" onclick="setQuickAdminDate(0, 1)" style="padding: 6px 0; border-radius: 6px; border: 1px solid #3f3f46; background: #141414; color: #d4d4d8; font-size: 11.5px; font-weight: bold; cursor: pointer;">+1개월</button>
+                <button type="button" onclick="setQuickAdminDate(0, 2)" style="padding: 6px 0; border-radius: 6px; border: 1px solid #3f3f46; background: #141414; color: #d4d4d8; font-size: 11.5px; font-weight: bold; cursor: pointer;">+2개월</button>
+                <button type="button" onclick="setQuickAdminDate(0, 3)" style="padding: 6px 0; border-radius: 6px; border: 1px solid #3f3f46; background: #141414; color: #d4d4d8; font-size: 11.5px; font-weight: bold; cursor: pointer;">+3개월</button>
+            </div>
+            <div onclick="toggleAdminCalendar()" style="display: flex; align-items: center; justify-content: space-between; padding: 9px 11px; border-radius: 7px; border: 1px solid #444; background: #121212; cursor: pointer;">
+                <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px;">
+                    <span>📅</span>
+                    <span id="status-end-date-display" style="color: #777;">날짜를 선택해 주세요 (선택사항)</span>
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                    <button type="button" id="status-end-date-clear" onclick="clearAdminDate(event)" style="display: none; background: #3f3f46; color: #e4e4e7; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; cursor: pointer;">✕</button>
+                    <span id="status-end-date-arrow" style="color: #777; font-size: 11px;">▼</span>
+                </span>
+            </div>
+            <div id="status-end-date-cal" style="display: none; margin-top: 8px; background: #121212; border: 1px solid #3f3f46; border-radius: 9px; padding: 11px;"></div>
         </div>
 
         <div class="form-field" id="status-memo-field" style="display: none;">
@@ -578,6 +596,8 @@
         document.getElementById('status-modal-target').textContent = `${m.name} (${m.phone || '연락처 없음'})`;
         document.getElementById('status-select').value = getMemberStatus(m);
         document.getElementById('status-end-date').value = m.status_end_date || '';
+        syncAdminDateUI();
+        closeAdminCalendar();
         document.getElementById('status-memo').value = m.status_memo || '';
         toggleStatusFields();
 
@@ -585,7 +605,143 @@
     }
 
     function closeStatusModal() {
+        closeAdminCalendar();
         document.getElementById('status-modal').style.display = 'none';
+    }
+
+    // 📅 [커스텀 다크 달력] 종료 예정일 선택기 제어 함수
+    let adminCalView = null;
+
+    function fmtAdminDate(y, m, d) {
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+
+    function syncAdminDateUI() {
+        const val = (document.getElementById('status-end-date')?.value || '').trim();
+        const disp = document.getElementById('status-end-date-display');
+        const clr = document.getElementById('status-end-date-clear');
+        if (!disp) return;
+
+        if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+            const [y, m, d] = val.split('-').map(Number);
+            const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()];
+            disp.textContent = `${y}년 ${m}월 ${d}일 (${dow})`;
+            disp.style.color = '#fff';
+            disp.style.fontWeight = 'bold';
+            if (clr) clr.style.display = 'inline-block';
+        } else {
+            disp.textContent = '날짜를 선택해 주세요 (선택사항)';
+            disp.style.color = '#777';
+            disp.style.fontWeight = 'normal';
+            if (clr) clr.style.display = 'none';
+        }
+    }
+
+    function closeAdminCalendar() {
+        const panel = document.getElementById('status-end-date-cal');
+        const arrow = document.getElementById('status-end-date-arrow');
+        if (panel) panel.style.display = 'none';
+        if (arrow) arrow.textContent = '▼';
+    }
+
+    function renderAdminCalendar() {
+        const panel = document.getElementById('status-end-date-cal');
+        if (!panel) return;
+
+        const today = new Date();
+        const todayStr = fmtAdminDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
+        const sel = (document.getElementById('status-end-date')?.value || '').trim();
+
+        if (!adminCalView) {
+            if (sel && /^\d{4}-\d{2}-\d{2}$/.test(sel)) {
+                const [sy, sm] = sel.split('-').map(Number);
+                adminCalView = { year: sy, month: sm };
+            } else {
+                adminCalView = { year: today.getFullYear(), month: today.getMonth() + 1 };
+            }
+        }
+
+        const { year, month } = adminCalView;
+        const firstDow = new Date(year, month - 1, 1).getDay();
+        const lastDay = new Date(year, month, 0).getDate();
+
+        const weeks = ['일', '월', '화', '수', '목', '금', '토'].map((w, i) =>
+            `<div style="text-align:center;font-size:11px;font-weight:bold;color:${i === 0 ? '#f87171' : (i === 6 ? '#60a5fa' : '#9ca3af')};padding:3px 0;">${w}</div>`
+        ).join('');
+
+        let cells = '<div></div>'.repeat(firstDow);
+        for (let d = 1; d <= lastDay; d++) {
+            const dStr = fmtAdminDate(year, month, d);
+            const dow = (firstDow + d - 1) % 7;
+            const isSel = dStr === sel;
+            const isToday = dStr === todayStr;
+            const bg = isSel ? '#f59e0b' : 'transparent';
+            const color = isSel ? '#111' : (dow === 0 ? '#fca5a5' : (dow === 6 ? '#93c5fd' : '#e5e7eb'));
+            const border = (isToday && !isSel) ? '1px solid #38bdf8' : '1px solid transparent';
+            cells += `<button type="button" onclick="selectAdminDate('${dStr}')" style="width:100%;aspect-ratio:1/1;max-height:34px;border-radius:50%;border:${border};background:${bg};color:${color};font-size:12px;font-weight:${isSel ? '800' : '600'};cursor:pointer;">${d}</button>`;
+        }
+
+        panel.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <button type="button" onclick="moveAdminCal(-1)" style="background:#27272a;color:#fff;border:1px solid #3f3f46;border-radius:6px;width:28px;height:26px;cursor:pointer;">‹</button>
+                <span style="font-size:13.5px;font-weight:bold;">${year}년 ${month}월</span>
+                <button type="button" onclick="moveAdminCal(1)" style="background:#27272a;color:#fff;border:1px solid #3f3f46;border-radius:6px;width:28px;height:26px;cursor:pointer;">›</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">${weeks}</div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">${cells}</div>
+            <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:7px;border-top:1px solid #27272a;">
+                <button type="button" onclick="selectAdminDate('${todayStr}')" style="background:none;border:none;color:#38bdf8;font-size:12px;font-weight:bold;cursor:pointer;">오늘</button>
+                <button type="button" onclick="clearAdminDate(event)" style="background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;">선택 해제</button>
+            </div>
+        `;
+    }
+
+    function toggleAdminCalendar() {
+        const panel = document.getElementById('status-end-date-cal');
+        const arrow = document.getElementById('status-end-date-arrow');
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            adminCalView = null;
+            renderAdminCalendar();
+            panel.style.display = 'block';
+            if (arrow) arrow.textContent = '▲';
+        } else {
+            closeAdminCalendar();
+        }
+    }
+
+    function moveAdminCal(delta) {
+        if (!adminCalView) return;
+        const d = new Date(adminCalView.year, adminCalView.month - 1 + delta, 1);
+        adminCalView = { year: d.getFullYear(), month: d.getMonth() + 1 };
+        renderAdminCalendar();
+    }
+
+    function selectAdminDate(dateStr) {
+        document.getElementById('status-end-date').value = dateStr;
+        syncAdminDateUI();
+        closeAdminCalendar();
+    }
+
+    function clearAdminDate(e) {
+        if (e) e.stopPropagation();
+        document.getElementById('status-end-date').value = '';
+        syncAdminDateUI();
+        closeAdminCalendar();
+    }
+
+    function setQuickAdminDate(addDays, addMonths) {
+        const now = new Date();
+        let target;
+        if (addMonths > 0) {
+            const m = now.getMonth() + addMonths;
+            target = new Date(now.getFullYear(), m, now.getDate());
+            if (target.getMonth() !== ((m % 12) + 12) % 12) target.setDate(0);
+        } else {
+            target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + addDays);
+        }
+        adminCalView = { year: target.getFullYear(), month: target.getMonth() + 1 };
+        selectAdminDate(fmtAdminDate(target.getFullYear(), target.getMonth() + 1, target.getDate()));
     }
 
     function toggleStatusFields() {

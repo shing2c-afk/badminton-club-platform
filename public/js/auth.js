@@ -532,6 +532,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeEl) typeEl.value = 'sick';
     const dateEl = document.getElementById('req-end-date');
     if (dateEl) dateEl.value = '';
+    if (typeof window.syncOmDateUI === 'function') window.syncOmDateUI('req-end-date');
+    if (typeof window.closeOmCalendar === 'function') window.closeOmCalendar('req-end-date');
     const reasonEl = document.getElementById('req-status-reason');
     if (reasonEl) reasonEl.value = '';
     window.toggleUserReqDateField();
@@ -541,6 +543,179 @@ document.addEventListener("DOMContentLoaded", () => {
   window.closeStatusRequestModal = function() {
     const modal = document.getElementById('status-request-modal');
     if (modal) modal.style.display = 'none';
+  };
+
+  // 📅 [커스텀 다크 달력] 복귀 예정일 선택기 제어
+  const omCalViewState = {};
+
+  function formatOmDateStr(y, m, d) {
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  function formatOmDateLabel(dateStr) {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return '';
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const days = ['일', '월', '화', '수', '목', '금', '토'];
+    const dow = days[new Date(y, m - 1, d).getDay()];
+    return `${y}년 ${m}월 ${d}일 (${dow})`;
+  }
+
+  window.syncOmDateUI = function(inputId) {
+    const input = document.getElementById(inputId);
+    const display = document.getElementById(`${inputId}-display`);
+    const clearBtn = document.getElementById(`${inputId}-clear`);
+    if (!input || !display) return;
+
+    const val = (input.value || '').trim();
+    if (val) {
+      display.textContent = formatOmDateLabel(val) || val;
+      display.style.color = '#f8fafc';
+      display.style.fontWeight = '700';
+      if (clearBtn) clearBtn.style.display = 'inline-block';
+    } else {
+      display.textContent = '날짜를 선택해 주세요 (선택사항)';
+      display.style.color = '#64748b';
+      display.style.fontWeight = '400';
+      if (clearBtn) clearBtn.style.display = 'none';
+    }
+  };
+
+  window.closeOmCalendar = function(inputId) {
+    const panel = document.getElementById(`${inputId}-cal`);
+    const arrow = document.getElementById(`${inputId}-arrow`);
+    if (panel) panel.style.display = 'none';
+    if (arrow) arrow.textContent = '▼';
+  };
+
+  window.renderOmCalendar = function(inputId) {
+    const panel = document.getElementById(`${inputId}-cal`);
+    const input = document.getElementById(inputId);
+    if (!panel || !input) return;
+
+    const today = new Date();
+    const todayStr = formatOmDateStr(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    const selectedStr = (input.value || '').trim();
+
+    if (!omCalViewState[inputId]) {
+      if (selectedStr && /^\d{4}-\d{2}-\d{2}$/.test(selectedStr)) {
+        const [sy, sm] = selectedStr.split('-').map(Number);
+        omCalViewState[inputId] = { year: sy, month: sm };
+      } else {
+        omCalViewState[inputId] = { year: today.getFullYear(), month: today.getMonth() + 1 };
+      }
+    }
+
+    const { year, month } = omCalViewState[inputId];
+    const firstDow = new Date(year, month - 1, 1).getDay();
+    const lastDay = new Date(year, month, 0).getDate();
+
+    const weekHeaders = ['일', '월', '화', '수', '목', '금', '토'].map((w, idx) => {
+      const color = idx === 0 ? '#f87171' : (idx === 6 ? '#60a5fa' : '#94a3b8');
+      return `<div style="text-align:center; font-size:11px; font-weight:700; color:${color}; padding:4px 0;">${w}</div>`;
+    }).join('');
+
+    let dayCells = '';
+    for (let i = 0; i < firstDow; i++) {
+      dayCells += '<div></div>';
+    }
+    for (let d = 1; d <= lastDay; d++) {
+      const dStr = formatOmDateStr(year, month, d);
+      const dow = (firstDow + d - 1) % 7;
+      const isSelected = dStr === selectedStr;
+      const isToday = dStr === todayStr;
+      const isPast = dStr < todayStr;
+
+      let bg = 'transparent';
+      let color = dow === 0 ? '#fca5a5' : (dow === 6 ? '#93c5fd' : '#e2e8f0');
+      let border = '1px solid transparent';
+      let weight = '600';
+
+      if (isPast && !isSelected) color = '#475569';
+      if (isToday && !isSelected) border = '1px solid #38bdf8';
+      if (isSelected) {
+        bg = '#f59e0b';
+        color = '#111827';
+        weight = '800';
+      }
+
+      dayCells += `
+        <button type="button" onclick="selectOmCalDate('${inputId}', '${dStr}')" style="
+          width: 100%; aspect-ratio: 1 / 1; max-height: 36px; border-radius: 50%;
+          border: ${border}; background: ${bg}; color: ${color};
+          font-size: 12.5px; font-weight: ${weight}; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+        ">${d}</button>
+      `;
+    }
+
+    panel.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <button type="button" onclick="moveOmCalMonth('${inputId}', -1)" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:7px; width:30px; height:28px; cursor:pointer; font-weight:bold;">‹</button>
+        <span style="font-size:14px; font-weight:800; color:#f8fafc;">${year}년 ${month}월</span>
+        <button type="button" onclick="moveOmCalMonth('${inputId}', 1)" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:7px; width:30px; height:28px; cursor:pointer; font-weight:bold;">›</button>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; margin-bottom:4px;">${weekHeaders}</div>
+      <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:3px;">${dayCells}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:8px; border-top:1px solid #1e293b;">
+        <button type="button" onclick="selectOmCalDate('${inputId}', '${todayStr}')" style="background:transparent; border:none; color:#38bdf8; font-size:12px; font-weight:700; cursor:pointer; padding:4px 6px;">오늘</button>
+        <button type="button" onclick="clearOmDate('${inputId}', event)" style="background:transparent; border:none; color:#94a3b8; font-size:12px; cursor:pointer; padding:4px 6px;">선택 해제</button>
+      </div>
+    `;
+  };
+
+  window.toggleOmCalendar = function(inputId) {
+    const panel = document.getElementById(`${inputId}-cal`);
+    const arrow = document.getElementById(`${inputId}-arrow`);
+    if (!panel) return;
+    const willOpen = panel.style.display === 'none';
+    if (willOpen) {
+      delete omCalViewState[inputId];
+      window.renderOmCalendar(inputId);
+      panel.style.display = 'block';
+      if (arrow) arrow.textContent = '▲';
+    } else {
+      window.closeOmCalendar(inputId);
+    }
+  };
+
+  window.moveOmCalMonth = function(inputId, delta) {
+    const state = omCalViewState[inputId];
+    if (!state) return;
+    const d = new Date(state.year, state.month - 1 + delta, 1);
+    omCalViewState[inputId] = { year: d.getFullYear(), month: d.getMonth() + 1 };
+    window.renderOmCalendar(inputId);
+  };
+
+  window.selectOmCalDate = function(inputId, dateStr) {
+    const input = document.getElementById(inputId);
+    if (input) input.value = dateStr;
+    window.syncOmDateUI(inputId);
+    window.closeOmCalendar(inputId);
+  };
+
+  window.clearOmDate = function(inputId, e) {
+    if (e) e.stopPropagation();
+    const input = document.getElementById(inputId);
+    if (input) input.value = '';
+    window.syncOmDateUI(inputId);
+    window.closeOmCalendar(inputId);
+  };
+
+  window.setQuickOmDate = function(inputId, addDays, addMonths) {
+    const now = new Date();
+    let target;
+    if (addMonths > 0) {
+      const targetMonth = now.getMonth() + addMonths;
+      target = new Date(now.getFullYear(), targetMonth, now.getDate());
+      if (target.getMonth() !== ((targetMonth % 12) + 12) % 12) {
+        target.setDate(0);
+      }
+    } else {
+      target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + addDays);
+    }
+    const dateStr = formatOmDateStr(target.getFullYear(), target.getMonth() + 1, target.getDate());
+    omCalViewState[inputId] = { year: target.getFullYear(), month: target.getMonth() + 1 };
+    window.selectOmCalDate(inputId, dateStr);
   };
 
   window.submitMemberStatusRequest = async function() {
@@ -669,7 +844,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }, 80);
     }
   };
-  
+
 // ==========================================
 // 팝업 알림(토스트 메시지)을 띄워주는 함수
 // ==========================================

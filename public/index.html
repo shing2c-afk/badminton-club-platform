@@ -655,7 +655,7 @@ body, button, input, select, textarea {
 
 <!-- 🏷️ 정회원 병가·휴면·탈퇴 신청 모달 -->
 <div class="modal-overlay" id="status-request-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 2147483647; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;">
-    <div class="modal-card" style="background: #1a1f2e; border: 1px solid #334155; padding: 18px 20px; border-radius: 12px; width: 100%; max-width: 380px; color: white; box-shadow: 0 8px 24px rgba(0,0,0,0.6);">
+    <div class="modal-card" style="background: #1a1f2e; border: 1px solid #334155; padding: 18px 20px; border-radius: 12px; width: 100%; max-width: 380px; color: white; box-shadow: 0 8px 24px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #2d3748; padding-bottom: 10px;">
             <span style="font-weight: bold; font-size: 16px; color: #f8fafc;">📋 병가 · 휴면 · 탈퇴 신청</span>
             <button type="button" onclick="closeStatusRequestModal()" style="background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">&times;</button>
@@ -670,8 +670,31 @@ body, button, input, select, textarea {
             </select>
         </div>
         <div id="req-end-date-wrap" style="margin-bottom: 12px;">
-            <label style="display: block; font-size: 12.5px; color: #cbd5e1; margin-bottom: 5px; font-weight: 600;">복귀 예정일 (선택)</label>
-            <input type="date" id="req-end-date" style="width: 100%; padding: 9px 10px; border-radius: 7px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 14px; box-sizing: border-box;">
+            <label style="display: block; font-size: 12.5px; color: #cbd5e1; margin-bottom: 6px; font-weight: 600;">복귀 예정일 (선택)</label>
+            <input type="hidden" id="req-end-date" value="">
+
+            <!-- 빠른 기간 선택 칩 -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 7px;">
+                <button type="button" onclick="setQuickOmDate('req-end-date', 14, 0)" style="padding: 6px 0; border-radius: 7px; border: 1px solid #334155; background: #111827; color: #cbd5e1; font-size: 11.5px; font-weight: 600; cursor: pointer;">+2주</button>
+                <button type="button" onclick="setQuickOmDate('req-end-date', 0, 1)" style="padding: 6px 0; border-radius: 7px; border: 1px solid #334155; background: #111827; color: #cbd5e1; font-size: 11.5px; font-weight: 600; cursor: pointer;">+1개월</button>
+                <button type="button" onclick="setQuickOmDate('req-end-date', 0, 2)" style="padding: 6px 0; border-radius: 7px; border: 1px solid #334155; background: #111827; color: #cbd5e1; font-size: 11.5px; font-weight: 600; cursor: pointer;">+2개월</button>
+                <button type="button" onclick="setQuickOmDate('req-end-date', 0, 3)" style="padding: 6px 0; border-radius: 7px; border: 1px solid #334155; background: #111827; color: #cbd5e1; font-size: 11.5px; font-weight: 600; cursor: pointer;">+3개월</button>
+            </div>
+
+            <!-- 날짜 표시 버튼 (클릭 시 커스텀 달력 열림) -->
+            <div onclick="toggleOmCalendar('req-end-date')" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; cursor: pointer; box-sizing: border-box;">
+                <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px;">
+                    <span style="font-size: 15px;">📅</span>
+                    <span id="req-end-date-display" style="color: #64748b;">날짜를 선택해 주세요 (선택사항)</span>
+                </span>
+                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                    <button type="button" id="req-end-date-clear" onclick="clearOmDate('req-end-date', event)" style="display: none; background: #334155; color: #cbd5e1; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; line-height: 1; cursor: pointer;">✕</button>
+                    <span id="req-end-date-arrow" style="color: #64748b; font-size: 11px;">▼</span>
+                </span>
+            </div>
+
+            <!-- 커스텀 다크 달력 패널 -->
+            <div id="req-end-date-cal" style="display: none; margin-top: 8px; background: #0b1120; border: 1px solid #334155; border-radius: 10px; padding: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);"></div>
         </div>
         <div style="margin-bottom: 14px;">
             <label style="display: block; font-size: 12.5px; color: #cbd5e1; margin-bottom: 5px; font-weight: 600;">사유 / 메모 (선택)</label>
