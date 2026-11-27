@@ -847,6 +847,53 @@
                 </div>
             </div>
         </div>
+        <!-- 3. 💬 고객지원 · FAQ · 오픈채팅 관리 섹션 -->
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+                <h2><span>💬</span><span class="title-text">고객지원 · FAQ · 오픈채팅 관리 (<span id="support-pending-badge" style="color:#fbbf24;">미답변 0</span>)</span></h2>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button type="button" id="sa-tab-inq" class="btn-action btn-user" onclick="switchSaSupportTab('inq')">📩 문의 접수함</button>
+                    <button type="button" id="sa-tab-faq" class="btn-action btn-copy" onclick="switchSaSupportTab('faq')">❓ FAQ 관리 (<span id="sa-faq-count">0</span>)</button>
+                    <button type="button" id="sa-tab-kakao" class="btn-action btn-copy" onclick="switchSaSupportTab('kakao')">💛 오픈채팅 설정</button>
+                </div>
+            </div>
+
+            <!-- 서브탭 1: 문의 접수함 -->
+            <div id="sa-panel-inq">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
+                    <button type="button" id="inq-filter-app" class="btn-icon" style="border-color:#3b82f6; color:#60a5fa;" onclick="setInqFilter('app')">앱 문의 (오류·건의·질문)</button>
+                    <button type="button" id="inq-filter-pending" class="btn-icon" onclick="setInqFilter('pending')">미답변만</button>
+                    <button type="button" id="inq-filter-all" class="btn-icon" onclick="setInqFilter('all')">전체 (클럽 문의 포함)</button>
+                </div>
+                <div id="sa-inquiry-list" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="color: #64748b; text-align: center; padding: 26px;">불러오는 중...</div>
+                </div>
+            </div>
+
+            <!-- 서브탭 2: FAQ 추가 · 삭제 -->
+            <div id="sa-panel-faq" style="display: none;">
+                <form onsubmit="handleAddFaq(event)" style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; margin-bottom: 14px;">
+                    <div style="font-size: 13.5px; font-weight: 700; color: #fb923c; margin-bottom: 10px;">➕ 새 FAQ 등록</div>
+                    <div style="display: grid; grid-template-columns: 140px 1fr; gap: 8px; margin-bottom: 8px;">
+                        <input type="text" id="new-faq-category" class="form-control" placeholder="분류 (예: Wi-Fi)" value="사용법" required style="padding: 9px 10px; font-size: 13.5px;">
+                        <input type="text" id="new-faq-question" class="form-control" placeholder="자주 묻는 질문 제목을 입력하세요" required style="padding: 9px 10px; font-size: 13.5px;">
+                    </div>
+                    <textarea id="new-faq-answer" class="form-control" rows="3" placeholder="회원에게 보여줄 간결한 답변을 입력하세요" required style="padding: 9px 10px; font-size: 13.5px; margin-bottom: 8px; resize: vertical;"></textarea>
+                    <button type="submit" class="btn-submit" style="margin-top: 0; padding: 10px;">FAQ 등록하기</button>
+                </form>
+                <div id="sa-faq-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            </div>
+
+            <!-- 서브탭 3: 카카오톡 오픈채팅 링크 설정 -->
+            <div id="sa-panel-kakao" style="display: none;">
+                <div style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px;">
+                    <label style="display: block; font-size: 13.5px; font-weight: 700; margin-bottom: 6px;">💛 카카오톡 오픈채팅 주소 (스크린샷 오류 제보용)</label>
+                    <input type="url" id="sa-kakao-url" class="form-control" placeholder="https://open.kakao.com/o/..." style="margin-bottom: 8px;">
+                    <small class="form-hint" style="margin-bottom: 12px;">주소를 저장하면 모든 클럽 회원앱의 [도움말·문의 > 문의·제보] 탭 하단에 노란색 카카오톡 오픈채팅 버튼이 자동으로 표시됩니다. 비우고 저장하면 숨겨집니다.</small>
+                    <button type="button" class="btn-submit" style="margin-top: 0;" onclick="handleSaveKakaoUrl()">오픈채팅 링크 저장</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="toast"></div>
@@ -943,6 +990,7 @@
                     updateServerInfo(res.serverInfo);
                     renderClubList();
                     updateTopKpis();
+                    loadSupportData();
                 } else {
                     sessionStorage.removeItem('superAdminKey');
                     const authModal = document.getElementById('auth-modal');
@@ -983,6 +1031,7 @@
                     updateServerInfo(res.serverInfo);
                     renderClubList();
                     updateTopKpis();
+                    loadSupportData();
                     if (showFeedback) showToast('✅ 최신 클럽 현황으로 갱신되었습니다.');
                 }
             });
@@ -1177,6 +1226,198 @@
             } catch (e) {
                 prompt(`${labelMap[type]} 주소를 복사해 주세요:`, fullUrl);
             }
+        }
+
+        // ==========================================
+        // 💬 고객지원(문의함 · FAQ · 오픈채팅) 제어
+        // ==========================================
+        let cachedInquiries = [];
+        let cachedFaqs = [];
+        let currentInqFilter = 'app';
+
+        function loadSupportData() {
+            if (!masterPassword) return;
+            socket.emit('superAdmin:getSupportData', masterPassword, (res) => {
+                if (!res || !res.success) return;
+                cachedInquiries = res.inquiries || [];
+                cachedFaqs = res.faqs || [];
+
+                const kakaoInput = document.getElementById('sa-kakao-url');
+                if (kakaoInput) kakaoInput.value = res.kakaoOpenChatUrl || '';
+
+                const pendingCount = cachedInquiries.filter(i => i.status === 'pending' && i.category !== 'club').length;
+                const badgeEl = document.getElementById('support-pending-badge');
+                if (badgeEl) badgeEl.textContent = `미답변 ${pendingCount}`;
+                const faqCntEl = document.getElementById('sa-faq-count');
+                if (faqCntEl) faqCntEl.textContent = cachedFaqs.length;
+
+                renderSaInquiries();
+                renderSaFaqs();
+            });
+        }
+
+        function switchSaSupportTab(tab) {
+            ['inq', 'faq', 'kakao'].forEach(t => {
+                const btn = document.getElementById(`sa-tab-${t}`);
+                const panel = document.getElementById(`sa-panel-${t}`);
+                if (btn) btn.className = (t === tab) ? 'btn-action btn-user' : 'btn-action btn-copy';
+                if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
+            });
+        }
+
+        function setInqFilter(filter) {
+            currentInqFilter = filter;
+            ['app', 'pending', 'all'].forEach(f => {
+                const btn = document.getElementById(`inq-filter-${f}`);
+                if (!btn) return;
+                btn.style.borderColor = (f === filter) ? '#3b82f6' : 'rgba(255,255,255,0.09)';
+                btn.style.color = (f === filter) ? '#60a5fa' : '#f8fafc';
+            });
+            renderSaInquiries();
+        }
+
+        function renderSaInquiries() {
+            const el = document.getElementById('sa-inquiry-list');
+            if (!el) return;
+
+            const filtered = cachedInquiries.filter(i => {
+                if (currentInqFilter === 'app') return i.category !== 'club';
+                if (currentInqFilter === 'pending') return i.status === 'pending';
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                el.innerHTML = '<div style="color: #64748b; text-align: center; padding: 28px;">표시할 문의 내역이 없습니다.</div>';
+                return;
+            }
+
+            const catMap = {
+                question: ['사용법 질문', '#38bdf8'],
+                bug: ['오류 제보', '#f87171'],
+                feature: ['기능 건의', '#a78bfa'],
+                club: ['클럽 문의', '#fbbf24']
+            };
+
+            el.innerHTML = filtered.map(item => {
+                const [catText, catColor] = catMap[item.category] || ['문의', '#94a3b8'];
+                const isDone = item.status === 'answered';
+                return `
+                    <div style="background: var(--item-bg); border: 1px solid ${isDone ? 'rgba(255,255,255,0.08)' : 'rgba(245,158,11,0.35)'}; border-radius: 10px; padding: 13px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px;">
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <span style="font-size: 11px; font-weight: 800; color: ${catColor}; background: rgba(255,255,255,0.06); padding: 2px 7px; border-radius: 5px;">${catText}</span>
+                                <strong style="font-size: 13.5px;">${escapeHtml(item.club_name || item.club_id)}</strong>
+                                <span style="font-size: 12px; color: #cbd5e1;">${escapeHtml(item.member_name)}${item.member_phone ? ` (${escapeHtml(item.member_phone)})` : ''}</span>
+                            </div>
+                            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; ${isDone ? 'background:rgba(16,185,129,0.2);color:#34d399;' : 'background:rgba(245,158,11,0.2);color:#fbbf24;'}">${isDone ? '답변 완료' : '미답변'}</span>
+                        </div>
+                        <div style="font-size: 13.5px; color: #f8fafc; line-height: 1.5; white-space: pre-line; margin-bottom: 8px;">${escapeHtml(item.content)}</div>
+                        <div style="font-size: 11px; color: #94a3b8; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 10px;">
+                            <span>🕒 ${escapeHtml(item.created_at)}</span>
+                            ${item.device_info ? `<span>📱 ${escapeHtml(item.device_info)}</span>` : ''}
+                            ${item.wifi_info ? `<span>📶 ${escapeHtml(item.wifi_info)}</span>` : ''}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 7px;">
+                            <textarea id="sa-reply-${item.id}" rows="2" class="form-control" placeholder="회원에게 보여줄 답변을 입력하세요..." style="padding: 8px 10px; font-size: 13px;">${escapeHtml(item.reply || '')}</textarea>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+                                <button type="button" class="btn-action btn-tv" onclick="handleReplyInquiry(${item.id})">💾 답변 저장</button>
+                                <button type="button" class="btn-action btn-edit" onclick="promoteInquiryToFaq(${item.id})">📌 FAQ로 등록</button>
+                                <button type="button" class="btn-action btn-delete" onclick="handleDeleteInquiry(${item.id})">🗑️ 삭제</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function handleReplyInquiry(id) {
+            const reply = (document.getElementById(`sa-reply-${id}`)?.value || '').trim();
+            if (!reply) return alert('답변 내용을 입력해 주세요.');
+            socket.emit('superAdmin:replyInquiry', { password: masterPassword, id, reply }, (res) => {
+                if (res && res.success) {
+                    showToast('✅ 답변이 저장되었습니다.');
+                    loadSupportData();
+                } else {
+                    alert(res?.message || '답변 저장 실패');
+                }
+            });
+        }
+
+        function promoteInquiryToFaq(id) {
+            const item = cachedInquiries.find(i => i.id === id);
+            if (!item) return;
+            const replyVal = (document.getElementById(`sa-reply-${id}`)?.value || item.reply || '').trim();
+            document.getElementById('new-faq-category').value = item.category === 'bug' ? '오류 해결' : '사용법';
+            document.getElementById('new-faq-question').value = item.content.slice(0, 120);
+            document.getElementById('new-faq-answer').value = replyVal;
+            switchSaSupportTab('faq');
+            showToast('📌 FAQ 입력창으로 복사했습니다. 다듬은 뒤 등록해 주세요.');
+        }
+
+        function handleDeleteInquiry(id) {
+            if (!confirm('이 문의 내역을 삭제하시겠습니까?')) return;
+            socket.emit('superAdmin:deleteInquiry', { password: masterPassword, id }, (res) => {
+                if (res && res.success) {
+                    showToast('🗑️ 문의가 삭제되었습니다.');
+                    loadSupportData();
+                }
+            });
+        }
+
+        function renderSaFaqs() {
+            const el = document.getElementById('sa-faq-list');
+            if (!el) return;
+            if (cachedFaqs.length === 0) {
+                el.innerHTML = '<div style="color: #64748b; text-align: center; padding: 24px;">등록된 FAQ가 없습니다.</div>';
+                return;
+            }
+            el.innerHTML = cachedFaqs.map(f => `
+                <div style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                    <div style="min-width: 0; flex: 1;">
+                        <div style="margin-bottom: 4px;">
+                            <span class="club-id-tag" style="margin-right: 6px;">${escapeHtml(f.category || '일반')}</span>
+                            <strong style="font-size: 14px;">Q. ${escapeHtml(f.question)}</strong>
+                        </div>
+                        <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5; white-space: pre-line;">A. ${escapeHtml(f.answer)}</div>
+                    </div>
+                    <button type="button" class="btn-action btn-delete" onclick="handleDeleteFaq(${f.id})">🗑️ 삭제</button>
+                </div>
+            `).join('');
+        }
+
+        function handleAddFaq(e) {
+            e.preventDefault();
+            const category = document.getElementById('new-faq-category').value.trim();
+            const question = document.getElementById('new-faq-question').value.trim();
+            const answer = document.getElementById('new-faq-answer').value.trim();
+            socket.emit('superAdmin:addFaq', { password: masterPassword, category, question, answer }, (res) => {
+                if (res && res.success) {
+                    document.getElementById('new-faq-question').value = '';
+                    document.getElementById('new-faq-answer').value = '';
+                    showToast('✅ 새 FAQ가 등록되었습니다.');
+                    loadSupportData();
+                } else {
+                    alert(res?.message || 'FAQ 등록 실패');
+                }
+            });
+        }
+
+        function handleDeleteFaq(id) {
+            if (!confirm('이 FAQ를 삭제하시겠습니까?')) return;
+            socket.emit('superAdmin:deleteFaq', { password: masterPassword, id }, (res) => {
+                if (res && res.success) {
+                    showToast('🗑️ FAQ가 삭제되었습니다.');
+                    loadSupportData();
+                }
+            });
+        }
+
+        function handleSaveKakaoUrl() {
+            const url = (document.getElementById('sa-kakao-url')?.value || '').trim();
+            socket.emit('superAdmin:saveKakaoUrl', { password: masterPassword, url }, (res) => {
+                if (res && res.success) showToast(`💛 ${res.message}`);
+                else alert(res?.message || '저장 실패');
+            });
         }
 
         function handleDeleteClub(clubId) {

@@ -904,7 +904,383 @@ body, button, input, select, textarea {
     });
   }
 </script>
+<!-- 1-2. 왼쪽 하단 모서리에 위치할 도움말·문의 버튼 (앱 공유 버튼과 동일 사이즈 대칭) -->
+<div id="support-btn-container">
+    <button id="support-btn" type="button" class="modern-badge support-btn" onclick="openSupportModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+        </svg>
+        도움말·문의
+    </button>
+</div>
 
+<!-- 💬 고객지원(FAQ / 문의·오류 제보 / 내 문의 내역) 모달 -->
+<div id="support-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.84); z-index: 2147483647; justify-content: center; align-items: center; padding: 14px; box-sizing: border-box;" onclick="if(event.target === this) closeSupportModal()">
+    <div style="background: #161b26; border: 1px solid #334155; border-radius: 14px; width: 100%; max-width: 430px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.7); color: #f8fafc;">
+        <!-- 헤더 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 18px; border-bottom: 1px solid #263145; background: #111622;">
+            <span style="font-size: 16px; font-weight: 800; color: #f8fafc;">💬 도움말 · 오류 제보 · 문의</span>
+            <button type="button" onclick="closeSupportModal()" style="background: none; border: none; color: #94a3b8; font-size: 22px; line-height: 1; cursor: pointer;">&times;</button>
+        </div>
+
+        <!-- 3단 탭 -->
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px 14px; background: #131926; border-bottom: 1px solid #263145;">
+            <button type="button" id="stab-faq" class="support-tab-btn active" onclick="switchSupportTab('faq')">❓ 자주묻는질문</button>
+            <button type="button" id="stab-ask" class="support-tab-btn" onclick="switchSupportTab('ask')">✍️ 문의·제보</button>
+            <button type="button" id="stab-my" class="support-tab-btn" onclick="switchSupportTab('my')">📩 내 문의</button>
+        </div>
+
+        <!-- 본문 (스크롤 영역) -->
+        <div style="padding: 15px 16px; overflow-y: auto; flex: 1;">
+            <!-- 탭 1: FAQ -->
+            <div id="spanel-faq">
+                <div id="support-faq-list" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="text-align: center; color: #94a3b8; padding: 24px 0; font-size: 13px;">자주 묻는 질문을 불러오는 중...</div>
+                </div>
+                <div style="margin-top: 14px; text-align: center; font-size: 12px; color: #94a3b8;">
+                    원하는 답을 못 찾으셨나요?
+                    <button type="button" onclick="switchSupportTab('ask')" style="background: none; border: none; color: #38bdf8; font-weight: 700; cursor: pointer; text-decoration: underline;">직접 문의하기</button>
+                </div>
+            </div>
+
+            <!-- 탭 2: 문의 · 오류 제보 -->
+            <div id="spanel-ask" style="display: none;">
+                <div id="support-user-badge" style="font-size: 12px; color: #94a3b8; background: #0f1522; border: 1px solid #263145; border-radius: 8px; padding: 8px 10px; margin-bottom: 11px;"></div>
+
+                <div id="support-guest-inputs" style="display: none; grid-template-columns: 1fr 1.2fr; gap: 8px; margin-bottom: 10px;">
+                    <input type="text" id="support-input-name" placeholder="이름 (선택)" style="width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13.5px; box-sizing: border-box;">
+                    <input type="tel" id="support-input-phone" placeholder="연락처 (선택)" style="width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13.5px; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; font-size: 12px; color: #cbd5e1; font-weight: 600; margin-bottom: 5px;">문의 유형</label>
+                    <select id="support-category" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13.5px; box-sizing: border-box;">
+                        <option value="question">❓ 앱 사용법 질문 (앱 관리자)</option>
+                        <option value="bug">🐞 오류 · 화면 이상 제보 (앱 관리자)</option>
+                        <option value="feature">💡 기능 개선 · 추가 건의 (앱 관리자)</option>
+                        <option value="club">🏢 클럽 운영 · 급수 · 회비 문의 (클럽 운영진)</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; font-size: 12px; color: #cbd5e1; font-weight: 600; margin-bottom: 5px;">내용</label>
+                    <textarea id="support-content" rows="4" maxlength="1000" placeholder="궁금한 점이나 오류 상황을 편하게 적어 주세요.&#10;(기기 정보와 Wi-Fi 상태는 자동으로 함께 전달됩니다)" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13.5px; line-height: 1.5; resize: vertical; box-sizing: border-box;"></textarea>
+                </div>
+
+                <button type="button" onclick="submitUserInquiry()" style="width: 100%; padding: 12px; border-radius: 9px; border: none; background: #2563eb; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;">문의 접수하기</button>
+
+                <!-- 카카오톡 오픈채팅 (스크린샷 제보용) -->
+                <div id="support-kakao-box" style="display: none; margin-top: 14px; padding-top: 13px; border-top: 1px solid #263145;">
+                    <div style="font-size: 12px; color: #cbd5e1; margin-bottom: 8px;">📸 화면 캡처(스크린샷) 전달이 필요하신가요?</div>
+                    <a id="support-kakao-link" href="#" target="_blank" rel="noopener noreferrer" style="display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 11px; border-radius: 9px; background: #fee500; color: #191919; text-decoration: none; font-size: 13.5px; font-weight: 800; box-sizing: border-box;">
+                        💬 카카오톡 오픈채팅으로 사진 제보하기
+                    </a>
+                </div>
+            </div>
+
+            <!-- 탭 3: 내 문의 내역 -->
+            <div id="spanel-my" style="display: none;">
+                <div id="support-my-list" style="display: flex; flex-direction: column; gap: 9px;">
+                    <div style="text-align: center; color: #94a3b8; padding: 24px 0; font-size: 13px;">문의 내역을 불러오는 중...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#support-btn-container {
+    position: fixed;
+    left: 20px;
+    bottom: 24px;
+    z-index: 9999;
+}
+.support-btn {
+    background-color: #1e293b;
+    color: #f8fafc;
+    cursor: pointer;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    position: static !important;
+}
+.support-btn:hover {
+    transform: translateY(-2px);
+    background-color: #334155;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.45);
+}
+.support-tab-btn {
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 4px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.support-tab-btn.active {
+    background: #2563eb;
+    border-color: #3b82f6;
+    color: #ffffff;
+}
+.faq-card {
+    background: #0f172a;
+    border: 1px solid #263145;
+    border-radius: 9px;
+    overflow: hidden;
+}
+.faq-q-btn {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 11px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    line-height: 1.4;
+}
+.faq-a-box {
+    display: none;
+    padding: 0 12px 12px;
+    font-size: 12.5px;
+    color: #cbd5e1;
+    line-height: 1.55;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 9px;
+    white-space: pre-line;
+}
+.faq-card.open .faq-a-box { display: block; }
+.faq-card.open .faq-arrow { transform: rotate(180deg); }
+</style>
+
+<script>
+(function() {
+    function escapeSupportHtml(str) {
+        return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    function getSupportClubId() {
+        return new URLSearchParams(window.location.search).get('club') || window.currentClubId || 'unjeong';
+    }
+
+    function getSupportCurrentUser() {
+        const clubId = getSupportClubId();
+        const keys = [];
+        if (typeof window.getClubStorageKey === 'function') keys.push(window.getClubStorageKey('currentUser'));
+        keys.push(`currentUser_${clubId}`, `${clubId}_currentUser`, 'currentUser');
+
+        for (const k of keys) {
+            try {
+                const raw = localStorage.getItem(k);
+                if (!raw) continue;
+                const u = JSON.parse(raw);
+                if (u && u.name && (!u.clubId || u.clubId === clubId)) {
+                    return { clubId, name: u.name, phone: u.phone || '', isGuest: Boolean(u.isGuest) };
+                }
+            } catch (e) {}
+        }
+        return { clubId, name: '', phone: '', isGuest: false };
+    }
+
+    function getReadableDeviceInfo() {
+        const ua = navigator.userAgent || '';
+        let os = '기타 OS';
+        if (/Android/i.test(ua)) os = 'Android';
+        else if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS';
+        else if (/Windows/i.test(ua)) os = 'Windows';
+        else if (/Mac OS/i.test(ua)) os = 'macOS';
+
+        let browser = '브라우저';
+        if (/KAKAOTALK/i.test(ua)) browser = '카카오톡 인앱';
+        else if (/SamsungBrowser/i.test(ua)) browser = '삼성인터넷';
+        else if (/Edg/i.test(ua)) browser = 'Edge';
+        else if (/Chrome|CriOS/i.test(ua)) browser = 'Chrome';
+        else if (/Safari/i.test(ua)) browser = 'Safari';
+
+        return `${os} · ${browser} (${window.innerWidth}x${window.innerHeight})`;
+    }
+
+    function getReadableWifiInfo() {
+        const restriction = (typeof window.useWifiRestriction === 'boolean') ? (window.useWifiRestriction ? '제한ON' : '제한OFF') : '확인불가';
+        const connected = (typeof window.isGymWifiConnected === 'boolean') ? (window.isGymWifiConnected ? '구장인증' : '외부망') : '확인불가';
+        return `${restriction} / ${connected}`;
+    }
+
+    window.openSupportModal = async function() {
+        const modal = document.getElementById('support-modal');
+        if (!modal) return;
+        modal.style.display = 'flex';
+        window.switchSupportTab('faq');
+
+        const user = getSupportCurrentUser();
+        const badge = document.getElementById('support-user-badge');
+        const guestInputs = document.getElementById('support-guest-inputs');
+        if (user.name) {
+            if (badge) badge.textContent = `접수자: ${user.name}${user.phone ? ` (${user.phone})` : ''} · ${user.isGuest ? '일일회원' : '정회원'}`;
+            if (guestInputs) guestInputs.style.display = 'none';
+        } else {
+            if (badge) badge.textContent = '비로그인 상태입니다. 답변 확인이 필요하면 이름·연락처를 적어 주세요.';
+            if (guestInputs) guestInputs.style.display = 'grid';
+        }
+
+        await loadSupportInitData();
+    };
+
+    window.closeSupportModal = function() {
+        const modal = document.getElementById('support-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    window.switchSupportTab = function(tab) {
+        ['faq', 'ask', 'my'].forEach(t => {
+            const btn = document.getElementById(`stab-${t}`);
+            const panel = document.getElementById(`spanel-${t}`);
+            if (btn) btn.classList.toggle('active', t === tab);
+            if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
+        });
+        if (tab === 'my') loadMyInquiries();
+    };
+
+    async function loadSupportInitData() {
+        try {
+            const res = await fetch('/api/support/init');
+            const data = await res.json();
+            const listEl = document.getElementById('support-faq-list');
+            const kakaoBox = document.getElementById('support-kakao-box');
+            const kakaoLink = document.getElementById('support-kakao-link');
+
+            if (kakaoBox && kakaoLink) {
+                if (data.kakaoOpenChatUrl) {
+                    kakaoLink.href = data.kakaoOpenChatUrl;
+                    kakaoBox.style.display = 'block';
+                } else {
+                    kakaoBox.style.display = 'none';
+                }
+            }
+
+            if (!listEl) return;
+            const faqs = (data && Array.isArray(data.faqs)) ? data.faqs : [];
+            if (faqs.length === 0) {
+                listEl.innerHTML = '<div style="text-align: center; color: #64748b; padding: 24px 0; font-size: 13px;">등록된 FAQ가 없습니다.</div>';
+                return;
+            }
+
+            listEl.innerHTML = faqs.map((f, idx) => `
+                <div class="faq-card ${idx === 0 ? 'open' : ''}">
+                    <button type="button" class="faq-q-btn" onclick="this.parentElement.classList.toggle('open')">
+                        <span>
+                            <span style="display:inline-block; font-size:10.5px; color:#38bdf8; background:rgba(56,189,248,0.12); padding:1px 6px; border-radius:4px; margin-right:6px;">${escapeSupportHtml(f.category || '안내')}</span>
+                            ${escapeSupportHtml(f.question)}
+                        </span>
+                        <span class="faq-arrow" style="color:#64748b; font-size:11px; transition:transform 0.2s;">▼</span>
+                    </button>
+                    <div class="faq-a-box">${escapeSupportHtml(f.answer)}</div>
+                </div>
+            `).join('');
+        } catch (err) {
+            console.error('FAQ 로드 오류:', err);
+        }
+    }
+
+    window.submitUserInquiry = async function() {
+        const user = getSupportCurrentUser();
+        const category = document.getElementById('support-category')?.value || 'question';
+        const contentEl = document.getElementById('support-content');
+        const content = (contentEl?.value || '').trim();
+
+        if (content.length < 2) {
+            if (typeof showToast === 'function') showToast('문의 내용을 2자 이상 입력해 주세요.', false);
+            else alert('문의 내용을 2자 이상 입력해 주세요.');
+            return;
+        }
+
+        const memberName = user.name || (document.getElementById('support-input-name')?.value || '').trim() || '비로그인 사용자';
+        const memberPhone = user.phone || (document.getElementById('support-input-phone')?.value || '').trim();
+
+        try {
+            const res = await fetch('/api/support/inquiry', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clubId: user.clubId,
+                    memberName,
+                    memberPhone,
+                    isGuest: user.isGuest,
+                    category,
+                    content,
+                    deviceInfo: getReadableDeviceInfo(),
+                    wifiInfo: getReadableWifiInfo()
+                })
+            });
+            const result = await res.json();
+            if (result.success) {
+                if (contentEl) contentEl.value = '';
+                if (typeof showToast === 'function') showToast(result.message, true);
+                else alert(result.message);
+                window.switchSupportTab('my');
+            } else {
+                if (typeof showToast === 'function') showToast(result.message || '접수에 실패했습니다.', false);
+                else alert(result.message || '접수에 실패했습니다.');
+            }
+        } catch (err) {
+            if (typeof showToast === 'function') showToast('서버 통신 오류가 발생했습니다.', false);
+        }
+    };
+
+    async function loadMyInquiries() {
+        const listEl = document.getElementById('support-my-list');
+        if (!listEl) return;
+        const user = getSupportCurrentUser();
+        if (!user.name && !user.phone) {
+            listEl.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 24px 0; font-size: 13px;">로그인 후 내 문의 내역과 답변을 확인할 수 있습니다.</div>';
+            return;
+        }
+
+        try {
+            const qs = new URLSearchParams({ clubId: user.clubId, name: user.name, phone: user.phone }).toString();
+            const res = await fetch(`/api/support/my-inquiries?${qs}`);
+            const result = await res.json();
+            const items = (result && Array.isArray(result.data)) ? result.data : [];
+
+            if (items.length === 0) {
+                listEl.innerHTML = '<div style="text-align: center; color: #64748b; padding: 24px 0; font-size: 13px;">아직 접수한 문의가 없습니다.</div>';
+                return;
+            }
+
+            const catLabels = { question: '사용법 질문', bug: '오류 제보', feature: '기능 건의', club: '클럽 문의' };
+            listEl.innerHTML = items.map(item => `
+                <div style="background: #0f172a; border: 1px solid #263145; border-radius: 9px; padding: 11px 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 6px;">
+                        <span style="font-size: 11px; color: #38bdf8; font-weight: 700;">[${catLabels[item.category] || '문의'}]</span>
+                        <span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; ${item.status === 'answered' ? 'background:rgba(16,185,129,0.2);color:#34d399;' : 'background:rgba(245,158,11,0.2);color:#fbbf24;'}">
+                            ${item.status === 'answered' ? '답변 완료' : '접수 대기'}
+                        </span>
+                    </div>
+                    <div style="font-size: 13px; color: #f1f5f9; line-height: 1.5; white-space: pre-line;">${escapeSupportHtml(item.content)}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 5px;">${escapeSupportHtml(item.created_at)}</div>
+                    ${item.reply ? `
+                        <div style="margin-top: 9px; padding: 9px 10px; background: #162238; border-left: 3px solid #10b981; border-radius: 6px;">
+                            <div style="font-size: 11px; color: #34d399; font-weight: 700; margin-bottom: 3px;">💬 ${escapeSupportHtml(item.replied_by || '관리자')} 답변 (${escapeSupportHtml(item.replied_at || '')})</div>
+                            <div style="font-size: 12.5px; color: #e2e8f0; line-height: 1.5; white-space: pre-line;">${escapeSupportHtml(item.reply)}</div>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        } catch (err) {
+            listEl.innerHTML = '<div style="text-align: center; color: #f87171; padding: 20px 0; font-size: 13px;">문의 내역을 불러오지 못했습니다.</div>';
+        }
+    }
+})();
+</script>
 <!-- 2. 오른쪽 하단 모서리에 위치할 앱 공유 버튼 -->
 <div id="share-btn-container">
     <button id="share-btn" class="modern-badge share-btn">

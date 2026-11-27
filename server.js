@@ -115,6 +115,56 @@ db.serialize(() => {
         request_status TEXT DEFAULT 'pending',
         created_at TEXT
     )`);
+
+    // 💬 [고객지원/FAQ/오픈채팅] 독립 테이블 3종 생성
+    db.run(`CREATE TABLE IF NOT EXISTS platform_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT DEFAULT ''
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS support_faqs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT DEFAULT '기본 사용법',
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        created_at TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS user_inquiries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        club_id TEXT DEFAULT 'unjeong',
+        club_name TEXT DEFAULT '',
+        member_name TEXT DEFAULT '',
+        member_phone TEXT DEFAULT '',
+        is_guest INTEGER DEFAULT 0,
+        category TEXT DEFAULT 'question',
+        content TEXT NOT NULL,
+        device_info TEXT DEFAULT '',
+        wifi_info TEXT DEFAULT '',
+        status TEXT DEFAULT 'pending',
+        reply TEXT DEFAULT '',
+        replied_by TEXT DEFAULT '',
+        created_at TEXT,
+        replied_at TEXT DEFAULT ''
+    )`);
+
+    // 초기 기본 FAQ 5개 최초 1회만 자동 등록 (이후 마스터가 삭제해도 재부활 방지)
+    db.get(`SELECT value FROM platform_settings WHERE key = 'faqs_seeded'`, [], (seedErr, seedRow) => {
+        if (!seedErr && !seedRow) {
+            const defaultFaqs = [
+                ['Wi-Fi 연결', '게임 방 개설·참여 버튼이 비활성화(흐리게) 되어 있어요.', '구장 전용 Wi-Fi에 연결해야 게임·난타 방 개설 및 참여가 가능합니다. 스마트폰 설정에서 구장 Wi-Fi를 연결한 뒤 2~3초 기다리면 자동으로 활성화됩니다.'],
+                ['대기열 이용', '게임이나 난타 대기방을 만들고 취소하려면 어떻게 하나요?', '하단 [게임 방 개설] 또는 [난타 방 개설] 버튼으로 방을 만들고, 취소할 때는 본인 이름이 들어간 방의 [나가기] 버튼을 누르면 즉시 취소됩니다.'],
+                ['일일회원', '외부 방문객이나 휴면 회원이 오늘 하루만 운동하려면 어떻게 하나요?', '로그인 화면 상단의 [일일회원] 탭을 선택한 뒤 이름, 전화번호, 결제승인번호 6자리를 입력하면 바로 입장할 수 있습니다.'],
+                ['회원 상태', '부상·출장 등으로 잠시 쉬어야 할 때 병가·휴면 신청은 어디서 하나요?', '정회원 로그인 후 메인 화면 맨 아래 [병가·휴면·탈퇴 신청]을 눌러 신청하면 운영진 승인 후 반영됩니다. 복귀 시 기존 정보로 정회원 로그인을 시도하면 바로 복귀 신청을 할 수 있습니다.'],
+                ['화면 오류', '화면이 멈추거나 최신 현황이 안 보일 때는 어떻게 하나요?', '브라우저 화면을 아래로 당겨 새로고침하거나 앱을 완전히 닫았다가 다시 열어주세요. 문제가 계속되면 [문의·오류 제보] 탭이나 카카오톡 오픈채팅으로 알려주세요.']
+            ];
+            const nowStr = new Date().toISOString().slice(0, 10);
+            defaultFaqs.forEach(([cat, q, a]) => {
+                db.run(`INSERT INTO support_faqs (category, question, answer, created_at) VALUES (?, ?, ?, ?)`, [cat, q, a, nowStr]);
+            });
+            db.run(`INSERT OR REPLACE INTO platform_settings (key, value) VALUES ('faqs_seeded', '1')`);
+        }
+    });
 });
 
 // =========================================================================
@@ -1886,6 +1936,98 @@ app.post('/api/admin/process-status-request', (req, res) => {
         }
     );
 });
+
+// 2-2. [슈퍼 관리자] 고객지원(문의함 + FAQ + 오픈채팅 URL) 전체 조회
+    socket.on('superAdmin:getSupportData', (password, callback) => {
+        if (password !== SUPER_ADMIN_KEY) {
+            return callback({ success: false, message: '권한이 없습니다.' });
+        }
+        db.all(
+            `SELECT * FROM user_inquiries ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC LIMIT 100`,
+            [],
+            (inqErr, inquiries) => {
+                db.all(`SELECT * FROM support_faqs ORDER BY id ASC`, [], (faqErr, faqs) => {
+                    db.get(`SELECT value FROM platform_settings WHERE key = 'kakao_open_chat_url'`, [], (setErr, setRow) => {
+                        callback({
+                            success: true,
+                            inquiries: inquiries || [],
+                            faqs: faqs || [],
+                            kakaoOpenChatUrl: (setRow && setRow.value) ? String(setRow.value).trim() : ''
+                        });
+                    });
+                });
+            }
+        );
+    });
+
+    // 2-3. [슈퍼 관리자] 문의 답변 저장
+    socket.on('superAdmin:replyInquiry', ({ password, id, reply }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        const cleanReply = String(reply || '').trim().slice(0, 1000);
+        if (!id || !cleanReply) return callback({ success: false, message: '답변 내용을 입력해 주세요.' });
+        const repliedAt = getSupportKstDateTime();
+        db.run(
+            `UPDATE user_inquiries SET reply = ?, status = 'answered', replied_by = '앱 관리자', replied_at = ? WHERE id = ?`,
+            [cleanReply, repliedAt, id],
+            function(err) {
+                if (err) return callback({ success: false, message: '답변 저장 중 오류가 발생했습니다.' });
+                callback({ success: true, message: '답변이 등록되었습니다.' });
+            }
+        );
+    });
+
+    // 2-4. [슈퍼 관리자] 문의 삭제
+    socket.on('superAdmin:deleteInquiry', ({ password, id }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        db.run(`DELETE FROM user_inquiries WHERE id = ?`, [id], (err) => {
+            if (err) return callback({ success: false, message: '삭제 실패' });
+            callback({ success: true, message: '문의 내역이 삭제되었습니다.' });
+        });
+    });
+
+    // 2-5. [슈퍼 관리자] FAQ 추가
+    socket.on('superAdmin:addFaq', ({ password, category, question, answer }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        const cleanCat = String(category || '일반').trim().slice(0, 30);
+        const cleanQ = String(question || '').trim().slice(0, 200);
+        const cleanA = String(answer || '').trim().slice(0, 1000);
+        if (!cleanQ || !cleanA) return callback({ success: false, message: '질문과 답변을 모두 입력해 주세요.' });
+        const createdAt = getSupportKstDateTime().slice(0, 10);
+        db.run(
+            `INSERT INTO support_faqs (category, question, answer, created_at) VALUES (?, ?, ?, ?)`,
+            [cleanCat, cleanQ, cleanA, createdAt],
+            (err) => {
+                if (err) return callback({ success: false, message: 'FAQ 등록 실패' });
+                callback({ success: true, message: '새 FAQ가 등록되었습니다.' });
+            }
+        );
+    });
+
+    // 2-6. [슈퍼 관리자] FAQ 삭제
+    socket.on('superAdmin:deleteFaq', ({ password, id }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        db.run(`DELETE FROM support_faqs WHERE id = ?`, [id], (err) => {
+            if (err) return callback({ success: false, message: 'FAQ 삭제 실패' });
+            callback({ success: true, message: 'FAQ가 삭제되었습니다.' });
+        });
+    });
+
+    // 2-7. [슈퍼 관리자] 카카오톡 오픈채팅 링크 저장
+    socket.on('superAdmin:saveKakaoUrl', ({ password, url }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        const cleanUrl = String(url || '').trim().slice(0, 300);
+        if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+            return callback({ success: false, message: 'https:// 로 시작하는 올바른 주소를 입력해 주세요.' });
+        }
+        db.run(
+            `INSERT OR REPLACE INTO platform_settings (key, value) VALUES ('kakao_open_chat_url', ?)`,
+            [cleanUrl],
+            (err) => {
+                if (err) return callback({ success: false, message: '저장 실패' });
+                callback({ success: true, message: cleanUrl ? '카카오톡 오픈채팅 링크가 저장되었습니다.' : '오픈채팅 링크가 해제되었습니다.' });
+            }
+        );
+    });
 
 // 회원 정보 수정 API (파라미터 누락 버그 수정 및 전화번호 정규화/멀티테넌트 적용)
 app.post('/api/member/update', (req, res) => {
