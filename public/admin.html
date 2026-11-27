@@ -684,6 +684,14 @@ input:checked + .slider:before {
                 </div>
             </div>
 
+            <!-- 1-2) 복귀 및 상태 변경 승인 대기 목록 -->
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #1e293b;">
+                <div style="font-size: 13px; font-weight: 700; color: #38bdf8; margin-bottom: 6px;">복귀 및 상태 변경 승인</div>
+                <div id="pending-status-request-list">
+                    <div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 10px;">대기 중인 신청이 없습니다.</div>
+                </div>
+            </div>
+
             <!-- 2) 회원 통합 관리 모듈 -->
 <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #1e293b;">
     <div style="font-size: 13px; font-weight: 700; color: #818cf8; margin-bottom: 6px;">회원 통합 관리 모듈</div>
@@ -1802,10 +1810,78 @@ if (document.readyState === 'loading') {
         } catch (error) { await alert('처리 중 오류가 발생했습니다.'); }
     }
 
+    async function loadStatusRequests() {
+        try {
+            const response = await fetch(`/api/admin/status-requests?club=${encodeURIComponent(currentClubId)}`);
+            const result = await response.json();
+            const container = document.getElementById('pending-status-request-list');
+            if (!container) return;
+
+            if (!result.success || !result.data || result.data.length === 0) {
+                container.innerHTML = '<div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 10px;">대기 중인 신청이 없습니다.</div>';
+                return;
+            }
+
+            const getReqBadge = (req) => {
+                if (req.requested_status === 'active') {
+                    return req.current_status === 'withdrawn'
+                        ? '<span style="background: rgba(16,185,129,0.2); color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">🔄 재입회 신청</span>'
+                        : '<span style="background: rgba(16,185,129,0.2); color: #34d399; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">🔄 복귀 신청</span>';
+                }
+                if (req.requested_status === 'sick') {
+                    return '<span style="background: rgba(245,158,11,0.2); color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">🩹 병가 신청</span>';
+                }
+                if (req.requested_status === 'dormant') {
+                    return '<span style="background: rgba(129,140,248,0.2); color: #a5b4fc; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">⏸️ 휴면 신청</span>';
+                }
+                return '<span style="background: rgba(239,68,68,0.2); color: #f87171; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;">🚪 탈퇴 신청</span>';
+            };
+
+            container.innerHTML = result.data.map(req => `
+                <div style="background: #131c31; padding: 10px; margin-bottom: 6px; border-radius: 7px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 6px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 3px;">
+                            ${getReqBadge(req)}
+                            <strong style="font-size: 13px; color: #f8fafc;">${escapeHtml(req.name)}</strong>
+                            <span style="font-size: 11px; color: #94a3b8;">📞 ${escapeHtml(req.phone)}</span>
+                        </div>
+                        <div style="font-size: 11px; color: #cbd5e1; line-height: 1.4;">
+                            ${req.end_date ? `예정일: ~${escapeHtml(req.end_date)} | ` : ''}${req.reason ? `사유: ${escapeHtml(req.reason)}` : '사유 미기재'}
+                            <span style="color: #64748b; margin-left: 4px;">(${escapeHtml(req.created_at)})</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                        <button type="button" onclick="processStatusRequest(${req.id}, 'approve')" style="background: #10b981; border: none; color: white; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700;">승인</button>
+                        <button type="button" onclick="processStatusRequest(${req.id}, 'reject')" style="background: #ef4444; border: none; color: white; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700;">반려</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) { console.error(error); }
+    }
+
+    async function processStatusRequest(requestId, action) {
+        const actionText = action === 'approve' ? '승인' : '반려';
+        const confirmed = await confirm(`정말 이 상태/복귀 신청을 ${actionText}하시겠습니까?`);
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch('/api/admin/process-status-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestId, action, clubId: currentClubId })
+            });
+            const result = await response.json();
+            await alert(result.message);
+            if (result.success) loadStatusRequests();
+        } catch (error) { await alert('처리 중 오류가 발생했습니다.'); }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         loadPendingMembers();
+        loadStatusRequests();
         restoreCardStates();
         setInterval(loadPendingMembers, 3000);
+        setInterval(loadStatusRequests, 3000);
         // 💡 admin.html의 currentClubId를 ui.js의 통계 모달과 자동 연동
         if (typeof currentClubId !== 'undefined') {
             window.currentClubId = currentClubId;

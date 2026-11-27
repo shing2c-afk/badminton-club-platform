@@ -86,6 +86,35 @@ db.serialize(() => {
             console.log('📋 [regular_members 인덱스 목록]:', indexes);
         }
     });
+
+    // 🏷️ [회원 상태 관리] 기존 regular_members 테이블에 상태/메모/종료예정일/발생일자 컬럼 안전 추가
+    [
+        `ALTER TABLE regular_members ADD COLUMN member_status TEXT DEFAULT 'active'`,
+        `ALTER TABLE regular_members ADD COLUMN status_memo TEXT DEFAULT ''`,
+        `ALTER TABLE regular_members ADD COLUMN status_end_date TEXT DEFAULT ''`,
+        `ALTER TABLE regular_members ADD COLUMN status_updated_at TEXT DEFAULT ''`
+    ].forEach((alterSql) => {
+        db.run(alterSql, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+                console.error('⚠️ 회원 상태 컬럼 추가 중 알림:', err.message);
+            }
+        });
+    });
+
+    // 🏷️ [회원 상태/복귀 신청] 병가·휴면·탈퇴·복귀·재입회 승인 대기 테이블
+    db.run(`CREATE TABLE IF NOT EXISTS member_status_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        member_id TEXT,
+        club_id TEXT DEFAULT 'unjeong',
+        name TEXT,
+        phone TEXT,
+        current_status TEXT,
+        requested_status TEXT,
+        end_date TEXT DEFAULT '',
+        reason TEXT DEFAULT '',
+        request_status TEXT DEFAULT 'pending',
+        created_at TEXT
+    )`);
 });
 
 // =========================================================================
@@ -871,7 +900,30 @@ app.post('/api/admin/approve-member', async (req, res) => {
                     if (insertErr) {
                         console.error('정회원 테이블 등록 오류:', insertErr.message);
                         if (insertErr.message.includes('UNIQUE constraint failed')) {
-                            return res.status(400).json({ success: false, message: '이미 해당 클럽에 동일한 연락처로 등록된 정회원이 존재합니다.' });
+                            const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+                            const todayKst = `${nowKr.getFullYear()}-${String(nowKr.getMonth() + 1).padStart(2, '0')}-${String(nowKr.getDate()).padStart(2, '0')}`;
+                            const reactivateSql = `
+                                UPDATE regular_members
+                                SET member_status = 'active', status_memo = '', status_end_date = '', status_updated_at = ?,
+                                    name = ?, gender = ?, birthDate = ?, ageGroup = ?, grade = ?, address = ?
+                                WHERE (REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ?)
+                                  AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+                                  AND COALESCE(NULLIF(member_status, ''), 'active') != 'active'
+                            `;
+                            return db.run(
+                                reactivateSql,
+                                [todayKst, cleanName, user.gender, user.birthDate, ageGroup, user.grade, String(user.address || '').trim(), phoneDigits, formattedPhone, clubId, clubId],
+                                function(reErr) {
+                                    if (!reErr && this.changes > 0) {
+                                        return db.run(
+                                            `DELETE FROM pending_registrations WHERE id = ? OR ((REPLACE(REPLACE(phone, '-', ''), ' ', '') = ? OR phone = ?) AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))))`,
+                                            [user.id, phoneDigits, rawPhone, clubId, clubId],
+                                            () => res.json({ success: true, message: '기존 휴면/탈퇴 회원의 정회원 재입회가 승인되었습니다.' })
+                                        );
+                                    }
+                                    return res.status(400).json({ success: false, message: '이미 해당 클럽에 동일한 연락처로 등록된 활동 정회원이 존재합니다.' });
+                                }
+                            );
                         }
                         return res.status(500).json({ success: false, message: '정회원 등록 중 오류가 발생했습니다.' });
                     }
@@ -1508,7 +1560,11 @@ app.get('/api/members', (req, res) => {
     const clubId = String(req.query.clubId || req.query.club || 'unjeong').trim();
 
     const sql = `
-        SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address, club_id 
+        SELECT id, username, name, gender, birthDate, ageGroup, grade, phone, address, joinedAt, club_id,
+               COALESCE(NULLIF(member_status, ''), 'active') AS member_status,
+               COALESCE(status_memo, '') AS status_memo,
+               COALESCE(status_end_date, '') AS status_end_date,
+               COALESCE(status_updated_at, '') AS status_updated_at 
         FROM regular_members 
         WHERE club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = ''))
         ORDER BY name ASC
@@ -1615,6 +1671,220 @@ app.post('/api/login', (req, res) => {
             res.json({ success: false, message: '비밀번호가 일치하지 않습니다.' });
         }
     });
+});
+
+// 🏷️ [회원 상태 관리] 한국시간(KST) 날짜/일시 헬퍼
+function getMemberKstDate() {
+    const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    return `${nowKr.getFullYear()}-${String(nowKr.getMonth() + 1).padStart(2, '0')}-${String(nowKr.getDate()).padStart(2, '0')}`;
+}
+function getMemberKstDateTime() {
+    const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    return `${getMemberKstDate()} ${String(nowKr.getHours()).padStart(2, '0')}:${String(nowKr.getMinutes()).padStart(2, '0')}`;
+}
+
+// 🏷️ 1. [관리자 직접] 정회원 상태 변경 API (활동/병가/휴면/탈퇴 + 발생일자 기록)
+app.post('/api/member/status', (req, res) => {
+    const { id, member_status, status_memo, status_end_date, clubId: reqClubId, club } = req.body || {};
+    const allowedStatuses = ['active', 'sick', 'dormant', 'withdrawn'];
+
+    if (!id) {
+        return res.status(400).json({ success: false, message: '회원 고유 ID가 누락되었습니다.' });
+    }
+    if (!allowedStatuses.includes(member_status)) {
+        return res.status(400).json({ success: false, message: '올바르지 않은 회원 상태값입니다.' });
+    }
+
+    const targetClubId = String(reqClubId || club || '').trim();
+    const cleanMemo = member_status === 'active' ? '' : String(status_memo || '').trim().slice(0, 100);
+    const cleanEndDate = (member_status === 'sick' || member_status === 'dormant')
+        ? String(status_end_date || '').trim().slice(0, 20)
+        : '';
+    const todayKst = getMemberKstDate();
+
+    const query = targetClubId
+        ? `UPDATE regular_members
+           SET member_status = ?, status_memo = ?, status_end_date = ?, status_updated_at = ?
+           WHERE id = ? AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))`
+        : `UPDATE regular_members
+           SET member_status = ?, status_memo = ?, status_end_date = ?, status_updated_at = ?
+           WHERE id = ?`;
+
+    const params = targetClubId
+        ? [member_status, cleanMemo, cleanEndDate, todayKst, id, targetClubId, targetClubId]
+        : [member_status, cleanMemo, cleanEndDate, todayKst, id];
+
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('❌ 회원 상태 변경 실패:', err.message);
+            return res.status(500).json({ success: false, message: '회원 상태 변경 중 오류가 발생했습니다.' });
+        }
+        if (this.changes === 0) {
+            return res.status(404).json({ success: false, message: '해당 클럽에서 회원을 찾을 수 없습니다.' });
+        }
+        // 관리자가 직접 상태를 변경하면 해당 회원의 기존 대기 신청 건도 정리
+        db.run(
+            `UPDATE member_status_requests SET request_status = 'handled' WHERE member_id = ? AND request_status = 'pending'`,
+            [id],
+            () => {}
+        );
+        const labelMap = { active: '활동(정회원)', sick: '병가', dormant: '휴면', withdrawn: '탈퇴' };
+        res.json({ success: true, message: `회원 상태가 [${labelMap[member_status]}]으로 변경되었습니다. (${todayKst})` });
+    });
+});
+
+// 🏷️ 2. [회원 신청] 병가·휴면·탈퇴 및 복귀·재입회 신청 접수 API
+app.post('/api/member/status-request', (req, res) => {
+    const { name, phone, requestedStatus, endDate, reason, clubId: reqClubId, club } = req.body || {};
+    const targetClubId = String(reqClubId || club || 'unjeong').trim();
+    const cleanName = String(name || '').trim();
+    const phoneDigits = String(phone || '').replace(/[^0-9]/g, '');
+    const allowedStatuses = ['active', 'sick', 'dormant', 'withdrawn'];
+
+    if (!cleanName || phoneDigits.length < 10) {
+        return res.status(400).json({ success: false, message: '회원 이름과 전화번호를 정확히 확인해 주세요.' });
+    }
+    if (!allowedStatuses.includes(requestedStatus)) {
+        return res.status(400).json({ success: false, message: '올바르지 않은 신청 구분입니다.' });
+    }
+
+    const findMemberSql = `
+        SELECT id, name, phone, COALESCE(NULLIF(member_status, ''), 'active') AS member_status
+        FROM regular_members
+        WHERE TRIM(name) = ?
+          AND REPLACE(REPLACE(phone, '-', ''), ' ', '') = ?
+          AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+        LIMIT 1
+    `;
+
+    db.get(findMemberSql, [cleanName, phoneDigits, targetClubId, targetClubId], (err, member) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: '회원 조회 중 오류가 발생했습니다.' });
+        }
+        if (!member) {
+            return res.status(404).json({ success: false, message: '해당 클럽에 등록된 정회원 정보를 찾을 수 없습니다.' });
+        }
+
+        const currentStatus = member.member_status || 'active';
+        if (currentStatus === requestedStatus) {
+            return res.status(400).json({ success: false, message: '이미 동일한 상태입니다.' });
+        }
+        if (currentStatus !== 'active' && requestedStatus !== 'active') {
+            return res.status(400).json({ success: false, message: '현재 상태에서는 정회원 복귀(또는 재입회) 신청만 가능합니다.' });
+        }
+
+        // 동일 회원의 대기 중인 신청 중복 방지
+        db.get(
+            `SELECT id FROM member_status_requests WHERE member_id = ? AND club_id = ? AND request_status = 'pending' LIMIT 1`,
+            [member.id, targetClubId],
+            (dupErr, existing) => {
+                if (existing) {
+                    return res.status(400).json({ success: false, message: '이미 운영진 승인 대기 중인 신청 건이 있습니다.' });
+                }
+
+                const cleanEndDate = (requestedStatus === 'sick' || requestedStatus === 'dormant')
+                    ? String(endDate || '').trim().slice(0, 20)
+                    : '';
+                const cleanReason = String(reason || '').trim().slice(0, 100);
+                const createdAt = getMemberKstDateTime();
+
+                db.run(
+                    `INSERT INTO member_status_requests (member_id, club_id, name, phone, current_status, requested_status, end_date, reason, request_status, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+                    [member.id, targetClubId, member.name, member.phone, currentStatus, requestedStatus, cleanEndDate, cleanReason, createdAt],
+                    (insErr) => {
+                        if (insErr) {
+                            console.error('❌ 상태 변경 신청 저장 실패:', insErr.message);
+                            return res.status(500).json({ success: false, message: '신청 접수 중 오류가 발생했습니다.' });
+                        }
+                        const reqLabel = requestedStatus === 'active'
+                            ? (currentStatus === 'withdrawn' ? '정회원 재입회' : '정회원 복귀')
+                            : ({ sick: '병가', dormant: '휴면', withdrawn: '탈퇴' }[requestedStatus]);
+                        res.json({ success: true, message: `[${reqLabel}] 신청이 접수되었습니다. 운영진 승인 후 반영됩니다.` });
+                    }
+                );
+            }
+        );
+    });
+});
+
+// 🏷️ 3. [관리자 조회] 복귀 및 상태 변경 대기 신청 목록 조회 API
+app.get('/api/admin/status-requests', (req, res) => {
+    const clubId = String(req.query.club || req.query.clubId || 'unjeong').trim();
+    const sql = `
+        SELECT id, member_id, club_id, name, phone, current_status, requested_status, end_date, reason, created_at
+        FROM member_status_requests
+        WHERE request_status = 'pending'
+          AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))
+        ORDER BY id DESC
+    `;
+    db.all(sql, [clubId, clubId], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ success: false, message: '신청 목록을 불러오지 못했습니다.' });
+        }
+        res.json({ success: true, data: rows || [] });
+    });
+});
+
+// 🏷️ 4. [관리자 처리] 복귀 및 상태 변경 신청 승인/반려 API
+app.post('/api/admin/process-status-request', (req, res) => {
+    const { requestId, action, clubId: reqClubId, club } = req.body || {};
+    const targetClubId = String(reqClubId || club || 'unjeong').trim();
+
+    if (!requestId || !['approve', 'reject'].includes(action)) {
+        return res.status(400).json({ success: false, message: '요청 정보가 올바르지 않습니다.' });
+    }
+
+    db.get(
+        `SELECT * FROM member_status_requests
+         WHERE id = ? AND request_status = 'pending'
+           AND (club_id = ? OR (? = 'unjeong' AND (club_id IS NULL OR club_id = '')))`,
+        [requestId, targetClubId, targetClubId],
+        (err, reqRow) => {
+            if (err || !reqRow) {
+                return res.status(404).json({ success: false, message: '이미 처리되었거나 존재하지 않는 신청입니다.' });
+            }
+
+            if (action === 'reject') {
+                return db.run(
+                    `UPDATE member_status_requests SET request_status = 'rejected' WHERE id = ?`,
+                    [requestId],
+                    () => res.json({ success: true, message: `'${reqRow.name}' 님의 신청을 반려했습니다.` })
+                );
+            }
+
+            const todayKst = getMemberKstDate();
+            const isReturn = reqRow.requested_status === 'active';
+            const nextMemo = isReturn ? '' : (reqRow.reason || '');
+            const nextEndDate = (reqRow.requested_status === 'sick' || reqRow.requested_status === 'dormant')
+                ? (reqRow.end_date || '')
+                : '';
+
+            db.run(
+                `UPDATE regular_members
+                 SET member_status = ?, status_memo = ?, status_end_date = ?, status_updated_at = ?
+                 WHERE id = ?`,
+                [reqRow.requested_status, nextMemo, nextEndDate, todayKst, reqRow.member_id],
+                (updErr) => {
+                    if (updErr) {
+                        console.error('❌ 신청 승인 반영 실패:', updErr.message);
+                        return res.status(500).json({ success: false, message: '승인 처리 중 오류가 발생했습니다.' });
+                    }
+                    db.run(
+                        `UPDATE member_status_requests SET request_status = 'approved' WHERE id = ?`,
+                        [requestId],
+                        () => {
+                            const labelMap = { active: '활동(정회원 복귀)', sick: '병가', dormant: '휴면', withdrawn: '탈퇴' };
+                            res.json({
+                                success: true,
+                                message: `'${reqRow.name}' 님의 [${labelMap[reqRow.requested_status]}] 신청이 승인되었습니다. (${todayKst})`
+                            });
+                        }
+                    );
+                }
+            );
+        }
+    );
 });
 
 // 회원 정보 수정 API (파라미터 누락 버그 수정 및 전화번호 정규화/멀티테넌트 적용)
@@ -3367,6 +3637,41 @@ io.on('connection', (socket) => {
 
             if (!row) {
                 return callback({ success: false, message: '해당 클럽에 등록된 정회원 정보가 없습니다.' });
+            }
+
+            // 🏷️ [회원 상태 관리] 병가·휴면·탈퇴 회원은 정회원 로그인 차단 후 복귀/일일회원 팝업 안내
+            const memberStatus = (row.member_status && String(row.member_status).trim()) || 'active';
+            if (memberStatus !== 'active') {
+                return db.get(
+                    `SELECT id FROM member_status_requests
+                     WHERE member_id = ? AND club_id = ? AND requested_status = 'active' AND request_status = 'pending'
+                     LIMIT 1`,
+                    [row.id, currentClubId],
+                    (reqErr, pendingReq) => {
+                        const labelMap = { sick: '병가', dormant: '휴면', withdrawn: '탈퇴' };
+                        const label = labelMap[memberStatus] || memberStatus;
+                        const endInfo = row.status_end_date ? ` (예정일: ~${row.status_end_date})` : '';
+                        const msg = memberStatus === 'withdrawn'
+                            ? '탈퇴 처리된 회원입니다. 간편 재입회 신청 또는 일일회원으로 입장해 주세요.'
+                            : `현재 [${label}] 상태인 회원입니다.${endInfo} 복귀 신청 또는 일일회원으로 입장해 주세요.`;
+                        return callback({
+                            success: false,
+                            statusBlocked: true,
+                            memberStatus,
+                            hasPendingReturn: Boolean(pendingReq),
+                            memberInfo: {
+                                id: row.id,
+                                name: row.name,
+                                phone: row.phone,
+                                clubId: currentClubId,
+                                statusEndDate: row.status_end_date || '',
+                                statusUpdatedAt: row.status_updated_at || '',
+                                statusMemo: row.status_memo || ''
+                            },
+                            message: msg
+                        });
+                    }
+                );
             }
 
             // 🏢 [멀티테넌트 수정] 로그인 성공 시 현재 소켓의 구장 소속을 실제 로그인 구장으로 확정

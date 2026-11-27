@@ -2,31 +2,132 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>회원 통합 관리 - 배드민턴 클럽</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; background: #1e1e1e; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        h2 { border-bottom: 2px solid #444; padding-bottom: 10px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
-        .back-btn { background: #555; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; text-decoration: none; }
+        body { font-family: 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; }
+        .container { max-width: 1140px; margin: 0 auto; background: #1e1e1e; padding: 26px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h2 { border-bottom: 2px solid #444; padding-bottom: 12px; margin-top: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .back-btn { background: #555; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; text-decoration: none; white-space: nowrap; }
         .back-btn:hover { background: #777; }
         
         .section-box { background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
         .section-box h3 { margin-top: 0; font-size: 16px; color: #ddd; }
         
-        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn { padding: 6px 11px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12.5px; white-space: nowrap; }
         .btn-blue { background: #0275d8; color: #fff; }
-        .btn-green { background: #5cb85c; color: #fff; }
+        .btn-green { background: #2e9e5b; color: #fff; }
+        .btn-amber { background: #d97706; color: #fff; }
+        .btn-gray { background: #4b5563; color: #fff; }
         .btn-red { background: #d9534f; color: #fff; }
         .btn:hover { opacity: 0.9; }
 
-        .search-box { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .search-box input { padding: 8px; width: 250px; background: #121212; color: #fff; border: 1px solid #444; border-radius: 4px; }
+        /* 상태별 요약 카운트 탭 */
+        .status-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #3c3c3c;
+        }
+        .status-tab {
+            background: #1b1b1b;
+            color: #bbb;
+            border: 1px solid #444;
+            padding: 7px 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.15s;
+        }
+        .status-tab:hover { border-color: #777; color: #fff; }
+        .status-tab.active { background: #0275d8; border-color: #0275d8; color: #fff; }
+        .status-tab.tab-active.active { background: #2e9e5b; border-color: #2e9e5b; }
+        .status-tab.tab-sick.active { background: #d97706; border-color: #d97706; }
+        .status-tab.tab-dormant.active { background: #6366f1; border-color: #6366f1; }
+        .status-tab.tab-withdrawn.active { background: #b91c1c; border-color: #b91c1c; }
 
-        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
-        th, td { padding: 12px; border-bottom: 1px solid #333; }
-        th { background: #333; color: #eee; }
+        /* 상태 뱃지 & 이벤트 일자 */
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11.5px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .badge-active { background: rgba(46, 158, 91, 0.2); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4); }
+        .badge-sick { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.45); }
+        .badge-dormant { background: rgba(129, 140, 248, 0.2); color: #a5b4fc; border: 1px solid rgba(165, 180, 252, 0.45); }
+        .badge-withdrawn { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.45); }
+        .status-detail { font-size: 11.5px; color: #aaa; margin-top: 3px; line-height: 1.35; }
+        .status-expired { color: #fb923c; font-weight: bold; }
+        .event-date-cell { font-size: 12.5px; color: #cbd5e1; white-space: nowrap; }
+        .event-date-sub { font-size: 11px; color: #94a3b8; display: block; margin-top: 2px; }
+
+        .search-box { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+        .search-box input { padding: 8px 10px; width: 250px; max-width: 100%; background: #121212; color: #fff; border: 1px solid #444; border-radius: 4px; }
+
+        .table-wrap { max-height: 540px; overflow: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13.5px; min-width: 860px; }
+        th, td { padding: 11px 10px; border-bottom: 1px solid #333; vertical-align: middle; }
+        th { background: #333; color: #eee; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
         tr:hover { background: #252525; }
         .text-center { text-align: center; }
+
+        /* 상태 변경 모달 */
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        .status-modal-box {
+            background: #1e1e1e;
+            border: 1.5px solid #444;
+            border-radius: 12px;
+            padding: 22px 20px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        .status-modal-box h3 { margin: 0 0 6px 0; font-size: 17px; color: #fff; }
+        .status-modal-sub { font-size: 13px; color: #9ca3af; margin-bottom: 16px; }
+        .form-field { margin-bottom: 13px; }
+        .form-field label { display: block; font-size: 13px; color: #ccc; margin-bottom: 5px; font-weight: bold; }
+        .form-field select, .form-field input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 9px 10px;
+            background: #121212;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .status-guide {
+            background: #252525;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #cbd5e1;
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 640px) {
+            body { padding: 10px; }
+            .container { padding: 14px; }
+            .section-box { padding: 14px; }
+            .search-box input { width: 100%; }
+        }
     </style>
 
     <!-- 🌐 URL 노출 없는 커스텀 모달 오버라이딩 스크립트 -->
@@ -39,10 +140,9 @@
                 const okBtn = document.getElementById('custom-modal-ok');
 
                 msgEl.innerText = message;
-                cancelBtn.style.display = 'none'; // alert은 확인 버튼만
+                cancelBtn.style.display = 'none';
                 modal.style.display = 'flex';
 
-                // 기존 이벤트 제거 후 새로 등록
                 const newOkBtn = okBtn.cloneNode(true);
                 okBtn.parentNode.replaceChild(newOkBtn, okBtn);
 
@@ -61,7 +161,7 @@
                 const okBtn = document.getElementById('custom-modal-ok');
 
                 msgEl.innerText = message;
-                cancelBtn.style.display = 'inline-block'; // confirm은 취소 버튼 표시
+                cancelBtn.style.display = 'inline-block';
                 modal.style.display = 'flex';
 
                 const newOkBtn = okBtn.cloneNode(true);
@@ -80,7 +180,6 @@
             });
         };
 
-        // 기존 시스템 호환을 위한 alert/confirm 래핑
         window.alert = function(msg) { window.showAlert(msg); };
         window.confirm = function(msg) { return window.showConfirm(msg); };
     </script>
@@ -93,14 +192,11 @@
         <a href="/admin.html" class="back-btn">⬅ 관리자 메인으로</a>
     </h2>
 
-   <!-- 1. 엑셀 업로드 / 다운로드 영역 -->
+    <!-- 1. 엑셀 업로드 / 다운로드 영역 -->
     <div class="section-box">
         <h3>📊 회원 명부 엑셀(CSV) 관리</h3>
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-            <!-- 왼쪽: 다운로드 그룹 -->
             <button id="downloadCsvBtn" class="btn btn-blue">📥 전체 회원 명부 다운로드</button>
-            
-            <!-- 오른쪽: 업로드 버튼 + 파일 선택 그룹 -->
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                 <button id="uploadExcelBtn" class="btn btn-green">📤 전체 회원 명부 업로드</button>
                 <input type="file" id="excelFile" accept=".xlsx, .xls, .csv" style="color: #ccc; font-size: 13px;">
@@ -108,18 +204,28 @@
         </div>
     </div>
 
-    <!-- 2. 회원 목록, 검색 및 개별 관리 영역 -->
+    <!-- 2. 회원 상태별 현황 탭, 검색 및 개별 관리 영역 -->
     <div class="section-box">
+        <div class="status-tabs" id="statusTabs">
+            <button type="button" class="status-tab tab-active active" data-status="active" onclick="setStatusFilter('active')">🟢 활동 <span id="cnt-active">0</span>명</button>
+            <button type="button" class="status-tab tab-sick" data-status="sick" onclick="setStatusFilter('sick')">🩹 병가 <span id="cnt-sick">0</span>명</button>
+            <button type="button" class="status-tab tab-dormant" data-status="dormant" onclick="setStatusFilter('dormant')">⏸️ 휴면 <span id="cnt-dormant">0</span>명</button>
+            <button type="button" class="status-tab tab-withdrawn" data-status="withdrawn" onclick="setStatusFilter('withdrawn')">🚪 탈퇴 <span id="cnt-withdrawn">0</span>명</button>
+            <button type="button" class="status-tab" data-status="all" onclick="setStatusFilter('all')">📋 전체 <span id="cnt-all">0</span>명</button>
+        </div>
+
         <div class="search-box">
-            <span>등록된 정회원 목록 (<span id="memberCount">0</span>명)</span>
+            <span>표시 중인 회원 (<strong id="memberCount">0</strong>명)</span>
             <input type="text" id="memberSearch" placeholder="이름 또는 전화번호 검색...">
         </div>
         
-        <div style="max-height: 500px; overflow-y: auto;">
+        <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
                         <th>이름</th>
+                        <th>현재 상태 / 사유</th>
+                        <th>발생 일자</th>
                         <th>연락처</th>
                         <th>성별</th>
                         <th>연령대</th>
@@ -129,14 +235,53 @@
                     </tr>
                 </thead>
                 <tbody id="adminMemberListBody">
-                    <tr><td colspan="7" class="text-center" style="color: #888;">데이터를 불러오는 중...</td></tr>
+                    <tr><td colspan="9" class="text-center" style="color: #888;">데이터를 불러오는 중...</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 
-<!-- 🌐 커스텀 모달 UI 구조 (화면 최하단 고정) -->
+<!-- 🏷️ 관리자 직접 상태 변경 모달 -->
+<div id="status-modal" class="modal-backdrop" onclick="if(event.target === this) closeStatusModal()">
+    <div class="status-modal-box">
+        <h3>🏷️ 회원 상태 변경</h3>
+        <div class="status-modal-sub" id="status-modal-target">-</div>
+
+        <input type="hidden" id="status-member-id">
+        <div class="form-field">
+            <label for="status-select">변경할 상태</label>
+            <select id="status-select" onchange="toggleStatusFields()">
+                <option value="active">🟢 활동 (정회원 정상 이용)</option>
+                <option value="sick">🩹 병가 (정회원 제한 · 일일회원 방문 가능)</option>
+                <option value="dormant">⏸️ 휴면 (정회원 제한 · 일일회원 방문 가능)</option>
+                <option value="withdrawn">🚪 탈퇴 (전적 보존 · 일일회원 방문 가능)</option>
+            </select>
+        </div>
+
+        <div class="form-field" id="status-date-field" style="display: none;">
+            <label for="status-end-date">종료 예정일 (선택 · 참고용)</label>
+            <input type="date" id="status-end-date">
+        </div>
+
+        <div class="form-field" id="status-memo-field" style="display: none;">
+            <label for="status-memo">사유 / 메모 (선택)</label>
+            <input type="text" id="status-memo" maxlength="100" placeholder="예: 무릎 부상, 장기 출장, 개인 사정">
+        </div>
+
+        <div class="status-guide">
+            • 상태 변경 시 오늘 날짜가 <strong>이벤트 발생 일자</strong>로 자동 기록됩니다.<br>
+            • <strong>병가·휴면·탈퇴</strong> 회원은 정회원 로그인이 제한되며, 구장 방문 시 <strong>일일회원</strong>으로 정상 입장할 수 있습니다.
+        </div>
+
+        <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn btn-gray" style="flex: 1; padding: 11px;" onclick="closeStatusModal()">취소</button>
+            <button type="button" class="btn btn-blue" style="flex: 1.4; padding: 11px;" onclick="submitStatusChange()">상태 저장</button>
+        </div>
+    </div>
+</div>
+
+<!-- 🌐 커스텀 모달 UI 구조 -->
 <div id="custom-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 999999; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box;">
     <div style="background: #1e1e1e; border: 1.5px solid #444; border-radius: 12px; padding: 24px 20px; width: 100%; max-width: 400px; box-sizing: border-box; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 20px;">
         <p id="custom-modal-message" style="color: #fff; font-size: 16px; font-weight: 500; line-height: 1.5; word-break: keep-all; margin: 0;"></p>
@@ -148,20 +293,32 @@
 </div>
 
 <script>
-    // 💡 1. URL 쿼리스트링에서 현재 club 식별자 추출 (기본값: unjeong)
     const urlParams = new URLSearchParams(window.location.search);
     const currentClubId = urlParams.get('club') || urlParams.get('clubId') || 'unjeong';
 
-    let allMembers = []; // 전체 회원 데이터 캐싱
+    let allMembers = [];
+    let currentStatusFilter = 'active';
+
+    function escapeHtml(str) {
+        return String(str || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function getMemberStatus(m) {
+        const s = (m && m.member_status) ? String(m.member_status).trim() : 'active';
+        return ['active', 'sick', 'dormant', 'withdrawn'].includes(s) ? s : 'active';
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
-        // 💡 2. 관리자 메인으로 돌아가는 버튼 링크에 club 파라미터 유지
         const backBtn = document.querySelector('.back-btn');
         if (backBtn) {
             backBtn.href = `/admin.html?club=${encodeURIComponent(currentClubId)}`;
         }
 
-        // 💡 3. 상단 헤더에 현재 관리 중인 클럽 동적 표시 (멀티테넌트 완벽 대응)
         const headerTitle = document.querySelector('h2 span');
         if (headerTitle) {
             const defaultNames = { unjeong: '운정배드민턴클럽', daewon: '대원배드민턴클럽' };
@@ -169,7 +326,6 @@
             if (urlClubName) {
                 localStorage.setItem(`admin_club_name_${currentClubId}`, urlClubName);
             }
-            // 🏢 [멀티테넌트 수정] 구장 구분 없는 공용 selectedClubName 제거 -> 타 구장명 오표시 및 /api/clubs 조회 누락 차단
             const savedClubName = urlClubName || 
                                   localStorage.getItem(`admin_club_name_${currentClubId}`) || 
                                   defaultNames[currentClubId] || 
@@ -178,7 +334,6 @@
             headerTitle.innerText = `👥 [${savedClubName}] 회원 통합 관리 모듈`;
             document.title = `[${savedClubName}] 회원 통합 관리 모듈`;
 
-            // 💡 만약 캐시에 한글 클럽명이 없어 영문 ID로 표시된 경우 서버에서 클럽 목록을 조회해 한글명으로 자동 갱신
             if (savedClubName === currentClubId) {
                 fetch('/api/clubs')
                     .then(res => res.json())
@@ -198,22 +353,14 @@
 
         loadMemberList();
 
-        // 실시간 검색 기능 (이름 또는 전화번호 매칭)
-        document.getElementById('memberSearch').addEventListener('input', (e) => {
-            const keyword = e.target.value.toLowerCase();
-            const filtered = allMembers.filter(m => 
-                (m.name && m.name.toLowerCase().includes(keyword)) || 
-                (m.phone && m.phone.includes(keyword))
-            );
-            renderTable(filtered);
+        document.getElementById('memberSearch').addEventListener('input', () => {
+            applyFiltersAndRender();
         });
 
-        // 💡 4. 엑셀 다운로드 시 해당 클럽 데이터만 요청
         document.getElementById('downloadCsvBtn').addEventListener('click', () => {
             window.location.href = `/api/admin/download-excel?club=${encodeURIComponent(currentClubId)}`;
         });
 
-        // 💡 5. 일괄 업로드 시 해당 클럽 식별자(clubId) 동봉 전송
         document.getElementById('uploadExcelBtn').addEventListener('click', async () => {
             const fileInput = document.getElementById('excelFile');
             if (!fileInput.files[0]) {
@@ -223,7 +370,7 @@
 
             const formData = new FormData();
             formData.append('excelFile', fileInput.files[0]);
-            formData.append('clubId', currentClubId); // 💡 구장 ID 추가
+            formData.append('clubId', currentClubId);
 
             try {
                 const res = await fetch('/api/admin/upload-excel', {
@@ -243,52 +390,154 @@
         });
     });
 
-    // 💡 6. 해당 클럽의 정회원 목록만 불러오기
     async function loadMemberList() {
         try {
             const res = await fetch(`/api/members?club=${encodeURIComponent(currentClubId)}`);
             allMembers = await res.json();
-            renderTable(allMembers);
+            updateStatusCounts();
+            applyFiltersAndRender();
         } catch (error) {
             console.error('회원 목록 조회 실패:', error);
         }
     }
 
-    // 테이블 렌더링 함수
+    function updateStatusCounts() {
+        const counts = { active: 0, sick: 0, dormant: 0, withdrawn: 0, all: allMembers.length };
+        allMembers.forEach(m => {
+            counts[getMemberStatus(m)]++;
+        });
+        document.getElementById('cnt-active').innerText = counts.active;
+        document.getElementById('cnt-sick').innerText = counts.sick;
+        document.getElementById('cnt-dormant').innerText = counts.dormant;
+        document.getElementById('cnt-withdrawn').innerText = counts.withdrawn;
+        document.getElementById('cnt-all').innerText = counts.all;
+    }
+
+    function setStatusFilter(status) {
+        currentStatusFilter = status;
+        document.querySelectorAll('.status-tab').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.status === status);
+        });
+        applyFiltersAndRender();
+    }
+
+    function applyFiltersAndRender() {
+        const keyword = (document.getElementById('memberSearch')?.value || '').trim().toLowerCase();
+        const filtered = allMembers.filter(m => {
+            const st = getMemberStatus(m);
+            if (currentStatusFilter !== 'all' && st !== currentStatusFilter) return false;
+            if (!keyword) return true;
+            return (m.name && m.name.toLowerCase().includes(keyword)) ||
+                   (m.phone && m.phone.includes(keyword));
+        });
+        renderTable(filtered);
+    }
+
+    function renderStatusCell(m) {
+        const st = getMemberStatus(m);
+        const badgeMap = {
+            active: '<span class="status-badge badge-active">활동</span>',
+            sick: '<span class="status-badge badge-sick">병가</span>',
+            dormant: '<span class="status-badge badge-dormant">휴면</span>',
+            withdrawn: '<span class="status-badge badge-withdrawn">탈퇴</span>'
+        };
+
+        let detailHtml = '';
+        if (st !== 'active') {
+            const parts = [];
+            if (m.status_end_date) {
+                const today = new Date().toISOString().split('T')[0];
+                const isExpired = m.status_end_date <= today;
+                parts.push(isExpired
+                    ? `<span class="status-expired">~${escapeHtml(m.status_end_date)} (예정일 경과)</span>`
+                    : `~${escapeHtml(m.status_end_date)}`);
+            }
+            if (m.status_memo) {
+                parts.push(escapeHtml(m.status_memo));
+            }
+            if (parts.length > 0) {
+                detailHtml = `<div class="status-detail">${parts.join(' · ')}</div>`;
+            }
+        }
+        return badgeMap[st] + detailHtml;
+    }
+
+    function renderEventDateCell(m) {
+        const st = getMemberStatus(m);
+        const updatedAt = m.status_updated_at ? String(m.status_updated_at).trim() : '';
+        const joinedAt = m.joinedAt ? String(m.joinedAt).trim().slice(0, 10) : '';
+
+        if (st === 'active') {
+            if (updatedAt) {
+                return `<span>${escapeHtml(updatedAt)}</span><span class="event-date-sub">복귀/재입회</span>`;
+            }
+            return joinedAt
+                ? `<span>${escapeHtml(joinedAt)}</span><span class="event-date-sub">입회일</span>`
+                : '<span style="color:#666;">-</span>';
+        }
+        const labelMap = { sick: '병가 전환', dormant: '휴면 전환', withdrawn: '탈퇴 처리' };
+        return updatedAt
+            ? `<span>${escapeHtml(updatedAt)}</span><span class="event-date-sub">${labelMap[st]}</span>`
+            : `<span style="color:#666;">-</span><span class="event-date-sub">${labelMap[st]}</span>`;
+    }
+
     function renderTable(members) {
         const tbody = document.getElementById('adminMemberListBody');
         document.getElementById('memberCount').innerText = members.length;
         tbody.innerHTML = '';
 
         if (members.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center" style="color: #888;">검색된 회원이 없습니다.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center" style="color: #888; padding: 28px;">해당 조건의 회원이 없습니다.</td></tr>`;
             return;
         }
 
         members.forEach(m => {
+            const st = getMemberStatus(m);
+            const safeId = escapeHtml(m.id);
             const tr = document.createElement('tr');
             tr.id = `row-${m.id}`;
+
+            let actionButtons = '';
+            if (st === 'active') {
+                actionButtons = `
+                    <button class="btn btn-blue" id="btn-edit-${safeId}" style="margin-right: 4px;" onclick="enableEdit('${safeId}')">수정</button>
+                    <button class="btn btn-amber" onclick="openStatusModal('${safeId}')">상태변경</button>
+                `;
+            } else if (st === 'sick' || st === 'dormant') {
+                actionButtons = `
+                    <button class="btn btn-green" style="margin-right: 4px;" onclick="quickRestoreMember('${safeId}')">복귀</button>
+                    <button class="btn btn-amber" style="margin-right: 4px;" onclick="openStatusModal('${safeId}')">상태</button>
+                    <button class="btn btn-blue" id="btn-edit-${safeId}" onclick="enableEdit('${safeId}')">수정</button>
+                `;
+            } else {
+                actionButtons = `
+                    <button class="btn btn-green" style="margin-right: 4px;" onclick="quickRestoreMember('${safeId}')">재입회</button>
+                    <button class="btn btn-red" onclick="permanentDeleteMember('${safeId}')">영구삭제</button>
+                `;
+            }
+
             tr.innerHTML = `
-                <td>${m.name}</td>
-                <td id="td-phone-${m.id}">${m.phone || '-'}</td>
-                <td>${m.gender || '-'}</td>
-                <td>${m.ageGroup || '-'}</td>
-                <td id="td-grade-${m.id}">${m.grade || '-'}</td>
-                <td id="td-address-${m.id}">${m.address || '-'}</td>
-                <td class="text-center" style="white-space: nowrap;">
-                    <button class="btn btn-blue" id="btn-edit-${m.id}" style="margin-right: 4px;" onclick="enableEdit('${m.id}', '${m.phone || ''}', '${m.grade || ''}', '${m.address || ''}')">수정</button>
-                    <button class="btn btn-red" onclick="withdrawMember('${m.phone}', '${m.name}')">탈퇴</button>
-                </td>
+                <td><strong>${escapeHtml(m.name)}</strong></td>
+                <td>${renderStatusCell(m)}</td>
+                <td class="event-date-cell">${renderEventDateCell(m)}</td>
+                <td id="td-phone-${safeId}">${escapeHtml(m.phone || '-')}</td>
+                <td>${escapeHtml(m.gender || '-')}</td>
+                <td>${escapeHtml(m.ageGroup || '-')}</td>
+                <td id="td-grade-${safeId}">${escapeHtml(m.grade || '-')}</td>
+                <td id="td-address-${safeId}">${escapeHtml(m.address || '-')}</td>
+                <td class="text-center" style="white-space: nowrap;">${actionButtons}</td>
             `;
             tbody.appendChild(tr);
         });
     }
 
-    // [수정] 버튼 클릭 시, 해당 행만 입력 폼으로 전환
-    function enableEdit(id, phone, grade, address) {
-        document.getElementById(`td-phone-${id}`).innerHTML = `<input type="text" id="edit-phone-${id}" value="${phone}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:110px;">`;
-        document.getElementById(`td-grade-${id}`).innerHTML = `<input type="text" id="edit-grade-${id}" value="${grade}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:50px;">`;
-        document.getElementById(`td-address-${id}`).innerHTML = `<input type="text" id="edit-address-${id}" value="${address}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:150px;">`;
+    function enableEdit(id) {
+        const m = allMembers.find(item => String(item.id) === String(id));
+        if (!m) return;
+
+        document.getElementById(`td-phone-${id}`).innerHTML = `<input type="text" id="edit-phone-${id}" value="${escapeHtml(m.phone || '')}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:115px;">`;
+        document.getElementById(`td-grade-${id}`).innerHTML = `<input type="text" id="edit-grade-${id}" value="${escapeHtml(m.grade || '')}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:55px;">`;
+        document.getElementById(`td-address-${id}`).innerHTML = `<input type="text" id="edit-address-${id}" value="${escapeHtml(m.address || '')}" style="background:#121212; color:#fff; border:1px solid #0275d8; padding:4px; width:145px;">`;
 
         const btnContainer = document.getElementById(`btn-edit-${id}`);
         btnContainer.innerText = '저장';
@@ -296,7 +545,6 @@
         btnContainer.setAttribute('onclick', `saveMember('${id}')`);
     }
 
-    // 수정된 내용 서버로 저장
     async function saveMember(id) {
         const phone = document.getElementById(`edit-phone-${id}`).value;
         const grade = document.getElementById(`edit-grade-${id}`).value;
@@ -322,27 +570,105 @@
         }
     }
 
-    // 💡 7. 회원 탈퇴 처리 시 현재 clubId 함께 전송
-    async function withdrawMember(phone, name) {
-        const confirmed = await confirm(`정말로 '${name}' 회원을 탈퇴 처리하시겠습니까?`);
+    function openStatusModal(id) {
+        const m = allMembers.find(item => String(item.id) === String(id));
+        if (!m) return;
+
+        document.getElementById('status-member-id').value = m.id;
+        document.getElementById('status-modal-target').textContent = `${m.name} (${m.phone || '연락처 없음'})`;
+        document.getElementById('status-select').value = getMemberStatus(m);
+        document.getElementById('status-end-date').value = m.status_end_date || '';
+        document.getElementById('status-memo').value = m.status_memo || '';
+        toggleStatusFields();
+
+        document.getElementById('status-modal').style.display = 'flex';
+    }
+
+    function closeStatusModal() {
+        document.getElementById('status-modal').style.display = 'none';
+    }
+
+    function toggleStatusFields() {
+        const st = document.getElementById('status-select').value;
+        document.getElementById('status-date-field').style.display = (st === 'sick' || st === 'dormant') ? 'block' : 'none';
+        document.getElementById('status-memo-field').style.display = (st !== 'active') ? 'block' : 'none';
+    }
+
+    async function submitStatusChange() {
+        const id = document.getElementById('status-member-id').value;
+        const member_status = document.getElementById('status-select').value;
+        const status_end_date = document.getElementById('status-end-date').value;
+        const status_memo = document.getElementById('status-memo').value.trim();
+
+        try {
+            const res = await fetch('/api/member/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, member_status, status_end_date, status_memo, clubId: currentClubId })
+            });
+            const result = await res.json();
+            if (result.success) {
+                closeStatusModal();
+                alert(result.message);
+                loadMemberList();
+            } else {
+                alert(result.message || '상태 변경에 실패했습니다.');
+            }
+        } catch (err) {
+            console.error('상태 변경 오류:', err);
+            alert('서버 통신 중 오류가 발생했습니다.');
+        }
+    }
+
+    async function quickRestoreMember(id) {
+        const m = allMembers.find(item => String(item.id) === String(id));
+        if (!m) return;
+        const st = getMemberStatus(m);
+        const actionLabel = st === 'withdrawn' ? '재입회(정회원 복구)' : '정회원 활동 복귀';
+
+        const confirmed = await confirm(`'${m.name}' 회원을 ${actionLabel} 처리하시겠습니까?`);
+        if (!confirmed) return;
+
+        try {
+            const res = await fetch('/api/member/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: m.id, member_status: 'active', status_end_date: '', status_memo: '', clubId: currentClubId })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message);
+                loadMemberList();
+            } else {
+                alert(result.message || '복귀 처리에 실패했습니다.');
+            }
+        } catch (err) {
+            console.error('복귀 처리 오류:', err);
+            alert('서버 통신 중 오류가 발생했습니다.');
+        }
+    }
+
+    async function permanentDeleteMember(id) {
+        const m = allMembers.find(item => String(item.id) === String(id));
+        if (!m) return;
+        const confirmed = await confirm(`'${m.name}' 회원의 DB 기록을 영구 삭제하시겠습니까?\n(단순 탈퇴는 이미 탈퇴 탭에 보관 중이며, 영구 삭제 시 복구할 수 없습니다.)`);
         if (!confirmed) return;
 
         try {
             const res = await fetch('/api/member/withdraw', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone, name, clubId: currentClubId }) // 💡 clubId 동봉
+                body: JSON.stringify({ phone: m.phone, name: m.name, clubId: currentClubId })
             });
             const result = await res.json();
-
             if (result.success) {
                 alert(result.message);
                 loadMemberList();
             } else {
-                alert(result.message || '탈퇴 처리에 실패했습니다.');
+                alert(result.message || '영구 삭제에 실패했습니다.');
             }
         } catch (err) {
-            console.error('탈퇴 요청 오류:', err);
+            console.error('영구 삭제 오류:', err);
             alert('서버 통신 중 오류가 발생했습니다.');
         }
     }

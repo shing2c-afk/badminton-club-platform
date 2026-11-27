@@ -408,6 +408,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           if (typeof applyUserProfile === 'function') applyUserProfile();
+          if (typeof window.updateStatusRequestLink === 'function') window.updateStatusRequestLink();
           
           if (loginOverlay) loginOverlay.classList.add("hidden");
           if (mainApp) {
@@ -419,7 +420,9 @@ document.addEventListener("DOMContentLoaded", () => {
           if (authMsg) {
             authMsg.textContent = errorMsg;
           }
-          if (typeof showToast === 'function') {
+          if (response.statusBlocked && typeof window.openReturnRequestModal === 'function') {
+            window.openReturnRequestModal(response);
+          } else if (typeof showToast === 'function') {
             showToast(errorMsg, false);
           }
         }
@@ -473,6 +476,8 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           if (typeof applyUserProfile === 'function') applyUserProfile();
+
+          if (typeof window.updateStatusRequestLink === 'function') window.updateStatusRequestLink();
           
           if (loginOverlay) loginOverlay.classList.add("hidden");
           if (mainApp) {
@@ -486,6 +491,185 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+// =================================================================
+  // 🏷️ [회원 상태 관리] 병가·휴면·탈퇴 신청 및 복귀/재입회 팝업 제어
+  // =================================================================
+  let blockedMemberContext = null;
+
+  window.updateStatusRequestLink = function() {
+    const wrap = document.getElementById('member-status-request-wrap');
+    if (!wrap) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(getClubStorageKey("currentUser")) || 'null');
+      const isRegularMember = Boolean(saved && !saved.isGuest && saved.name && saved.phone);
+      wrap.style.display = isRegularMember ? 'inline-flex' : 'none';
+    } catch (e) {
+      wrap.style.display = 'none';
+    }
+  };
+  window.updateStatusRequestLink();
+
+  window.toggleUserReqDateField = function() {
+    const typeEl = document.getElementById('req-status-type');
+    const wrap = document.getElementById('req-end-date-wrap');
+    if (!typeEl || !wrap) return;
+    wrap.style.display = (typeEl.value === 'sick' || typeEl.value === 'dormant') ? 'block' : 'none';
+  };
+
+  window.openStatusRequestModal = function() {
+    const modal = document.getElementById('status-request-modal');
+    if (!modal) return;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(getClubStorageKey("currentUser")) || 'null'); } catch (e) {}
+    if (!saved || saved.isGuest) {
+      if (typeof showToast === 'function') showToast('정회원 로그인 상태에서만 신청할 수 있습니다.', false);
+      return;
+    }
+    const labelEl = document.getElementById('status-req-member-label');
+    if (labelEl) labelEl.textContent = `신청 회원: ${saved.name} (${saved.phone})`;
+    const typeEl = document.getElementById('req-status-type');
+    if (typeEl) typeEl.value = 'sick';
+    const dateEl = document.getElementById('req-end-date');
+    if (dateEl) dateEl.value = '';
+    const reasonEl = document.getElementById('req-status-reason');
+    if (reasonEl) reasonEl.value = '';
+    window.toggleUserReqDateField();
+    modal.style.display = 'flex';
+  };
+
+  window.closeStatusRequestModal = function() {
+    const modal = document.getElementById('status-request-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.submitMemberStatusRequest = async function() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(getClubStorageKey("currentUser")) || 'null'); } catch (e) {}
+    if (!saved || saved.isGuest) return;
+
+    const requestedStatus = document.getElementById('req-status-type')?.value || 'sick';
+    const endDate = document.getElementById('req-end-date')?.value || '';
+    const reason = (document.getElementById('req-status-reason')?.value || '').trim();
+    const clubId = saved.clubId || new URLSearchParams(window.location.search).get('club') || window.currentClubId || 'unjeong';
+
+    try {
+      const res = await fetch('/api/member/status-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: saved.name, phone: saved.phone, clubId, requestedStatus, endDate, reason })
+      });
+      const result = await res.json();
+      if (result.success) {
+        window.closeStatusRequestModal();
+        if (typeof showToast === 'function') showToast(result.message, true);
+        else alert(result.message);
+      } else {
+        if (typeof showToast === 'function') showToast(result.message || '신청에 실패했습니다.', false);
+        else alert(result.message || '신청에 실패했습니다.');
+      }
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('서버 통신 중 오류가 발생했습니다.', false);
+    }
+  };
+
+  window.openReturnRequestModal = function(response) {
+    const modal = document.getElementById('return-request-modal');
+    if (!modal || !response || !response.memberInfo) return;
+    blockedMemberContext = response;
+
+    const info = response.memberInfo;
+    const st = response.memberStatus;
+    const titleMap = { sick: '🩹 병가 회원 안내', dormant: '⏸️ 휴면 회원 안내', withdrawn: '🚪 탈퇴 회원 안내' };
+    const titleEl = document.getElementById('return-modal-title');
+    const descEl = document.getElementById('return-modal-desc');
+    const btnEl = document.getElementById('btn-submit-return-req');
+    const reasonWrap = document.getElementById('return-reason-wrap');
+    const reasonInput = document.getElementById('return-request-reason');
+
+    if (titleEl) titleEl.textContent = titleMap[st] || '회원 상태 안내';
+    const dateLines = [];
+    if (info.statusUpdatedAt) dateLines.push(`처리일: ${info.statusUpdatedAt}`);
+    if (info.statusEndDate) dateLines.push(`예정일: ~${info.statusEndDate}`);
+    if (info.statusMemo) dateLines.push(`사유: ${info.statusMemo}`);
+
+    if (descEl) {
+      descEl.innerHTML = `<strong>${info.name}</strong> 님은 현재 정회원 로그인이 제한된 상태입니다.`
+        + (dateLines.length ? `<div style="margin-top:6px; padding:8px 10px; background:#0f172a; border-radius:6px; font-size:12px; color:#cbd5e1;">${dateLines.join(' · ')}</div>` : '')
+        + `<div style="margin-top:8px; font-size:12.5px; color:#94a3b8;">정회원 복귀(재입회)를 신청하시거나, 오늘만 방문 운동 시 일일회원으로 입장해 주세요.</div>`;
+    }
+
+    if (reasonInput) reasonInput.value = '';
+    if (btnEl) {
+      if (response.hasPendingReturn) {
+        btnEl.disabled = true;
+        btnEl.style.opacity = '0.6';
+        btnEl.textContent = '⏳ 복귀/재입회 승인 대기 중';
+        if (reasonWrap) reasonWrap.style.display = 'none';
+      } else {
+        btnEl.disabled = false;
+        btnEl.style.opacity = '1';
+        btnEl.textContent = st === 'withdrawn' ? '🔄 정회원 간편 재입회 신청하기' : '🔄 정회원 복귀 신청하기';
+        if (reasonWrap) reasonWrap.style.display = 'block';
+      }
+    }
+
+    modal.style.display = 'flex';
+  };
+
+  window.closeReturnRequestModal = function() {
+    const modal = document.getElementById('return-request-modal');
+    if (modal) modal.style.display = 'none';
+  };
+
+  window.submitReturnRequest = async function() {
+    if (!blockedMemberContext || !blockedMemberContext.memberInfo) return;
+    const info = blockedMemberContext.memberInfo;
+    const reason = (document.getElementById('return-request-reason')?.value || '').trim();
+
+    try {
+      const res = await fetch('/api/member/status-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: info.name,
+          phone: info.phone,
+          clubId: info.clubId,
+          requestedStatus: 'active',
+          reason
+        })
+      });
+      const result = await res.json();
+      if (result.success) {
+        window.closeReturnRequestModal();
+        if (typeof showToast === 'function') showToast(result.message, true);
+        else alert(result.message);
+      } else {
+        if (typeof showToast === 'function') showToast(result.message || '신청에 실패했습니다.', false);
+      }
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('서버 통신 중 오류가 발생했습니다.', false);
+    }
+  };
+
+  window.switchToGuestWithPrefill = function() {
+    const info = blockedMemberContext && blockedMemberContext.memberInfo;
+    window.closeReturnRequestModal();
+    if (typeof window.switchTab === 'function') {
+      window.switchTab('guest');
+    }
+    if (info) {
+      const gName = document.getElementById('guestName');
+      const gPhone = document.getElementById('guestPhone');
+      if (gName) gName.value = info.name || '';
+      if (gPhone) gPhone.value = String(info.phone || '').replace(/[^0-9]/g, '');
+      setTimeout(() => {
+        const payInput = document.getElementById('guestPayCode');
+        if (payInput) payInput.focus();
+      }, 80);
+    }
+  };
+  
 // ==========================================
 // 팝업 알림(토스트 메시지)을 띄워주는 함수
 // ==========================================
