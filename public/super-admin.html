@@ -667,6 +667,197 @@
 
             .form-control { font-size: 16px; }
         }
+        /* ==========================================
+           💬 고객지원 · FAQ · 오픈채팅 전용 UI 스타일
+           ========================================== */
+        .sa-support-header {
+            align-items: center;
+        }
+        .sa-support-tabs {
+            display: flex;
+            gap: 6px;
+            flex-wrap: nowrap;
+        }
+        .sa-subtab-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 700;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: rgba(148, 163, 184, 0.1);
+            color: #cbd5e1;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .sa-subtab-btn.active {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #ffffff;
+        }
+
+        /* 문의 필터 세그먼트 바 */
+        .sa-filter-bar {
+            display: inline-flex;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .sa-filter-btn {
+            background: var(--item-bg);
+            color: #94a3b8;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 7px 11px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+            text-align: center;
+        }
+        .sa-filter-btn.active {
+            background: rgba(37, 99, 235, 0.18);
+            border-color: #3b82f6;
+            color: #60a5fa;
+        }
+
+        /* 문의 카드 */
+        .sa-inq-card {
+            background: var(--item-bg);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 11px;
+            padding: 13px;
+        }
+        .sa-inq-card.is-pending {
+            border-color: rgba(245, 158, 11, 0.4);
+        }
+        .sa-inq-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+        .sa-inq-top-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            flex-wrap: wrap;
+        }
+        .sa-inq-user-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 11.5px;
+            color: #94a3b8;
+            margin-bottom: 9px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .sa-inq-meta-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        .sa-meta-chip {
+            background: #131924;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            color: #94a3b8;
+            border-radius: 6px;
+            padding: 3px 7px;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .sa-inq-actions {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+
+        /* 새 FAQ 등록 폼 & FAQ 목록 카드 */
+        .sa-faq-form-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .sa-faq-item {
+            background: var(--item-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+        .sa-faq-item-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+        .sa-faq-del-btn {
+            padding: 4px 9px;
+            font-size: 11.5px;
+            border-radius: 6px;
+            min-height: 0 !important;
+        }
+
+        @media (max-width: 900px) {
+            .sa-support-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 9px;
+            }
+            .sa-support-tabs {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 6px;
+                width: 100%;
+            }
+            .sa-subtab-btn {
+                padding: 9px 4px;
+                font-size: 12px;
+                gap: 3px;
+            }
+            .sa-filter-bar {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 6px;
+                width: 100%;
+            }
+            .sa-filter-btn {
+                padding: 8px 4px;
+                font-size: 11.5px;
+            }
+            .sa-faq-form-row {
+                grid-template-columns: 1fr;
+                gap: 7px;
+            }
+            .sa-inq-card {
+                padding: 12px;
+            }
+            .sa-inq-actions {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 6px;
+            }
+            .sa-inq-actions .btn-action {
+                padding: 8px 4px;
+                font-size: 12px;
+                min-height: 36px;
+            }
+            .sa-faq-item {
+                padding: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -848,22 +1039,22 @@
             </div>
         </div>
         <!-- 3. 💬 고객지원 · FAQ · 오픈채팅 관리 섹션 -->
-        <div class="card" style="margin-top: 20px;">
-            <div class="card-header">
-                <h2><span>💬</span><span class="title-text">고객지원 · FAQ · 오픈채팅 관리 (<span id="support-pending-badge" style="color:#fbbf24;">미답변 0</span>)</span></h2>
-                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    <button type="button" id="sa-tab-inq" class="btn-action btn-user" onclick="switchSaSupportTab('inq')">📩 문의 접수함</button>
-                    <button type="button" id="sa-tab-faq" class="btn-action btn-copy" onclick="switchSaSupportTab('faq')">❓ FAQ 관리 (<span id="sa-faq-count">0</span>)</button>
-                    <button type="button" id="sa-tab-kakao" class="btn-action btn-copy" onclick="switchSaSupportTab('kakao')">💛 오픈채팅 설정</button>
+        <div class="card" style="margin-top: 16px;">
+            <div class="card-header sa-support-header">
+                <h2><span>💬</span><span class="title-text">고객지원 · FAQ 관리 (<span id="support-pending-badge" style="color:#fbbf24;">미답변 0</span>)</span></h2>
+                <div class="sa-support-tabs">
+                    <button type="button" id="sa-tab-inq" class="sa-subtab-btn active" onclick="switchSaSupportTab('inq')"><span>📩</span><span>문의함</span></button>
+                    <button type="button" id="sa-tab-faq" class="sa-subtab-btn" onclick="switchSaSupportTab('faq')"><span>❓</span><span>FAQ(<span id="sa-faq-count">0</span>)</span></button>
+                    <button type="button" id="sa-tab-kakao" class="sa-subtab-btn" onclick="switchSaSupportTab('kakao')"><span>💛</span><span>오픈채팅</span></button>
                 </div>
             </div>
 
             <!-- 서브탭 1: 문의 접수함 -->
             <div id="sa-panel-inq">
-                <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
-                    <button type="button" id="inq-filter-pending" class="btn-icon" style="border-color:#3b82f6; color:#60a5fa;" onclick="setInqFilter('pending')">미답변 (<span id="inq-cnt-pending">0</span>)</button>
-                    <button type="button" id="inq-filter-answered" class="btn-icon" onclick="setInqFilter('answered')">답변 완료 (<span id="inq-cnt-answered">0</span>)</button>
-                    <button type="button" id="inq-filter-all" class="btn-icon" onclick="setInqFilter('all')">전체 (클럽 포함)</button>
+                <div class="sa-filter-bar">
+                    <button type="button" id="inq-filter-pending" class="sa-filter-btn active" onclick="setInqFilter('pending')">미답변(<span id="inq-cnt-pending">0</span>)</button>
+                    <button type="button" id="inq-filter-answered" class="sa-filter-btn" onclick="setInqFilter('answered')">답변완료(<span id="inq-cnt-answered">0</span>)</button>
+                    <button type="button" id="inq-filter-all" class="sa-filter-btn" onclick="setInqFilter('all')">전체(클럽)</button>
                 </div>
                 <div id="sa-inquiry-list" style="display: flex; flex-direction: column; gap: 10px;">
                     <div style="color: #64748b; text-align: center; padding: 26px;">불러오는 중...</div>
@@ -872,25 +1063,25 @@
 
             <!-- 서브탭 2: FAQ 추가 · 삭제 -->
             <div id="sa-panel-faq" style="display: none;">
-                <form onsubmit="handleAddFaq(event)" style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; margin-bottom: 14px;">
-                    <div style="font-size: 13.5px; font-weight: 700; color: #fb923c; margin-bottom: 10px;">➕ 새 FAQ 등록</div>
-                    <div style="display: grid; grid-template-columns: 140px 1fr; gap: 8px; margin-bottom: 8px;">
-                        <input type="text" id="new-faq-category" class="form-control" placeholder="분류 (예: Wi-Fi)" value="사용법" required style="padding: 9px 10px; font-size: 13.5px;">
-                        <input type="text" id="new-faq-question" class="form-control" placeholder="자주 묻는 질문 제목을 입력하세요" required style="padding: 9px 10px; font-size: 13.5px;">
+                <form onsubmit="handleAddFaq(event)" style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 13px; margin-bottom: 12px;">
+                    <div style="font-size: 13.5px; font-weight: 700; color: #fb923c; margin-bottom: 9px;">➕ 새 FAQ 등록</div>
+                    <div class="sa-faq-form-row">
+                        <input type="text" id="new-faq-category" class="form-control" placeholder="분류 (예: Wi-Fi, 대기열)" value="사용법" required style="padding: 9px 11px; font-size: 14px;">
+                        <input type="text" id="new-faq-question" class="form-control" placeholder="자주 묻는 질문 제목을 입력하세요" required style="padding: 9px 11px; font-size: 14px;">
                     </div>
-                    <textarea id="new-faq-answer" class="form-control" rows="3" placeholder="회원에게 보여줄 간결한 답변을 입력하세요" required style="padding: 9px 10px; font-size: 13.5px; margin-bottom: 8px; resize: vertical;"></textarea>
-                    <button type="submit" class="btn-submit" style="margin-top: 0; padding: 10px;">FAQ 등록하기</button>
+                    <textarea id="new-faq-answer" class="form-control" rows="3" placeholder="회원에게 보여줄 간결한 답변을 입력하세요" required style="padding: 9px 11px; font-size: 14px; margin-bottom: 9px; resize: vertical;"></textarea>
+                    <button type="submit" class="btn-submit" style="margin-top: 0; padding: 11px;">FAQ 등록하기</button>
                 </form>
-                <div id="sa-faq-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                <div id="sa-faq-list" style="display: flex; flex-direction: column; gap: 9px;"></div>
             </div>
 
             <!-- 서브탭 3: 카카오톡 오픈채팅 링크 설정 -->
             <div id="sa-panel-kakao" style="display: none;">
-                <div style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px;">
-                    <label style="display: block; font-size: 13.5px; font-weight: 700; margin-bottom: 6px;">💛 카카오톡 오픈채팅 주소 (스크린샷 오류 제보용)</label>
-                    <input type="url" id="sa-kakao-url" class="form-control" placeholder="https://open.kakao.com/o/..." style="margin-bottom: 8px;">
-                    <small class="form-hint" style="margin-bottom: 12px;">주소를 저장하면 모든 클럽 회원앱의 [도움말·문의 > 문의·제보] 탭 하단에 노란색 카카오톡 오픈채팅 버튼이 자동으로 표시됩니다. 비우고 저장하면 숨겨집니다.</small>
-                    <button type="button" class="btn-submit" style="margin-top: 0;" onclick="handleSaveKakaoUrl()">오픈채팅 링크 저장</button>
+                <div style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px;">
+                    <label style="display: block; font-size: 13.5px; font-weight: 700; margin-bottom: 7px;">💛 카카오톡 오픈채팅 주소 (사진 제보용)</label>
+                    <input type="url" id="sa-kakao-url" class="form-control" placeholder="https://open.kakao.com/o/..." style="margin-bottom: 8px; font-size: 14px;">
+                    <small class="form-hint" style="margin-bottom: 12px;">주소를 저장하면 모든 클럽 회원앱 [도움말·문의 &gt; 문의·제보] 탭 하단에 노란색 카카오톡 오픈채팅 버튼이 표시됩니다. 비우고 저장하면 숨겨집니다.</small>
+                    <button type="button" class="btn-submit" style="margin-top: 0; padding: 11px;" onclick="handleSaveKakaoUrl()">오픈채팅 링크 저장</button>
                 </div>
             </div>
         </div>
@@ -1265,7 +1456,7 @@
             ['inq', 'faq', 'kakao'].forEach(t => {
                 const btn = document.getElementById(`sa-tab-${t}`);
                 const panel = document.getElementById(`sa-panel-${t}`);
-                if (btn) btn.className = (t === tab) ? 'btn-action btn-user' : 'btn-action btn-copy';
+                if (btn) btn.classList.toggle('active', t === tab);
                 if (panel) panel.style.display = (t === tab) ? 'block' : 'none';
             });
         }
@@ -1274,9 +1465,7 @@
             currentInqFilter = filter;
             ['pending', 'answered', 'all'].forEach(f => {
                 const btn = document.getElementById(`inq-filter-${f}`);
-                if (!btn) return;
-                btn.style.borderColor = (f === filter) ? '#3b82f6' : 'rgba(255,255,255,0.09)';
-                btn.style.color = (f === filter) ? '#60a5fa' : '#f8fafc';
+                if (btn) btn.classList.toggle('active', f === filter);
             });
             renderSaInquiries();
         }
@@ -1295,7 +1484,7 @@
                 const emptyMsg = currentInqFilter === 'pending'
                     ? '미답변 앱 문의가 없습니다.'
                     : (currentInqFilter === 'answered' ? '답변 완료된 앱 문의가 없습니다.' : '표시할 문의 내역이 없습니다.');
-                el.innerHTML = `<div style="color: #64748b; text-align: center; padding: 28px;">${emptyMsg}</div>`;
+                el.innerHTML = `<div style="color: #64748b; text-align: center; padding: 28px; font-size: 13px;">${emptyMsg}</div>`;
                 return;
             }
 
@@ -1310,26 +1499,30 @@
                 const [catText, catColor] = catMap[item.category] || ['문의', '#94a3b8'];
                 const isDone = item.status === 'answered';
                 return `
-                    <div style="background: var(--item-bg); border: 1px solid ${isDone ? 'rgba(255,255,255,0.08)' : 'rgba(245,158,11,0.35)'}; border-radius: 10px; padding: 13px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px;">
-                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                                <span style="font-size: 11px; font-weight: 800; color: ${catColor}; background: rgba(255,255,255,0.06); padding: 2px 7px; border-radius: 5px;">${catText}</span>
-                                <strong style="font-size: 13.5px;">${escapeHtml(item.club_name || item.club_id)}</strong>
-                                <span style="font-size: 12px; color: #cbd5e1;">${escapeHtml(item.member_name)}${item.member_phone ? ` (${escapeHtml(item.member_phone)})` : ''}</span>
+                    <div class="sa-inq-card ${isDone ? '' : 'is-pending'}">
+                        <div class="sa-inq-top">
+                            <div class="sa-inq-top-left">
+                                <span style="font-size: 11px; font-weight: 800; color: ${catColor}; background: rgba(255,255,255,0.06); padding: 2px 7px; border-radius: 5px; white-space: nowrap;">${catText}</span>
+                                <strong style="font-size: 14px; color: #f8fafc;">${escapeHtml(item.club_name || item.club_id)}</strong>
                             </div>
-                            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; ${isDone ? 'background:rgba(16,185,129,0.2);color:#34d399;' : 'background:rgba(245,158,11,0.2);color:#fbbf24;'}">${isDone ? '답변 완료' : '미답변'}</span>
+                            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; ${isDone ? 'background:rgba(16,185,129,0.18);color:#34d399;' : 'background:rgba(245,158,11,0.18);color:#fbbf24;'}">${isDone ? '답변 완료' : '미답변'}</span>
                         </div>
-                        <div style="font-size: 13.5px; color: #f8fafc; line-height: 1.5; white-space: pre-line; margin-bottom: 8px;">${escapeHtml(item.content)}</div>
-                        <div style="font-size: 11px; color: #94a3b8; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 10px;">
+                        <div class="sa-inq-user-row">
+                            <span>👤 ${escapeHtml(item.member_name)}${item.member_phone ? ` (${escapeHtml(item.member_phone)})` : ''}</span>
                             <span>🕒 ${escapeHtml(item.created_at)}</span>
-                            ${item.device_info ? `<span>📱 ${escapeHtml(item.device_info)}</span>` : ''}
-                            ${item.wifi_info ? `<span>📶 ${escapeHtml(item.wifi_info)}</span>` : ''}
                         </div>
-                        <div style="display: flex; flex-direction: column; gap: 7px;">
-                            <textarea id="sa-reply-${item.id}" rows="2" class="form-control" placeholder="회원에게 보여줄 답변을 입력하세요..." style="padding: 8px 10px; font-size: 13px;">${escapeHtml(item.reply || '')}</textarea>
-                            <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
-                                <button type="button" class="btn-action btn-tv" onclick="handleReplyInquiry(${item.id})">💾 답변 저장</button>
-                                <button type="button" class="btn-action btn-edit" onclick="promoteInquiryToFaq(${item.id})">📌 FAQ로 등록</button>
+                        <div style="font-size: 13.5px; color: #f1f5f9; line-height: 1.55; white-space: pre-line; margin-bottom: 9px;">${escapeHtml(item.content)}</div>
+                        ${(item.device_info || item.wifi_info) ? `
+                            <div class="sa-inq-meta-chips">
+                                ${item.device_info ? `<span class="sa-meta-chip">📱 ${escapeHtml(item.device_info)}</span>` : ''}
+                                ${item.wifi_info ? `<span class="sa-meta-chip">📶 ${escapeHtml(item.wifi_info)}</span>` : ''}
+                            </div>
+                        ` : ''}
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <textarea id="sa-reply-${item.id}" rows="2" class="form-control" placeholder="회원에게 보여줄 답변을 입력하세요..." style="padding: 9px 10px; font-size: 13.5px; line-height: 1.45;">${escapeHtml(item.reply || '')}</textarea>
+                            <div class="sa-inq-actions">
+                                <button type="button" class="btn-action btn-tv" onclick="handleReplyInquiry(${item.id})">💾 답변저장</button>
+                                <button type="button" class="btn-action btn-edit" onclick="promoteInquiryToFaq(${item.id})">📌 FAQ등록</button>
                                 <button type="button" class="btn-action btn-delete" onclick="handleDeleteInquiry(${item.id})">🗑️ 삭제</button>
                             </div>
                         </div>
@@ -1376,19 +1569,17 @@
             const el = document.getElementById('sa-faq-list');
             if (!el) return;
             if (cachedFaqs.length === 0) {
-                el.innerHTML = '<div style="color: #64748b; text-align: center; padding: 24px;">등록된 FAQ가 없습니다.</div>';
+                el.innerHTML = '<div style="color: #64748b; text-align: center; padding: 24px; font-size: 13px;">등록된 FAQ가 없습니다.</div>';
                 return;
             }
             el.innerHTML = cachedFaqs.map(f => `
-                <div style="background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
-                    <div style="min-width: 0; flex: 1;">
-                        <div style="margin-bottom: 4px;">
-                            <span class="club-id-tag" style="margin-right: 6px;">${escapeHtml(f.category || '일반')}</span>
-                            <strong style="font-size: 14px;">Q. ${escapeHtml(f.question)}</strong>
-                        </div>
-                        <div style="font-size: 12.5px; color: #cbd5e1; line-height: 1.5; white-space: pre-line;">A. ${escapeHtml(f.answer)}</div>
+                <div class="sa-faq-item">
+                    <div class="sa-faq-item-top">
+                        <span class="club-id-tag">${escapeHtml(f.category || '일반')}</span>
+                        <button type="button" class="btn-action btn-delete sa-faq-del-btn" onclick="handleDeleteFaq(${f.id})">🗑️ 삭제</button>
                     </div>
-                    <button type="button" class="btn-action btn-delete" onclick="handleDeleteFaq(${f.id})">🗑️ 삭제</button>
+                    <div style="font-size: 14px; font-weight: 800; color: #f8fafc; line-height: 1.4;">Q. ${escapeHtml(f.question)}</div>
+                    <div style="font-size: 13px; color: #cbd5e1; line-height: 1.55; white-space: pre-line;">A. ${escapeHtml(f.answer)}</div>
                 </div>
             `).join('');
         }
