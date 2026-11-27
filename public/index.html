@@ -952,14 +952,27 @@ body, button, input, select, textarea {
                     <input type="tel" id="support-input-phone" placeholder="연락처 (선택)" style="width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13.5px; box-sizing: border-box;">
                 </div>
 
-                <div style="margin-bottom: 10px;">
-                    <label style="display: block; font-size: 12px; color: #cbd5e1; font-weight: 600; margin-bottom: 5px;">문의 유형</label>
-                    <select id="support-category" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 13.5px; box-sizing: border-box;">
-                        <option value="question">❓ 앱 사용법 질문 (앱 관리자)</option>
-                        <option value="bug">🐞 오류 · 화면 이상 제보 (앱 관리자)</option>
-                        <option value="feature">💡 기능 개선 · 추가 건의 (앱 관리자)</option>
-                        <option value="club">🏢 클럽 운영 · 급수 · 회비 문의 (클럽 운영진)</option>
-                    </select>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; color: #cbd5e1; font-weight: 600; margin-bottom: 6px;">문의 유형</label>
+                    <input type="hidden" id="support-category" value="question">
+                    <div class="support-cat-grid">
+                        <button type="button" class="support-cat-card active" data-cat="question" onclick="selectSupportCategory('question')">
+                            <span class="cat-title">사용법 질문</span>
+                            <span class="cat-sub">앱 관리자</span>
+                        </button>
+                        <button type="button" class="support-cat-card" data-cat="bug" onclick="selectSupportCategory('bug')">
+                            <span class="cat-title">오류 · 이상 제보</span>
+                            <span class="cat-sub">앱 관리자</span>
+                        </button>
+                        <button type="button" class="support-cat-card" data-cat="feature" onclick="selectSupportCategory('feature')">
+                            <span class="cat-title">기능 개선 건의</span>
+                            <span class="cat-sub">앱 관리자</span>
+                        </button>
+                        <button type="button" class="support-cat-card" data-cat="club" onclick="selectSupportCategory('club')">
+                            <span class="cat-title">클럽 운영 문의</span>
+                            <span class="cat-sub">급수·회비 / 운영진</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 10px;">
@@ -1060,6 +1073,50 @@ body, button, input, select, textarea {
 }
 .faq-card.open .faq-a-box { display: block; }
 .faq-card.open .faq-arrow { transform: rotate(180deg); }
+.support-cat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+.support-cat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 10px 11px;
+    border-radius: 9px;
+    border: 1px solid #2d3a50;
+    background: #0f172a;
+    color: #cbd5e1;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s, background-color 0.15s, transform 0.1s;
+}
+.support-cat-card:active {
+    transform: scale(0.98);
+}
+.support-cat-card .cat-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1.25;
+}
+.support-cat-card .cat-sub {
+    font-size: 10.5px;
+    color: #64748b;
+    line-height: 1.2;
+}
+.support-cat-card.active {
+    border-color: #3b82f6;
+    background: rgba(37, 99, 235, 0.2);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+.support-cat-card.active .cat-title {
+    color: #ffffff;
+}
+.support-cat-card.active .cat-sub {
+    color: #93c5fd;
+}
 </style>
 
 <script>
@@ -1140,6 +1197,14 @@ body, button, input, select, textarea {
         if (modal) modal.style.display = 'none';
     };
 
+    window.selectSupportCategory = function(cat) {
+        const input = document.getElementById('support-category');
+        if (input) input.value = cat;
+        document.querySelectorAll('.support-cat-card').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.cat === cat);
+        });
+    };
+
     window.switchSupportTab = function(tab) {
         ['faq', 'ask', 'my'].forEach(t => {
             const btn = document.getElementById(`stab-${t}`);
@@ -1188,6 +1253,8 @@ body, button, input, select, textarea {
             `).join('');
         } catch (err) {
             console.error('FAQ 로드 오류:', err);
+            const listEl = document.getElementById('support-faq-list');
+            if (listEl) listEl.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 24px 0; font-size: 13px;">자주 묻는 질문을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';
         }
     }
 

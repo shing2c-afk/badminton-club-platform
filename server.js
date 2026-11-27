@@ -1937,6 +1937,144 @@ app.post('/api/admin/process-status-request', (req, res) => {
     );
 });
 
+// =========================================================================
+// 💬 [고객지원 · FAQ · 문의/오류 제보 · 오픈채팅] 독립 REST API
+// =========================================================================
+function getSupportKstDateTime() {
+    const nowKr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const y = nowKr.getFullYear();
+    const m = String(nowKr.getMonth() + 1).padStart(2, '0');
+    const d = String(nowKr.getDate()).padStart(2, '0');
+    const hh = String(nowKr.getHours()).padStart(2, '0');
+    const mm = String(nowKr.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${d} ${hh}:${mm}`;
+}
+
+// 1. 사용자용 FAQ 목록 + 카카오톡 오픈채팅 URL 조회
+app.get('/api/support/init', (req, res) => {
+    db.all(`SELECT id, category, question, answer, created_at FROM support_faqs ORDER BY id ASC`, [], (faqErr, faqs) => {
+        if (faqErr) {
+            return res.status(500).json({ success: false, message: 'FAQ 조회 실패' });
+        }
+        db.get(`SELECT value FROM platform_settings WHERE key = 'kakao_open_chat_url'`, [], (setErr, setRow) => {
+            res.json({
+                success: true,
+                faqs: faqs || [],
+                kakaoOpenChatUrl: (setRow && setRow.value) ? String(setRow.value).trim() : ''
+            });
+        });
+    });
+});
+
+// 2. 사용자 문의 · 오류 제보 접수
+app.post('/api/support/inquiry', (req, res) => {
+    const { clubId, memberName, memberPhone, isGuest, category, content, deviceInfo, wifiInfo } = req.body || {};
+    const targetClubId = String(clubId || 'unjeong').trim();
+    const allowedCats = ['question', 'bug', 'feature', 'club'];
+    const cleanCategory = allowedCats.includes(category) ? category : 'question';
+    const cleanContent = String(content || '').trim().slice(0, 1000);
+    const cleanName = String(memberName || '비로그인 사용자').trim().slice(0, 40);
+    const cleanPhone = String(memberPhone || '').trim().slice(0, 30);
+    const cleanDevice = String(deviceInfo || '').trim().slice(0, 180);
+    const cleanWifi = String(wifiInfo || '').trim().slice(0, 80);
+
+    if (cleanContent.length < 2) {
+        return res.status(400).json({ success: false, message: '문의 또는 제보 내용을 2자 이상 입력해 주세요.' });
+    }
+
+    const clubObj = (typeof getClub === 'function') ? getClub(targetClubId) : null;
+    const clubName = (clubObj && (clubObj.clubName || clubObj.name)) || targetClubId;
+    const createdAt = getSupportKstDateTime();
+
+    db.run(
+        `INSERT INTO user_inquiries (club_id, club_name, member_name, member_phone, is_guest, category, content, device_info, wifi_info, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+        [targetClubId, clubName, cleanName, cleanPhone, isGuest ? 1 : 0, cleanCategory, cleanContent, cleanDevice, cleanWifi, createdAt],
+        function(err) {
+            if (err) {
+                console.error('❌ 문의 접수 저장 실패:', err.message);
+                return res.status(500).json({ success: false, message: '문의 접수 중 오류가 발생했습니다.' });
+            }
+            res.json({ success: true, id: this.lastID, message: '문의가 정상적으로 접수되었습니다. 확인 후 답변드리겠습니다.' });
+        }
+    );
+});
+
+// 3. 사용자 본인 문의 내역 및 답변 조회
+app.get('/api/support/my-inquiries', (req, res) => {
+    const clubId = String(req.query.club || req.query.clubId || 'unjeong').trim();
+    const rawPhone = String(req.query.phone || '').replace(/[^0-9]/g, '');
+    const rawName = String(req.query.name || '').trim();
+
+    if (!rawPhone && !rawName) {
+        return res.json({ success: true, data: [] });
+    }
+
+    const sql = rawPhone
+        ? `SELECT id, category, content, status, reply, replied_by, created_at, replied_at
+           FROM user_inquiries
+           WHERE club_id = ? AND REPLACE(REPLACE(member_phone, '-', ''), ' ', '') = ?
+           ORDER BY id DESC LIMIT 30`
+        : `SELECT id, category, content, status, reply, replied_by, created_at, replied_at
+           FROM user_inquiries
+           WHERE club_id = ? AND TRIM(member_name) = ?
+           ORDER BY id DESC LIMIT 30`;
+
+    db.all(sql, [clubId, rawPhone || rawName], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, message: '내 문의 내역 조회 실패' });
+        res.json({ success: true, data: rows || [] });
+    });
+});
+
+// 4. [클럽 관리자] 해당 구장의 '클럽 운영 문의' 조회
+app.get('/api/admin/inquiries', (req, res) => {
+    const clubId = String(req.query.club || req.query.clubId || 'unjeong').trim();
+    db.all(
+        `SELECT id, member_name, member_phone, is_guest, category, content, device_info, wifi_info, status, reply, replied_by, created_at, replied_at
+         FROM user_inquiries
+         WHERE club_id = ? AND category = 'club'
+         ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC LIMIT 50`,
+        [clubId],
+        (err, rows) => {
+            if (err) return res.status(500).json({ success: false, message: '문의 목록 조회 실패' });
+            res.json({ success: true, data: rows || [] });
+        }
+    );
+});
+
+// 5. [클럽 관리자] 클럽 운영 문의 답변 저장
+app.post('/api/admin/inquiries/reply', (req, res) => {
+    const { id, reply, clubId } = req.body || {};
+    const targetClubId = String(clubId || 'unjeong').trim();
+    const cleanReply = String(reply || '').trim().slice(0, 1000);
+    if (!id || !cleanReply) {
+        return res.status(400).json({ success: false, message: '답변 내용을 입력해 주세요.' });
+    }
+    const repliedAt = getSupportKstDateTime();
+    db.run(
+        `UPDATE user_inquiries SET reply = ?, status = 'answered', replied_by = '클럽 운영진', replied_at = ?
+         WHERE id = ? AND club_id = ? AND category = 'club'`,
+        [cleanReply, repliedAt, id, targetClubId],
+        function(err) {
+            if (err || this.changes === 0) {
+                return res.status(500).json({ success: false, message: '답변 저장에 실패했습니다.' });
+            }
+            res.json({ success: true, message: '답변이 저장되었습니다.' });
+        }
+    );
+});
+
+// 6. [클럽 관리자] 클럽 운영 문의 삭제
+app.post('/api/admin/inquiries/delete', (req, res) => {
+    const { id, clubId } = req.body || {};
+    const targetClubId = String(clubId || 'unjeong').trim();
+    if (!id) return res.status(400).json({ success: false, message: 'ID가 누락되었습니다.' });
+    db.run(`DELETE FROM user_inquiries WHERE id = ? AND club_id = ? AND category = 'club'`, [id, targetClubId], (err) => {
+        if (err) return res.status(500).json({ success: false, message: '삭제 실패' });
+        res.json({ success: true, message: '문의가 삭제되었습니다.' });
+    });
+});
+
 // 회원 정보 수정 API (파라미터 누락 버그 수정 및 전화번호 정규화/멀티테넌트 적용)
 app.post('/api/member/update', (req, res) => {
     const { id, phone: rawPhone, grade, address: rawAddress, clubId: reqClubId, club } = req.body;
