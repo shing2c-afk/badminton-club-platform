@@ -5610,7 +5610,7 @@ io.on('connection', (socket) => {
     // ==========================================
     const SUPER_ADMIN_KEY = 'super1234'; // 💡 슈퍼 관리자 마스터 비밀번호
 
-    // 1. 슈퍼 관리자 로그인 및 클럽 목록 조회
+    // 1. 슈퍼 관리자 로그인 및 클럽 목록 + 서버 상태 조회
     socket.on('superAdmin:getClubs', (password, callback) => {
         if (password !== SUPER_ADMIN_KEY) {
             return callback({ success: false, message: '마스터 비밀번호가 일치하지 않습니다.' });
@@ -5618,21 +5618,44 @@ io.on('connection', (socket) => {
 
         const clubList = Object.keys(clubs).map(cId => {
             const c = clubs[cId];
-            // 🏢 JSON에 저장된 clubName을 최우선 적용
             const displayName = c.clubName || c.name || cId;
+            const courtsArr = Array.isArray(c.courtsData) ? c.courtsData : [];
+            const activeCourts = courtsArr.filter(ct => {
+                if (!ct || ct.type === 'lesson') return false;
+                if (ct.type === 'nanta') {
+                    return (ct.sideA && !ct.sideA.isEmpty) || (ct.sideB && !ct.sideB.isEmpty);
+                }
+                return ct.isEmpty === false;
+            }).length;
 
             return {
                 id: cId,
                 name: displayName,
                 clubName: displayName,
-                courtCount: Array.isArray(c.courtsData) ? c.courtsData.length : 0,
+                courtCount: courtsArr.length,
+                activeCourts,
                 gameQueueCount: Array.isArray(c.gameQueue) ? c.gameQueue.length : 0,
                 nantaQueueCount: Array.isArray(c.nantaQueue) ? c.nantaQueue.length : 0,
-                useWifi: c.config ? Boolean(c.config.useWifiRestriction) : false
+                useWifi: c.config ? Boolean(c.config.useWifiRestriction) : false,
+                allowedGymIps: (c.config && Array.isArray(c.config.allowedGymIps)) ? c.config.allowedGymIps : [],
+                adminPassword: (c.config && c.config.ADMIN_PASSWORD) ? String(c.config.ADMIN_PASSWORD) : '1234'
             };
         });
 
-        callback({ success: true, clubs: clubList });
+        const serverInfo = {
+            uptimeSec: Math.floor(process.uptime()),
+            memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+            storageMode: (typeof CLUBS_DATA_FILE !== 'undefined' && String(CLUBS_DATA_FILE).startsWith('/var/data'))
+                ? '영구 디스크 (/var/data)'
+                : '로컬 폴더'
+        };
+
+        callback({ success: true, clubs: clubList, serverInfo });
+
+        // 접속 직후 최신 4대 현황 카운트 즉시 브로드캐스트
+        if (typeof broadcastOnlineCount === 'function') {
+            setTimeout(() => broadcastOnlineCount(), 100);
+        }
     });
 
     // 2. 새 클럽 자동 생성
@@ -5712,6 +5735,113 @@ io.on('connection', (socket) => {
 
         console.log(`👑 [슈퍼 관리자] 새 클럽 등록 완료: ${cleanName} (${cleanId}), 코트: ${courtsNum}개`);
         callback({ success: true, message: `[${cleanName}] 클럽이 성공적으로 생성되었습니다!` });
+    });
+
+    // 2-1. 기존 클럽 정보 수정 (클럽명, 코트 수, 관리자 비밀번호, Wi-Fi 제한)
+    socket.on('superAdmin:updateClub', ({ password, clubId, clubName, courtCount, adminPassword, useWifiRestriction }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) {
+            return callback({ success: false, message: '권한이 없습니다.' });
+        }
+
+        const cleanId = String(clubId || '').trim().toLowerCase();
+        const targetClub = clubs[cleanId];
+        if (!cleanId || !targetClub) {
+            return callback({ success: false, message: '존재하지 않는 클럽입니다.' });
+        }
+
+        const cleanName = String(clubName || '').trim();
+        if (!cleanName) {
+            return callback({ success: false, message: '클럽 명칭을 입력해 주세요.' });
+        }
+
+        const courtsNum = Math.max(2, Math.min(20, parseInt(courtCount, 10) || targetClub.courtCount || 6));
+        const adminPass = String(adminPassword || '').trim();
+
+        if (!targetClub.config) targetClub.config = {};
+
+        // 1. 클럽명 및 관리자 비밀번호 반영
+        targetClub.clubName = cleanName;
+        targetClub.name = cleanName;
+        targetClub.config.clubName = cleanName;
+        if (adminPass) {
+            targetClub.config.ADMIN_PASSWORD = adminPass;
+        }
+
+        // 2. Wi-Fi 제한 ON/OFF 반영
+        const prevWifiRestriction = Boolean(targetClub.config.useWifiRestriction);
+        if (typeof useWifiRestriction === 'boolean') {
+            targetClub.config.useWifiRestriction = useWifiRestriction;
+        }
+
+        // 3. 코트 수 변경 시 기존 코트 상태·설정 최대한 보존하며 증감
+        const existingCourts = Array.isArray(targetClub.courtsData) ? targetClub.courtsData : [];
+        let updatedCourts = existingCourts.slice(0, courtsNum);
+        for (let i = updatedCourts.length + 1; i <= courtsNum; i++) {
+            updatedCourts.push({
+                id: i,
+                name: `${i}코트`,
+                type: 'game',
+                nextType: 'game',
+                isEmpty: true,
+                players: '',
+                note: ''
+            });
+        }
+        updatedCourts = updatedCourts.map((c, idx) => ({
+            ...c,
+            id: idx + 1,
+            name: c.name || `${idx + 1}코트`
+        }));
+
+        targetClub.courtsData = updatedCourts;
+        targetClub.courts = updatedCourts;
+        targetClub.courtCount = updatedCourts.length;
+
+        // 4. 영구 저장 및 해당 클럽(회원·관리자·TV) 실시간 동기화
+        if (typeof saveClubsData === 'function') {
+            saveClubsData();
+        }
+        if (typeof broadcastState === 'function') {
+            broadcastState(cleanId);
+        }
+        io.to(`club_${cleanId}`).emit('syncConfig', { ...targetClub.config, clubId: cleanId });
+
+        // Wi-Fi 제한 토글이 바뀐 경우 해당 클럽 접속자들의 Wi-Fi 상태·타이머 즉시 재검증
+        if (typeof useWifiRestriction === 'boolean' && prevWifiRestriction !== useWifiRestriction) {
+            const roomSockets = io.sockets.adapter.rooms.get(`club_${cleanId}`);
+            const restrictionOn = targetClub.config.useWifiRestriction !== false;
+            if (roomSockets) {
+                roomSockets.forEach((sId) => {
+                    const s = io.sockets.sockets.get(sId);
+                    if (s) {
+                        const isGym = (typeof isGymWifiUser === 'function') ? isGymWifiUser(s, cleanId) : true;
+                        const currentIp = s.verifiedClientIp || (typeof getClientIp === 'function' ? getClientIp(s) : '');
+                        s.inGym = isGym;
+                        s.isGymWifi = isGym;
+                        if (s.finalName && s.finalName !== '0100' && typeof gymSessionManager !== 'undefined') {
+                            if (isGym) {
+                                s.inGracePeriod = false;
+                                gymSessionManager.handleConnect(s, s.finalName, cleanId);
+                            } else {
+                                gymSessionManager.handleDisconnect(s, s.finalName, cleanId);
+                            }
+                        }
+                        s.emit('wifiStatus', {
+                            clubId: cleanId,
+                            isGymWifi: isGym,
+                            clientIp: currentIp,
+                            useWifiRestriction: restrictionOn
+                        });
+                    }
+                });
+            }
+            if (typeof broadcastOnlineCount === 'function') {
+                broadcastOnlineCount(cleanId);
+            }
+        }
+
+        console.log(`👑 [슈퍼 관리자] 클럽 정보 수정 완료: ${cleanName} (${cleanId}), 코트: ${updatedCourts.length}개`);
+        callback({ success: true, message: `[${cleanName}] 클럽 정보가 수정되었습니다.` });
     });
 
     // 3. 클럽 삭제

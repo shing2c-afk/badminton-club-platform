@@ -2,303 +2,942 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>오늘민턴 - 마스터 슈퍼 관리자</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         :root {
-            --bg-dark: #121212;
-            --card-bg: #1e1e1e;
-            --accent-orange: #ff6600;
-            --border-color: rgba(255, 255, 255, 0.1);
-            --text-main: #ffffff;
-            --text-sub: #aaaaaa;
+            --bg-dark: #0e1117;
+            --card-bg: #171c26;
+            --item-bg: #1f2633;
+            --input-bg: #262f3f;
+            --accent-orange: #ff6b00;
+            --accent-orange-hover: #ff8224;
+            --border-color: rgba(255, 255, 255, 0.09);
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --green: #10b981;
+            --blue: #3b82f6;
+            --amber: #f59e0b;
+            --red: #ef4444;
         }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", sans-serif;
             background-color: var(--bg-dark);
             color: var(--text-main);
-            padding: 24px;
+            min-height: 100vh;
+            padding: 20px 24px 40px;
+            -webkit-tap-highlight-color: transparent;
         }
+
+        .page-wrap {
+            max-width: 1440px;
+            margin: 0 auto;
+        }
+
+        /* 상단 헤더 */
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
             border-bottom: 1px solid var(--border-color);
-            padding-bottom: 16px;
-            margin-bottom: 24px;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
         }
-        .header h1 { font-size: 22px; color: var(--accent-orange); display: flex; align-items: center; gap: 8px; }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+        .header h1 {
+            font-size: 21px;
+            color: var(--accent-orange);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .status-pill {
+            font-size: 12px;
+            color: #cbd5e1;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 6px 10px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+        .btn-icon {
+            background: var(--item-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 7px 11px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-icon:hover { background: #2a3446; }
+        .btn-mobile-create {
+            display: none;
+            background: var(--accent-orange);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* 통합 KPI 모니터링 바 */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .kpi-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .kpi-label {
+            font-size: 12px;
+            color: var(--text-sub);
+            font-weight: 600;
+        }
+        .kpi-value {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .kpi-sub {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        /* 서버 헬스 바 */
+        .server-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 18px;
+            align-items: center;
+            background: rgba(23, 28, 38, 0.75);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 9px 14px;
+            margin-bottom: 18px;
+            font-size: 12px;
+            color: var(--text-sub);
+        }
+        .server-bar strong { color: #e2e8f0; font-weight: 700; }
+
+        /* 메인 2단 그리드 (PC) */
         .grid-container {
             display: grid;
-            grid-template-columns: 360px 1fr;
-            gap: 24px;
-        }
-        @media (max-width: 860px) {
-            .grid-container { grid-template-columns: 1fr; }
+            grid-template-columns: 350px minmax(0, 1fr);
+            gap: 20px;
+            align-items: start;
         }
         .card {
             background-color: var(--card-bg);
-            border-radius: 12px;
+            border-radius: 14px;
             border: 1px solid var(--border-color);
-            padding: 20px;
+            padding: 18px;
         }
-        .card h2 { font-size: 17px; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
-        .form-group { margin-bottom: 14px; }
-        .form-group label { display: block; font-size: 13px; color: var(--text-sub); margin-bottom: 6px; }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px;
+            margin-bottom: 14px;
+        }
+        .card-header h2 {
+            font-size: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .search-input {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            border-radius: 8px;
+            padding: 7px 11px;
+            font-size: 13px;
+            width: 210px;
+        }
+        .search-input:focus { outline: none; border-color: var(--accent-orange); }
+
+        /* 폼 스타일 */
+        .form-group { margin-bottom: 13px; }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #cbd5e1;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
         .form-control {
             width: 100%;
-            padding: 10px 12px;
-            border-radius: 6px;
+            padding: 11px 12px;
+            border-radius: 8px;
             border: 1px solid var(--border-color);
-            background: #2a2a2a;
+            background: var(--input-bg);
             color: #ffffff;
-            font-size: 14px;
+            font-size: 15px;
         }
         .form-control:focus { outline: none; border-color: var(--accent-orange); }
+        .form-control:disabled { opacity: 0.6; cursor: not-allowed; }
+        .form-hint {
+            display: block;
+            color: #64748b;
+            font-size: 11.5px;
+            margin-top: 5px;
+            line-height: 1.4;
+        }
         .btn-submit {
             width: 100%;
             background-color: var(--accent-orange);
             color: #ffffff;
             border: none;
-            padding: 12px;
-            border-radius: 6px;
+            padding: 13px;
+            border-radius: 9px;
             font-size: 15px;
-            font-weight: bold;
+            font-weight: 700;
             cursor: pointer;
-            margin-top: 8px;
+            margin-top: 6px;
+            transition: background 0.15s;
         }
-        .btn-submit:hover { opacity: 0.9; }
-        .club-list { display: flex; flex-direction: column; gap: 14px; }
-        .club-item {
-            background: #252525;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
+        .btn-submit:hover { background-color: var(--accent-orange-hover); }
+
+        /* 토글 스위치 (수정 모달용) */
+        .toggle-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            background: var(--item-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 9px;
+            padding: 11px 13px;
+            margin-bottom: 14px;
         }
-        .club-info h3 { font-size: 16px; margin-bottom: 4px; }
-        .club-meta { font-size: 12px; color: var(--text-sub); display: flex; gap: 12px; }
-        .club-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .btn-action {
-            padding: 6px 12px;
-            border-radius: 4px;
+        .toggle-switch {
+            position: relative;
+            width: 46px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            cursor: pointer;
+            background-color: #475569;
+            border-radius: 999px;
+            transition: 0.2s;
+        }
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #fff;
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+        .toggle-switch input:checked + .toggle-slider { background-color: var(--green); }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+        /* 클럽 카드 리스트 */
+        .club-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .club-item {
+            background: var(--item-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            transition: border-color 0.15s;
+        }
+        .club-item:hover { border-color: rgba(255, 107, 0, 0.35); }
+        .club-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .club-title-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px 10px;
+            margin-bottom: 8px;
+        }
+        .club-title-row h3 {
+            font-size: 16px;
+            font-weight: 800;
+            color: #fff;
+        }
+        .club-id-tag {
             font-size: 12px;
+            color: #fb923c;
+            background: rgba(251, 146, 60, 0.12);
+            border: 1px solid rgba(251, 146, 60, 0.3);
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+        .club-badges {
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+        .meta-pill {
+            background: rgba(15, 23, 42, 0.65);
+            border: 1px solid var(--border-color);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11.5px;
+            white-space: nowrap;
+        }
+
+        /* 4대 실시간 현황 칩 */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, auto));
+            gap: 6px;
+            width: fit-content;
+            max-width: 100%;
+        }
+        .stat-chip {
+            background: #131924;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 7px;
+            padding: 5px 9px;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .stat-chip strong { font-size: 13px; }
+
+        /* 클럽 액션 버튼 그룹 */
+        .club-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 8px 11px;
+            border-radius: 7px;
+            font-size: 12.5px;
             text-decoration: none;
-            font-weight: bold;
+            font-weight: 700;
             border: none;
             cursor: pointer;
+            white-space: nowrap;
+            transition: opacity 0.15s, transform 0.1s;
         }
+        .btn-action:active { transform: scale(0.97); }
+        .btn-action:hover { opacity: 0.9; }
         .btn-user { background: #2563eb; color: #fff; }
         .btn-tv { background: #059669; color: #fff; }
-        .btn-admin { background: #4b5563; color: #fff; }
+        .btn-admin { background: #475569; color: #fff; }
+        .btn-edit { background: #d97706; color: #fff; }
+        .btn-copy { background: #334155; color: #e2e8f0; border: 1px solid rgba(255,255,255,0.12); }
         .btn-delete { background: #dc2626; color: #fff; }
+        .btn-delete:disabled {
+            background: #334155;
+            color: #64748b;
+            cursor: not-allowed;
+            opacity: 0.65;
+        }
 
-        /* 인증 모달 */
+        /* 모달 공통 */
         .modal-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-            display: flex; justify-content: center; align-items: center; z-index: 1000;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.82);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+            z-index: 1000;
         }
+        .modal-overlay.hidden { display: none; }
         .modal-box {
-            background: var(--card-bg); border-radius: 12px; padding: 24px; width: 340px; text-align: center;
-            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 22px;
+            width: 100%;
+            max-width: 420px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+            max-height: 92vh;
+            overflow-y: auto;
         }
-        .modal-box input { margin: 16px 0; text-align: center; font-size: 18px; letter-spacing: 2px; }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .modal-header h3 { font-size: 17px; color: var(--accent-orange); }
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: var(--text-sub);
+            font-size: 22px;
+            cursor: pointer;
+            line-height: 1;
+            padding: 2px 6px;
+        }
+        .modal-footer {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .btn-cancel {
+            background: #334155;
+            color: #e2e8f0;
+            border: none;
+            border-radius: 9px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        /* 토스트 알림 */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #0f172a;
+            color: #f8fafc;
+            border: 1px solid #38bdf8;
+            padding: 11px 18px;
+            border-radius: 999px;
+            font-size: 13.5px;
+            font-weight: 600;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s, transform 0.2s;
+            z-index: 2000;
+            white-space: nowrap;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ==========================================
+           📱 태블릿 · 스마트폰 반응형 최적화
+           ========================================== */
+        @media (max-width: 1080px) {
+            .club-item {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .club-actions {
+                justify-content: flex-start;
+                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                padding-top: 10px;
+            }
+        }
+
+        @media (max-width: 900px) {
+            body { padding: 14px 12px 36px; }
+
+            .header { margin-bottom: 12px; padding-bottom: 12px; }
+            .header h1 { font-size: 18px; }
+            .btn-mobile-create { display: inline-flex; align-items: center; gap: 4px; }
+
+            .kpi-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }
+            .kpi-card:first-child { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+            .kpi-value { font-size: 20px; }
+
+            .grid-container { grid-template-columns: 1fr; gap: 14px; }
+
+            /* 모바일에서는 우측 클럽 목록이 최상단, 신규 등록 카드는 버튼으로 열기 */
+            #create-card-desktop { display: none; }
+            #create-card-desktop.mobile-open {
+                display: block;
+                order: -1;
+                border-color: rgba(255, 107, 0, 0.45);
+            }
+
+            .card { padding: 14px; }
+            .search-input { width: 100%; }
+
+            .stats-bar {
+                width: 100%;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .stat-chip { justify-content: space-between; padding: 6px 10px; }
+
+            .club-actions {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 7px;
+            }
+            .btn-action {
+                padding: 10px 6px;
+                font-size: 13px;
+                min-height: 40px;
+            }
+
+            .form-control { font-size: 16px; } /* iOS 입력 시 자동 줌 방지 */
+        }
     </style>
 </head>
 <body>
 
-    <!-- 마스터 비밀번호 인증 창 -->
+    <!-- 마스터 비밀번호 인증 모달 -->
     <div id="auth-modal" class="modal-overlay">
-        <div class="modal-box">
-            <h2 style="font-size: 18px; color: #ff6600;">👑 슈퍼 관리자 인증</h2>
-            <p style="font-size: 12px; color: #aaa; margin-top: 6px;">마스터 비밀번호를 입력해 주세요.</p>
-            <input type="password" id="master-password" class="form-control" placeholder="비밀번호 입력" autofocus>
+        <div class="modal-box" style="text-align: center; max-width: 340px;">
+            <h2 style="font-size: 19px; color: #ff6b00; margin-bottom: 6px;">👑 슈퍼 관리자 인증</h2>
+            <p style="font-size: 13px; color: #94a3b8; margin-bottom: 16px;">마스터 비밀번호를 입력해 주세요.</p>
+            <input type="password" id="master-password" class="form-control" style="text-align: center; font-size: 18px; letter-spacing: 3px; margin-bottom: 12px;" placeholder="비밀번호 입력" autofocus>
             <button class="btn-submit" onclick="verifyLogin()">인증 및 접속</button>
         </div>
     </div>
 
-    <!-- 기존 auth-modal 모달 영역 끝부분 바로 아래 -->
-<script>
-  // ⚡ 화면이 브라우저에 렌더링되기 전에 세션 키가 있으면 모달 즉시 숨김
-  if (sessionStorage.getItem('superAdminKey')) {
-    const modalEl = document.getElementById('auth-modal');
-    if (modalEl) modalEl.style.display = 'none';
-  }
-</script>
+    <script>
+        if (sessionStorage.getItem('superAdminKey')) {
+            const modalEl = document.getElementById('auth-modal');
+            if (modalEl) modalEl.style.display = 'none';
+        }
+    </script>
 
-    <div class="header">
-        <h1>👑 오늘민턴 플랫폼 마스터 관리자</h1>
-        <div style="font-size: 13px; color: #aaa;" id="status-text">서버 연결 중...</div>
-    </div>
-
-    <div class="grid-container">
-        <!-- 1. 새 클럽 생성 폼 -->
-        <div class="card">
-            <h2>➕ 신규 클럽 등록</h2>
-            <form id="create-club-form" onsubmit="handleCreateClub(event)">
+    <!-- 클럽 정보 수정 모달 -->
+    <div id="edit-modal" class="modal-overlay hidden" onclick="if(event.target === this) closeEditModal()">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>✏️ 클럽 정보 수정</h3>
+                <button type="button" class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <form id="edit-club-form" onsubmit="handleUpdateClub(event)">
                 <div class="form-group">
-                    <label>클럽 영문 ID (URL 주소용)</label>
-                    <input type="text" id="new-club-id" class="form-control" placeholder="예: paju, daewon" required pattern="[a-zA-Z0-9_-]+">
-                    <small style="color: #666; font-size: 11px;">영문 소문자/숫자만 사용 (/?club=아이디 로 접속됨)</small>
+                    <label>클럽 영문 ID (변경 불가)</label>
+                    <input type="text" id="edit-club-id" class="form-control" disabled>
+                    <small class="form-hint">회원·전적 DB 및 접속 URL과 연결된 고유 식별자입니다.</small>
                 </div>
                 <div class="form-group">
                     <label>클럽 명칭 (표시 이름)</label>
-                    <input type="text" id="new-club-name" class="form-control" placeholder="예: 파주배드민턴클럽" required>
+                    <input type="text" id="edit-club-name" class="form-control" required>
                 </div>
                 <div class="form-group">
-                    <label>코트 총 개수</label>
-                    <input type="number" id="new-club-courts" class="form-control" value="6" min="2" max="20" required>
-                    <small style="color: #666; font-size: 11px;">마지막 2코트는 난타 및 레슨 코트로 자동 구성됩니다.</small>
+                    <label>코트 총 개수 (2 ~ 20코트)</label>
+                    <input type="number" id="edit-club-courts" class="form-control" min="2" max="20" required>
+                    <small class="form-hint">코트를 늘리면 게임 코트가 추가되며, 줄이면 뒷번호 코트부터 제외됩니다.</small>
                 </div>
                 <div class="form-group">
-                    <label>해당 클럽 관리자 비밀번호</label>
-                    <input type="text" id="new-club-password" class="form-control" value="1234" required>
+                    <label>클럽 관리자 비밀번호</label>
+                    <input type="text" id="edit-club-password" class="form-control" required>
                 </div>
-                <button type="submit" class="btn-submit">클럽 자동 생성 및 즉시 활성화</button>
+                <div class="toggle-row">
+                    <div>
+                        <div style="font-size: 13.5px; font-weight: 700;">📶 구장 Wi-Fi 제한</div>
+                        <div id="edit-club-ips" style="font-size: 11.5px; color: #94a3b8; margin-top: 2px;">등록 IP: 없음</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="edit-club-wifi">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeEditModal()">취소</button>
+                    <button type="submit" class="btn-submit" style="margin-top: 0;">변경 사항 저장</button>
+                </div>
             </form>
         </div>
+    </div>
 
-        <!-- 2. 등록된 클럽 현황 및 바로가기 -->
-        <div class="card">
-            <h2>🏢 운영 중인 클럽 목록 (<span id="club-count">0</span>개)</h2>
-            <div id="club-list" class="club-list">
-                <div style="color: #666; text-align: center; padding: 40px;">불러오는 중...</div>
+    <!-- 링크 복사 모달 -->
+    <div id="share-modal" class="modal-overlay hidden" onclick="if(event.target === this) closeShareModal()">
+        <div class="modal-box" style="max-width: 390px;">
+            <div class="modal-header">
+                <h3 id="share-modal-title">🔗 접속 주소 복사</h3>
+                <button type="button" class="modal-close" onclick="closeShareModal()">&times;</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button type="button" class="btn-action btn-user" style="padding: 12px; width: 100%; justify-content: space-between;" onclick="copyClubUrl('user')">
+                    <span>📱 회원앱 접속 주소</span><span style="font-size: 11px; opacity: 0.85;">복사</span>
+                </button>
+                <button type="button" class="btn-action btn-tv" style="padding: 12px; width: 100%; justify-content: space-between;" onclick="copyClubUrl('tv')">
+                    <span>📺 TV 현황판 주소</span><span style="font-size: 11px; opacity: 0.85;">복사</span>
+                </button>
+                <button type="button" class="btn-action btn-admin" style="padding: 12px; width: 100%; justify-content: space-between;" onclick="copyClubUrl('admin')">
+                    <span>⚙️ 관리자 페이지 주소</span><span style="font-size: 11px; opacity: 0.85;">복사</span>
+                </button>
             </div>
         </div>
     </div>
+
+    <div class="page-wrap">
+        <div class="header">
+            <div class="header-left">
+                <h1>👑 오늘민턴 마스터</h1>
+            </div>
+            <div class="header-right">
+                <span class="status-pill" id="status-text">서버 연결 중...</span>
+                <button type="button" class="btn-mobile-create" onclick="toggleMobileCreateForm()">➕ 신규 클럽</button>
+                <button type="button" class="btn-icon" onclick="loadClubs(true)" title="새로고침">🔄 새로고침</button>
+                <button type="button" class="btn-icon" onclick="logoutMaster()" title="로그아웃">🚪 로그아웃</button>
+            </div>
+        </div>
+
+        <!-- 전체 플랫폼 실시간 통합 KPI -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-label">🏢 운영 클럽</span>
+                <span class="kpi-value" style="color: #fb923c;"><span id="kpi-club-count">0</span>개</span>
+                <span class="kpi-sub" id="kpi-court-total">총 0코트</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">🌐 전체 접속</span>
+                <span class="kpi-value" style="color: #f8fafc;"><span id="kpi-total-online">0</span>명</span>
+                <span class="kpi-sub">실시간 소켓 기준</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">🏢 구장 운동중</span>
+                <span class="kpi-value" style="color: #34d399;"><span id="kpi-total-in-gym">0</span>명</span>
+                <span class="kpi-sub">Wi-Fi 인증·유예</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">🏸 게임 참여</span>
+                <span class="kpi-value" style="color: #60a5fa;"><span id="kpi-total-game">0</span>명</span>
+                <span class="kpi-sub" id="kpi-game-queues">대기 0팀</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-label">⏱️ 난타 참여</span>
+                <span class="kpi-value" style="color: #fbbf24;"><span id="kpi-total-nanta">0</span>명</span>
+                <span class="kpi-sub" id="kpi-nanta-queues">대기 0팀</span>
+            </div>
+        </div>
+
+        <!-- 서버 상태 모니터링 바 -->
+        <div class="server-bar">
+            <span>⏱️ 서버 가동: <strong id="srv-uptime">-</strong></span>
+            <span>🧠 메모리: <strong id="srv-memory">-</strong></span>
+            <span>💾 저장소: <strong id="srv-storage">-</strong></span>
+            <span>🕒 최근 갱신: <strong id="srv-updated">-</strong></span>
+        </div>
+
+        <div class="grid-container">
+            <!-- 1. 새 클럽 생성 폼 (PC: 좌측 고정 / 모바일: 버튼 토글) -->
+            <div class="card" id="create-card-desktop">
+                <div class="card-header">
+                    <h2>➕ 신규 클럽 등록</h2>
+                </div>
+                <form id="create-club-form" onsubmit="handleCreateClub(event)">
+                    <div class="form-group">
+                        <label>클럽 영문 ID (URL 주소용)</label>
+                        <input type="text" id="new-club-id" class="form-control" placeholder="예: paju, daewon" required pattern="[a-zA-Z0-9_-]+">
+                        <small class="form-hint">영문 소문자·숫자만 사용 (/?club=아이디 로 접속)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>클럽 명칭 (표시 이름)</label>
+                        <input type="text" id="new-club-name" class="form-control" placeholder="예: 파주배드민턴클럽" required>
+                    </div>
+                    <div class="form-group">
+                        <label>코트 총 개수</label>
+                        <input type="number" id="new-club-courts" class="form-control" value="6" min="2" max="20" required>
+                        <small class="form-hint">마지막 2코트는 난타·레슨 코트로 자동 구성됩니다.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>해당 클럽 관리자 비밀번호</label>
+                        <input type="text" id="new-club-password" class="form-control" value="1234" required>
+                    </div>
+                    <button type="submit" class="btn-submit">클럽 자동 생성 및 즉시 활성화</button>
+                </form>
+            </div>
+
+            <!-- 2. 운영 중인 클럽 목록 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>🏢 운영 중인 클럽 (<span id="club-count">0</span>개)</h2>
+                    <input type="search" id="club-search" class="search-input" placeholder="🔍 클럽명 또는 ID 검색..." oninput="renderClubList()">
+                </div>
+                <div id="club-list" class="club-list">
+                    <div style="color: #64748b; text-align: center; padding: 40px;">불러오는 중...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
 
     <script>
         const socket = io();
         let masterPassword = '';
+        let cachedClubs = [];
+        let latestCountsByClub = {};
+        let shareTargetClubId = '';
 
-       function verifyLogin(autoPassword = null) {
-    const passInput = autoPassword || (document.getElementById('master-password') ? document.getElementById('master-password').value : '');
-    if (!passInput) return alert('비밀번호를 입력하세요.');
-
-    socket.emit('superAdmin:getClubs', passInput, (res) => {
-        if (res.success) {
-            masterPassword = passInput;
-            // 🔑 새로고침(F5) 시 세션 유지를 위해 세션 스토리지에 저장
-            sessionStorage.setItem('superAdminKey', passInput);
-
-            const authModal = document.getElementById('auth-modal');
-            if (authModal) authModal.style.display = 'none';
-
-            const statusText = document.getElementById('status-text');
-            if (statusText) statusText.innerText = '🟢 마스터 세션 인증됨';
-
-            renderClubList(res.clubs);
-        
-        } else {
-            // ❌ 인증 실패 시 세션 키 삭제 및 모달 다시 표시
-            sessionStorage.removeItem('superAdminKey');
-            
-            const authModal = document.getElementById('auth-modal');
-            if (authModal) authModal.style.display = ''; // 원래 CSS 스타일로 복원
-
-            if (!autoPassword) {
-                alert(res.message);
-            } else {
-                alert('세션이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.');
-            }
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
-    });
-}
 
-// 🔄 소켓 연결 시 세션에 저장된 키가 있다면 자동 재인증
-socket.on('connect', () => {
-    const savedKey = sessionStorage.getItem('superAdminKey');
-    if (savedKey) {
-        verifyLogin(savedKey);
-    }
-});
+        let toastTimer = null;
+        function showToast(msg) {
+            const el = document.getElementById('toast');
+            if (!el) return;
+            el.textContent = msg;
+            el.classList.add('show');
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+        }
 
-// 이미 소켓이 연결된 상태에서 스크립트가 로드되었을 경우 대비
-if (socket.connected) {
-    const savedKey = sessionStorage.getItem('superAdminKey');
-    if (savedKey) {
-        verifyLogin(savedKey);
-    }
-}
+        function formatUptime(sec) {
+            const s = Number(sec) || 0;
+            const d = Math.floor(s / 86400);
+            const h = Math.floor((s % 86400) / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            if (d > 0) return `${d}일 ${h}시간 ${m}분`;
+            if (h > 0) return `${h}시간 ${m}분`;
+            return `${m}분 ${s % 60}초`;
+        }
 
-        // 엔터키 로그인 지원
+        function updateServerInfo(info) {
+            if (!info) return;
+            const upEl = document.getElementById('srv-uptime');
+            const memEl = document.getElementById('srv-memory');
+            const stoEl = document.getElementById('srv-storage');
+            const updEl = document.getElementById('srv-updated');
+            if (upEl) upEl.textContent = formatUptime(info.uptimeSec);
+            if (memEl) memEl.textContent = `${info.memoryMb} MB`;
+            if (stoEl) stoEl.textContent = info.storageMode || '-';
+            if (updEl) updEl.textContent = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+        }
+
+        function updateTopKpis() {
+            const totalClubs = cachedClubs.length;
+            const totalCourts = cachedClubs.reduce((acc, c) => acc + (Number(c.courtCount) || 0), 0);
+            const totalGameQ = cachedClubs.reduce((acc, c) => acc + (Number(c.gameQueueCount) || 0), 0);
+            const totalNantaQ = cachedClubs.reduce((acc, c) => acc + (Number(c.nantaQueueCount) || 0), 0);
+
+            let sumOnline = 0, sumInGym = 0, sumGame = 0, sumNanta = 0;
+            cachedClubs.forEach(c => {
+                const cnt = latestCountsByClub[c.id] || {};
+                sumOnline += Number(cnt.total ?? cnt.connected ?? 0);
+                sumInGym += Number(cnt.club ?? cnt.inGym ?? 0);
+                sumGame += Number(cnt.game ?? 0);
+                sumNanta += Number(cnt.nanta ?? 0);
+            });
+
+            document.getElementById('kpi-club-count').textContent = totalClubs;
+            document.getElementById('kpi-court-total').textContent = `총 ${totalCourts}코트`;
+            document.getElementById('kpi-total-online').textContent = sumOnline;
+            document.getElementById('kpi-total-in-gym').textContent = sumInGym;
+            document.getElementById('kpi-total-game').textContent = sumGame;
+            document.getElementById('kpi-total-nanta').textContent = sumNanta;
+            document.getElementById('kpi-game-queues').textContent = `대기 ${totalGameQ}팀`;
+            document.getElementById('kpi-nanta-queues').textContent = `대기 ${totalNantaQ}팀`;
+        }
+
+        function verifyLogin(autoPassword = null) {
+            const passInput = autoPassword || (document.getElementById('master-password') ? document.getElementById('master-password').value : '');
+            if (!passInput) return alert('비밀번호를 입력하세요.');
+
+            socket.emit('superAdmin:getClubs', passInput, (res) => {
+                if (res && res.success) {
+                    masterPassword = passInput;
+                    sessionStorage.setItem('superAdminKey', passInput);
+
+                    const authModal = document.getElementById('auth-modal');
+                    if (authModal) authModal.style.display = 'none';
+
+                    const statusText = document.getElementById('status-text');
+                    if (statusText) statusText.innerText = '🟢 마스터 인증됨';
+
+                    cachedClubs = res.clubs || [];
+                    updateServerInfo(res.serverInfo);
+                    renderClubList();
+                    updateTopKpis();
+                } else {
+                    sessionStorage.removeItem('superAdminKey');
+                    const authModal = document.getElementById('auth-modal');
+                    if (authModal) authModal.style.display = 'flex';
+                    alert(autoPassword ? '세션이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.' : (res?.message || '인증 실패'));
+                }
+            });
+        }
+
+        function logoutMaster() {
+            if (!confirm('마스터 관리자 세션에서 로그아웃하시겠습니까?')) return;
+            masterPassword = '';
+            sessionStorage.removeItem('superAdminKey');
+            const authModal = document.getElementById('auth-modal');
+            if (authModal) authModal.style.display = 'flex';
+            const pwInput = document.getElementById('master-password');
+            if (pwInput) { pwInput.value = ''; pwInput.focus(); }
+        }
+
+        socket.on('connect', () => {
+            const savedKey = sessionStorage.getItem('superAdminKey');
+            if (savedKey) verifyLogin(savedKey);
+        });
+        if (socket.connected) {
+            const savedKey = sessionStorage.getItem('superAdminKey');
+            if (savedKey) verifyLogin(savedKey);
+        }
+
         document.getElementById('master-password').addEventListener('keyup', (e) => {
             if (e.key === 'Enter') verifyLogin();
         });
 
-        function loadClubs() {
+        function loadClubs(showFeedback = false) {
             if (!masterPassword) return;
             socket.emit('superAdmin:getClubs', masterPassword, (res) => {
-                if (res.success) renderClubList(res.clubs);
+                if (res && res.success) {
+                    cachedClubs = res.clubs || [];
+                    updateServerInfo(res.serverInfo);
+                    renderClubList();
+                    updateTopKpis();
+                    if (showFeedback) showToast('✅ 최신 클럽 현황으로 갱신되었습니다.');
+                }
             });
         }
 
-        function renderClubList(clubs) {
-    const listEl = document.getElementById('club-list');
-    document.getElementById('club-count').innerText = clubs.length;
+        function toggleMobileCreateForm() {
+            const card = document.getElementById('create-card-desktop');
+            if (!card) return;
+            card.classList.toggle('mobile-open');
+            if (card.classList.contains('mobile-open')) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
 
-    if (clubs.length === 0) {
-        listEl.innerHTML = '<div style="color: #666; text-align: center; padding: 40px;">등록된 클럽이 없습니다.</div>';
-        return;
-    }
+        function renderClubList() {
+            const listEl = document.getElementById('club-list');
+            const keyword = (document.getElementById('club-search')?.value || '').trim().toLowerCase();
 
-    listEl.innerHTML = clubs.map(club => `
-        <div class="club-item">
-            <div class="club-info">
-                <h3>${club.name} <span style="font-size:12px; color: #ff6600;">(${club.id})</span></h3>
-                <div class="club-meta" style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; font-size: 12px; color: #9ca3af;">
-                    <!-- 🌐 실시간 4대 현황 태그 -->
-                    <span style="display: inline-flex; align-items: center; background: #1e293b; border: 1px solid rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px; gap: 6px;">
-                        <span>🌐 접속 <strong id="total-online-${club.id}" style="color: #f3f4f6;">0</strong>명</span>
-                        <span style="opacity: 0.25;">|</span>
-                        <span style="color: #34d399;">🏢 운동중 <strong id="club-online-${club.id}" style="color: #34d399;">0</strong>명</span>
-                        <span style="opacity: 0.25;">|</span>
-                        <span style="color: #60a5fa;">🏸 게임 <strong id="game-online-${club.id}" style="color: #60a5fa;">0</strong>명</span>
-                        <span style="opacity: 0.25;">|</span>
-                        <span style="color: #fbbf24;">⏱️ 난타 <strong id="nanta-online-${club.id}" style="color: #fbbf24;">0</strong>명</span>
-                    </span>
+            const filtered = cachedClubs.filter(c => {
+                if (!keyword) return true;
+                return String(c.name || '').toLowerCase().includes(keyword) || String(c.id || '').toLowerCase().includes(keyword);
+            });
 
-                    <!-- 클럽 설정 정보 -->
-                    <span style="display: inline-flex; align-items: center; gap: 8px;">
-                        <span>🏸 코트 ${club.courtCount}개</span>
-                        <span style="opacity: 0.3;">•</span>
-                        <span>📶 Wi-Fi 제한: <strong style="color: ${club.useWifi ? '#10b981' : '#ef4444'};">${club.useWifi ? 'ON' : 'OFF'}</strong></span>
-                    </span>
-                </div>
-            </div>
-            <div class="club-actions">
-                <a href="/?club=${club.id}" target="_blank" class="btn-action btn-user">📱 회원앱</a>
-                <a href="/tv?club=${club.id}" target="_blank" class="btn-action btn-tv">📺 TV판</a>
-                <a href="/admin?club=${club.id}" target="_blank" class="btn-action btn-admin">⚙️ 관리자</a>
-                <button onclick="handleDeleteClub('${club.id}', '${club.name}')" class="btn-action btn-delete">🗑️ 삭제</button>
-            </div>
-        </div>
-    `).join('');
-}
+            document.getElementById('club-count').innerText = filtered.length;
 
-// 📡 서버로부터 전체 클럽 접속자 및 4대 현황 수신
-if (typeof socket !== 'undefined') {
-    socket.on('updateSuperAdminCounts', (countsByClub) => {
-        // countsByClub 형태: { unjeong: { connected: 7, inGym: 6, game: 3, nanta: 1, club: 6, total: 7 }, ... }
-        if (!countsByClub) return;
+            if (filtered.length === 0) {
+                listEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 36px;">${keyword ? '검색 결과가 없습니다.' : '등록된 클럽이 없습니다.'}</div>`;
+                return;
+            }
 
-        Object.keys(countsByClub).forEach(clubId => {
-            const clubElem = document.getElementById(`club-online-${clubId}`);
-            const totalElem = document.getElementById(`total-online-${clubId}`);
-            const gameElem = document.getElementById(`game-online-${clubId}`);     // 🏸 게임 인원 요소 추가
-            const nantaElem = document.getElementById(`nanta-online-${clubId}`);   // ⏱️ 난타 인원 요소 추가
+            listEl.innerHTML = filtered.map(club => {
+                const cnt = latestCountsByClub[club.id] || {};
+                const totalNum = cnt.total ?? cnt.connected ?? 0;
+                const inGymNum = cnt.club ?? cnt.inGym ?? 0;
+                const gameNum = cnt.game ?? 0;
+                const nantaNum = cnt.nanta ?? 0;
+                const isDefaultClub = club.id === 'unjeong';
+                const safeId = escapeHtml(club.id);
+                const safeName = escapeHtml(club.name);
 
-            if (totalElem) totalElem.innerText = countsByClub[clubId].total ?? countsByClub[clubId].connected ?? 0;
-            if (clubElem) clubElem.innerText = countsByClub[clubId].club ?? countsByClub[clubId].inGym ?? 0;
-            if (gameElem) gameElem.innerText = countsByClub[clubId].game ?? 0;       // 게임 숫자 반영
-            if (nantaElem) nantaElem.innerText = countsByClub[clubId].nanta ?? 0;   // 난타 숫자 반영
+                return `
+                    <div class="club-item">
+                        <div class="club-info">
+                            <div class="club-title-row">
+                                <h3>${safeName}</h3>
+                                <span class="club-id-tag">${safeId}</span>
+                                <div class="club-badges">
+                                    <span class="meta-pill">🏸 ${club.courtCount}코트${club.activeCourts > 0 ? ` (${club.activeCourts}사용)` : ''}</span>
+                                    <span class="meta-pill">📶 Wi-Fi: <strong style="color: ${club.useWifi ? '#10b981' : '#f87171'};">${club.useWifi ? 'ON' : 'OFF'}</strong></span>
+                                </div>
+                            </div>
+                            <div class="stats-bar">
+                                <span class="stat-chip"><span>🌐 접속</span><strong id="total-online-${safeId}" style="color: #f8fafc;">${totalNum}</strong></span>
+                                <span class="stat-chip" style="color: #34d399;"><span>🏢 운동중</span><strong id="club-online-${safeId}">${inGymNum}</strong></span>
+                                <span class="stat-chip" style="color: #60a5fa;"><span>🏸 게임</span><strong id="game-online-${safeId}">${gameNum}</strong></span>
+                                <span class="stat-chip" style="color: #fbbf24;"><span>⏱️ 난타</span><strong id="nanta-online-${safeId}">${nantaNum}</strong></span>
+                            </div>
+                        </div>
+                        <div class="club-actions">
+                            <a href="/?club=${encodeURIComponent(club.id)}" target="_blank" class="btn-action btn-user">📱 회원앱</a>
+                            <a href="/tv?club=${encodeURIComponent(club.id)}" target="_blank" class="btn-action btn-tv">📺 TV판</a>
+                            <a href="/admin?club=${encodeURIComponent(club.id)}" target="_blank" class="btn-action btn-admin">⚙️ 관리자</a>
+                            <button type="button" class="btn-action btn-edit" onclick="openEditModal('${safeId}')">✏️ 수정</button>
+                            <button type="button" class="btn-action btn-copy" onclick="openShareModal('${safeId}')">🔗 공유</button>
+                            <button type="button" class="btn-action btn-delete" ${isDefaultClub ? 'disabled title="기본 기준 클럽은 삭제할 수 없습니다"' : ''} onclick="handleDeleteClub('${safeId}')">🗑️ 삭제</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 📡 서버로부터 전체 클럽 실시간 4대 현황 수신
+        socket.on('updateSuperAdminCounts', (countsByClub) => {
+            if (!countsByClub) return;
+            latestCountsByClub = { ...latestCountsByClub, ...countsByClub };
+
+            Object.keys(countsByClub).forEach(clubId => {
+                const totalElem = document.getElementById(`total-online-${clubId}`);
+                const clubElem = document.getElementById(`club-online-${clubId}`);
+                const gameElem = document.getElementById(`game-online-${clubId}`);
+                const nantaElem = document.getElementById(`nanta-online-${clubId}`);
+
+                if (totalElem) totalElem.innerText = countsByClub[clubId].total ?? countsByClub[clubId].connected ?? 0;
+                if (clubElem) clubElem.innerText = countsByClub[clubId].club ?? countsByClub[clubId].inGym ?? 0;
+                if (gameElem) gameElem.innerText = countsByClub[clubId].game ?? 0;
+                if (nantaElem) nantaElem.innerText = countsByClub[clubId].nanta ?? 0;
+            });
+
+            updateTopKpis();
         });
-    });
-}
 
         function handleCreateClub(e) {
             e.preventDefault();
@@ -314,13 +953,102 @@ if (typeof socket !== 'undefined') {
                 alert(res.message);
                 if (res.success) {
                     document.getElementById('create-club-form').reset();
+                    document.getElementById('new-club-courts').value = 6;
+                    document.getElementById('new-club-password').value = '1234';
+                    document.getElementById('create-card-desktop')?.classList.remove('mobile-open');
                     loadClubs();
                 }
             });
         }
 
-        function handleDeleteClub(clubId, clubName) {
-            if (!confirm(`정말로 [${clubName}] 클럽을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+        // ✏️ 클럽 정보 수정 모달 열기/닫기/저장
+        function openEditModal(clubId) {
+            const club = cachedClubs.find(c => c.id === clubId);
+            if (!club) return;
+
+            document.getElementById('edit-club-id').value = club.id;
+            document.getElementById('edit-club-name').value = club.name || '';
+            document.getElementById('edit-club-courts').value = club.courtCount || 6;
+            document.getElementById('edit-club-password').value = club.adminPassword || '1234';
+            document.getElementById('edit-club-wifi').checked = Boolean(club.useWifi);
+
+            const ipText = (Array.isArray(club.allowedGymIps) && club.allowedGymIps.length > 0)
+                ? `등록 IP: ${club.allowedGymIps.join(', ')}`
+                : '등록 IP: 없음 (관리자 페이지에서 등록)';
+            document.getElementById('edit-club-ips').textContent = ipText;
+
+            document.getElementById('edit-modal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+        }
+
+        function handleUpdateClub(e) {
+            e.preventDefault();
+            const clubId = document.getElementById('edit-club-id').value.trim();
+            const clubName = document.getElementById('edit-club-name').value.trim();
+            const courtCount = document.getElementById('edit-club-courts').value;
+            const adminPassword = document.getElementById('edit-club-password').value.trim();
+            const useWifiRestriction = document.getElementById('edit-club-wifi').checked;
+
+            socket.emit('superAdmin:updateClub', {
+                password: masterPassword,
+                clubId,
+                clubName,
+                courtCount,
+                adminPassword,
+                useWifiRestriction
+            }, (res) => {
+                if (res && res.success) {
+                    closeEditModal();
+                    showToast(`✅ ${res.message}`);
+                    loadClubs();
+                } else {
+                    alert(res?.message || '클럽 정보 수정에 실패했습니다.');
+                }
+            });
+        }
+
+        // 🔗 클럽 접속 주소 원클릭 복사 모달
+        function openShareModal(clubId) {
+            const club = cachedClubs.find(c => c.id === clubId);
+            shareTargetClubId = clubId;
+            document.getElementById('share-modal-title').textContent = `🔗 ${club ? club.name : clubId} 주소 복사`;
+            document.getElementById('share-modal').classList.remove('hidden');
+        }
+
+        function closeShareModal() {
+            document.getElementById('share-modal').classList.add('hidden');
+        }
+
+        async function copyClubUrl(type) {
+            if (!shareTargetClubId) return;
+            const origin = window.location.origin;
+            const pathMap = {
+                user: `/?club=${encodeURIComponent(shareTargetClubId)}`,
+                tv: `/tv?club=${encodeURIComponent(shareTargetClubId)}`,
+                admin: `/admin?club=${encodeURIComponent(shareTargetClubId)}`
+            };
+            const labelMap = { user: '회원앱', tv: 'TV 현황판', admin: '관리자' };
+            const fullUrl = origin + pathMap[type];
+
+            try {
+                await navigator.clipboard.writeText(fullUrl);
+                showToast(`📋 ${labelMap[type]} 주소가 복사되었습니다!`);
+                closeShareModal();
+            } catch (e) {
+                prompt(`${labelMap[type]} 주소를 복사해 주세요:`, fullUrl);
+            }
+        }
+
+        function handleDeleteClub(clubId) {
+            const club = cachedClubs.find(c => c.id === clubId);
+            const clubName = club ? club.name : clubId;
+            if (clubId === 'unjeong') {
+                return alert('기본 기준 클럽(unjeong)은 삭제할 수 없습니다.');
+            }
+            if (!confirm(`정말로 [${clubName}] 클럽을 삭제하시겠습니까?\n접속 중인 관리자·회원·TV 화면이 즉시 차단되며 되돌릴 수 없습니다.`)) return;
 
             socket.emit('superAdmin:deleteClub', { password: masterPassword, clubId }, (res) => {
                 alert(res.message);
