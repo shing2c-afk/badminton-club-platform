@@ -38,43 +38,46 @@
             margin: 0 auto;
         }
 
-        /* 상단 헤더 */
+        /* 상단 헤더 (PC: 1줄 좌우 배치 / 모바일: 깔끔한 2줄 대칭) */
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 12px;
-            flex-wrap: wrap;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 14px;
             margin-bottom: 16px;
         }
-        .header-left {
+        .header-top-row {
             display: flex;
             align-items: center;
+            justify-content: space-between;
             gap: 10px;
-            min-width: 0;
         }
         .header h1 {
             font-size: 21px;
             color: var(--accent-orange);
-            display: flex;
+            display: inline-flex;
             align-items: center;
             gap: 8px;
             white-space: nowrap;
+        }
+        .header-mobile-icons {
+            display: none;
+            align-items: center;
+            gap: 6px;
         }
         .header-right {
             display: flex;
             align-items: center;
             gap: 8px;
-            flex-wrap: wrap;
         }
         .status-pill {
             font-size: 12px;
             color: #cbd5e1;
             background: var(--card-bg);
             border: 1px solid var(--border-color);
-            padding: 6px 10px;
+            padding: 6px 11px;
             border-radius: 999px;
             white-space: nowrap;
         }
@@ -88,6 +91,7 @@
             font-weight: 600;
             cursor: pointer;
             transition: background 0.15s;
+            white-space: nowrap;
         }
         .btn-icon:hover { background: #2a3446; }
         .btn-mobile-create {
@@ -96,10 +100,11 @@
             color: #fff;
             border: none;
             border-radius: 8px;
-            padding: 8px 12px;
+            padding: 8px 14px;
             font-size: 13px;
             font-weight: 700;
             cursor: pointer;
+            white-space: nowrap;
         }
 
         /* 통합 KPI 모니터링 바 */
@@ -107,7 +112,7 @@
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 10px;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
         }
         .kpi-card {
             background: var(--card-bg);
@@ -122,22 +127,25 @@
             font-size: 12px;
             color: var(--text-sub);
             font-weight: 600;
+            white-space: nowrap;
         }
         .kpi-value {
             font-size: 22px;
             font-weight: 800;
             letter-spacing: -0.5px;
+            line-height: 1.15;
         }
         .kpi-sub {
             font-size: 11px;
             color: #64748b;
+            white-space: nowrap;
         }
 
         /* 서버 헬스 바 */
         .server-bar {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px 18px;
+            gap: 8px 18px;
             align-items: center;
             background: rgba(23, 28, 38, 0.75);
             border: 1px solid var(--border-color);
@@ -147,6 +155,7 @@
             font-size: 12px;
             color: var(--text-sub);
         }
+        .server-bar span { white-space: nowrap; }
         .server-bar strong { color: #e2e8f0; font-weight: 700; }
 
         /* 메인 2단 그리드 (PC) */
@@ -175,9 +184,20 @@
         .card-header h2 {
             font-size: 16px;
             font-weight: 700;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 7px;
+            line-height: 1.3;
+        }
+        .card-header h2 .title-text {
+            display: inline;
+            line-height: 1.3;
+        }
+        #club-count {
+            display: inline;
+            vertical-align: baseline;
+            color: #fb923c;
+            font-weight: 800;
         }
         .search-input {
             background: var(--input-bg);
@@ -298,22 +318,30 @@
             display: flex;
             align-items: center;
             flex-wrap: wrap;
-            gap: 6px 10px;
-            margin-bottom: 8px;
+            gap: 6px 8px;
+            margin-bottom: 9px;
+        }
+        .club-title-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            min-width: 0;
         }
         .club-title-row h3 {
             font-size: 16px;
             font-weight: 800;
             color: #fff;
+            line-height: 1.25;
         }
         .club-id-tag {
-            font-size: 12px;
+            font-size: 11.5px;
             color: #fb923c;
             background: rgba(251, 146, 60, 0.12);
-            border: 1px solid rgba(251, 146, 60, 0.3);
+            border: 1px solid rgba(251, 146, 60, 0.28);
             padding: 2px 7px;
             border-radius: 6px;
             font-weight: 700;
+            white-space: nowrap;
         }
         .club-badges {
             display: inline-flex;
@@ -332,12 +360,11 @@
             white-space: nowrap;
         }
 
-        /* 4대 실시간 현황 칩 */
+        /* 4대 실시간 현황 바 */
         .stats-bar {
-            display: grid;
+            display: inline-grid;
             grid-template-columns: repeat(4, minmax(0, auto));
             gap: 6px;
-            width: fit-content;
             max-width: 100%;
         }
         .stat-chip {
@@ -349,12 +376,13 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 4px;
+            gap: 5px;
             white-space: nowrap;
         }
-        .stat-chip strong { font-size: 13px; }
+        .stat-chip .stat-label { font-size: 11.5px; }
+        .stat-chip strong { font-size: 13px; font-weight: 800; }
 
-        /* 클럽 액션 버튼 그룹 */
+        /* 클럽 액션 버튼 그룹 (바로가기 vs 관리 계층 분리) */
         .club-actions {
             display: flex;
             gap: 6px;
@@ -372,22 +400,39 @@
             font-size: 12.5px;
             text-decoration: none;
             font-weight: 700;
-            border: none;
+            border: 1px solid transparent;
             cursor: pointer;
             white-space: nowrap;
-            transition: opacity 0.15s, transform 0.1s;
+            transition: opacity 0.15s, transform 0.1s, background 0.15s;
         }
         .btn-action:active { transform: scale(0.97); }
-        .btn-action:hover { opacity: 0.9; }
+        .btn-action:hover { opacity: 0.92; }
+
+        /* 1차 바로가기 버튼 */
         .btn-user { background: #2563eb; color: #fff; }
         .btn-tv { background: #059669; color: #fff; }
         .btn-admin { background: #475569; color: #fff; }
-        .btn-edit { background: #d97706; color: #fff; }
-        .btn-copy { background: #334155; color: #e2e8f0; border: 1px solid rgba(255,255,255,0.12); }
-        .btn-delete { background: #dc2626; color: #fff; }
+
+        /* 2차 관리 버튼 (세련된 아웃라인 톤) */
+        .btn-edit {
+            background: rgba(245, 158, 11, 0.14);
+            color: #fbbf24;
+            border-color: rgba(245, 158, 11, 0.35);
+        }
+        .btn-copy {
+            background: rgba(148, 163, 184, 0.12);
+            color: #e2e8f0;
+            border-color: rgba(148, 163, 184, 0.25);
+        }
+        .btn-delete {
+            background: rgba(239, 68, 68, 0.14);
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.35);
+        }
         .btn-delete:disabled {
-            background: #334155;
+            background: rgba(51, 65, 85, 0.35);
             color: #64748b;
+            border-color: rgba(255, 255, 255, 0.06);
             cursor: not-allowed;
             opacity: 0.65;
         }
@@ -476,12 +521,13 @@
         }
 
         /* ==========================================
-           📱 태블릿 · 스마트폰 반응형 최적화
+           📱 태블릿 · 스마트폰 전용 최적화
            ========================================== */
         @media (max-width: 1080px) {
             .club-item {
                 flex-direction: column;
                 align-items: stretch;
+                gap: 11px;
             }
             .club-actions {
                 justify-content: flex-start;
@@ -491,22 +537,75 @@
         }
 
         @media (max-width: 900px) {
-            body { padding: 14px 12px 36px; }
+            body { padding: 12px 12px 32px; }
 
-            .header { margin-bottom: 12px; padding-bottom: 12px; }
+            /* 헤더: 1줄(타이틀+아이콘) / 2줄(상태+신규등록)로 깔끔하게 정리 */
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 9px;
+                margin-bottom: 11px;
+                padding-bottom: 11px;
+            }
             .header h1 { font-size: 18px; }
+            .header-mobile-icons { display: inline-flex; }
+            .header-mobile-icons .btn-icon {
+                padding: 6px 9px;
+                font-size: 14px;
+                line-height: 1;
+            }
+            .header-right {
+                justify-content: space-between;
+                width: 100%;
+            }
+            .header-right .pc-only-btn { display: none; }
             .btn-mobile-create { display: inline-flex; align-items: center; gap: 4px; }
 
+            /* KPI: 상단 1줄 요약 + 하단 4칸 초슬림 그리드로 세로 공간 60% 절약 */
             .kpi-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 8px;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 6px;
+                margin-bottom: 8px;
             }
-            .kpi-card:first-child { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
-            .kpi-value { font-size: 20px; }
+            .kpi-card {
+                padding: 8px 6px;
+                border-radius: 10px;
+                align-items: center;
+                text-align: center;
+                gap: 2px;
+            }
+            .kpi-card:first-child {
+                grid-column: 1 / -1;
+                flex-direction: row;
+                justify-content: space-between;
+                padding: 9px 13px;
+                text-align: left;
+            }
+            .kpi-card:first-child .kpi-value { font-size: 17px; }
+            .kpi-card:first-child .kpi-sub { font-size: 12px; color: #94a3b8; }
 
-            .grid-container { grid-template-columns: 1fr; gap: 14px; }
+            .kpi-label { font-size: 11px; }
+            .kpi-value { font-size: 18px; }
+            .kpi-sub.mobile-hide { display: none; }
+            .kpi-sub { font-size: 10px; }
 
-            /* 모바일에서는 우측 클럽 목록이 최상단, 신규 등록 카드는 버튼으로 열기 */
+            /* 서버 헬스바: 2열 컴팩트 그리드 */
+            .server-bar {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 5px 10px;
+                padding: 8px 11px;
+                margin-bottom: 12px;
+                font-size: 11px;
+            }
+            .server-bar span {
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .grid-container { grid-template-columns: 1fr; gap: 12px; }
+
+            /* 모바일 신규 클럽 등록 폼 토글 */
             #create-card-desktop { display: none; }
             #create-card-desktop.mobile-open {
                 display: block;
@@ -514,27 +613,59 @@
                 border-color: rgba(255, 107, 0, 0.45);
             }
 
-            .card { padding: 14px; }
-            .search-input { width: 100%; }
+            .card { padding: 13px 12px; border-radius: 12px; }
+            .card-header { padding-bottom: 10px; margin-bottom: 11px; gap: 8px; }
+            .card-header h2 { font-size: 15.5px; }
+            .search-input { width: 100%; padding: 8px 11px; font-size: 13.5px; }
+
+            /* 클럽 카드: 세로 여백 최적화 + 4칸 통합 현황 바 */
+            .club-list { gap: 10px; }
+            .club-item { padding: 12px; border-radius: 11px; gap: 10px; }
+            .club-title-row {
+                justify-content: space-between;
+                margin-bottom: 8px;
+                gap: 6px;
+            }
+            .club-title-row h3 { font-size: 15.5px; }
 
             .stats-bar {
+                display: grid;
                 width: 100%;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                background: #131924;
+                border: 1px solid rgba(255, 255, 255, 0.07);
+                border-radius: 8px;
+                gap: 0;
+                overflow: hidden;
             }
-            .stat-chip { justify-content: space-between; padding: 6px 10px; }
+            .stat-chip {
+                background: transparent;
+                border: none;
+                border-right: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 0;
+                flex-direction: column;
+                padding: 7px 4px;
+                gap: 2px;
+            }
+            .stat-chip:last-child { border-right: none; }
+            .stat-chip .stat-label { font-size: 10.5px; opacity: 0.85; }
+            .stat-chip strong { font-size: 15px; line-height: 1.1; }
 
+            /* 6개 액션 버튼: 1줄(바로가기 3개) + 2줄(관리 3개) */
             .club-actions {
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
-                gap: 7px;
+                gap: 6px;
+                padding-top: 9px;
             }
             .btn-action {
-                padding: 10px 6px;
-                font-size: 13px;
-                min-height: 40px;
+                padding: 8px 4px;
+                font-size: 12.5px;
+                min-height: 36px;
+                border-radius: 7px;
             }
 
-            .form-control { font-size: 16px; } /* iOS 입력 시 자동 줌 방지 */
+            .form-control { font-size: 16px; }
         }
     </style>
 </head>
@@ -624,14 +755,18 @@
 
     <div class="page-wrap">
         <div class="header">
-            <div class="header-left">
+            <div class="header-top-row">
                 <h1>👑 오늘민턴 마스터</h1>
+                <div class="header-mobile-icons">
+                    <button type="button" class="btn-icon" onclick="loadClubs(true)" title="새로고침">🔄</button>
+                    <button type="button" class="btn-icon" onclick="logoutMaster()" title="로그아웃">🚪</button>
+                </div>
             </div>
             <div class="header-right">
                 <span class="status-pill" id="status-text">서버 연결 중...</span>
                 <button type="button" class="btn-mobile-create" onclick="toggleMobileCreateForm()">➕ 신규 클럽</button>
-                <button type="button" class="btn-icon" onclick="loadClubs(true)" title="새로고침">🔄 새로고침</button>
-                <button type="button" class="btn-icon" onclick="logoutMaster()" title="로그아웃">🚪 로그아웃</button>
+                <button type="button" class="btn-icon pc-only-btn" onclick="loadClubs(true)" title="새로고침">🔄 새로고침</button>
+                <button type="button" class="btn-icon pc-only-btn" onclick="logoutMaster()" title="로그아웃">🚪 로그아웃</button>
             </div>
         </div>
 
@@ -643,22 +778,22 @@
                 <span class="kpi-sub" id="kpi-court-total">총 0코트</span>
             </div>
             <div class="kpi-card">
-                <span class="kpi-label">🌐 전체 접속</span>
+                <span class="kpi-label">🌐 접속</span>
                 <span class="kpi-value" style="color: #f8fafc;"><span id="kpi-total-online">0</span>명</span>
-                <span class="kpi-sub">실시간 소켓 기준</span>
+                <span class="kpi-sub mobile-hide">실시간 소켓 기준</span>
             </div>
             <div class="kpi-card">
-                <span class="kpi-label">🏢 구장 운동중</span>
+                <span class="kpi-label">🏢 운동중</span>
                 <span class="kpi-value" style="color: #34d399;"><span id="kpi-total-in-gym">0</span>명</span>
-                <span class="kpi-sub">Wi-Fi 인증·유예</span>
+                <span class="kpi-sub mobile-hide">Wi-Fi 인증·유예</span>
             </div>
             <div class="kpi-card">
-                <span class="kpi-label">🏸 게임 참여</span>
+                <span class="kpi-label">🏸 게임</span>
                 <span class="kpi-value" style="color: #60a5fa;"><span id="kpi-total-game">0</span>명</span>
                 <span class="kpi-sub" id="kpi-game-queues">대기 0팀</span>
             </div>
             <div class="kpi-card">
-                <span class="kpi-label">⏱️ 난타 참여</span>
+                <span class="kpi-label">⏱️ 난타</span>
                 <span class="kpi-value" style="color: #fbbf24;"><span id="kpi-total-nanta">0</span>명</span>
                 <span class="kpi-sub" id="kpi-nanta-queues">대기 0팀</span>
             </div>
@@ -666,17 +801,17 @@
 
         <!-- 서버 상태 모니터링 바 -->
         <div class="server-bar">
-            <span>⏱️ 서버 가동: <strong id="srv-uptime">-</strong></span>
-            <span>🧠 메모리: <strong id="srv-memory">-</strong></span>
-            <span>💾 저장소: <strong id="srv-storage">-</strong></span>
-            <span>🕒 최근 갱신: <strong id="srv-updated">-</strong></span>
+            <span>⏱️ 가동 <strong id="srv-uptime">-</strong></span>
+            <span>🧠 메모리 <strong id="srv-memory">-</strong></span>
+            <span>💾 <strong id="srv-storage">-</strong></span>
+            <span>🕒 갱신 <strong id="srv-updated">-</strong></span>
         </div>
 
         <div class="grid-container">
             <!-- 1. 새 클럽 생성 폼 (PC: 좌측 고정 / 모바일: 버튼 토글) -->
             <div class="card" id="create-card-desktop">
                 <div class="card-header">
-                    <h2>➕ 신규 클럽 등록</h2>
+                    <h2><span>➕</span><span class="title-text">신규 클럽 등록</span></h2>
                 </div>
                 <form id="create-club-form" onsubmit="handleCreateClub(event)">
                     <div class="form-group">
@@ -704,7 +839,7 @@
             <!-- 2. 운영 중인 클럽 목록 -->
             <div class="card">
                 <div class="card-header">
-                    <h2>🏢 운영 중인 클럽 (<span id="club-count">0</span>개)</h2>
+                    <h2><span>🏢</span><span class="title-text">운영 중인 클럽 (<span id="club-count">0</span>개)</span></h2>
                     <input type="search" id="club-search" class="search-input" placeholder="🔍 클럽명 또는 ID 검색..." oninput="renderClubList()">
                 </div>
                 <div id="club-list" class="club-list">
@@ -747,7 +882,7 @@
             const d = Math.floor(s / 86400);
             const h = Math.floor((s % 86400) / 3600);
             const m = Math.floor((s % 3600) / 60);
-            if (d > 0) return `${d}일 ${h}시간 ${m}분`;
+            if (d > 0) return `${d}일 ${h}시간`;
             if (h > 0) return `${h}시간 ${m}분`;
             return `${m}분 ${s % 60}초`;
         }
@@ -761,7 +896,7 @@
             if (upEl) upEl.textContent = formatUptime(info.uptimeSec);
             if (memEl) memEl.textContent = `${info.memoryMb} MB`;
             if (stoEl) stoEl.textContent = info.storageMode || '-';
-            if (updEl) updEl.textContent = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+            if (updEl) updEl.textContent = new Date().toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
 
         function updateTopKpis() {
@@ -892,18 +1027,20 @@
                     <div class="club-item">
                         <div class="club-info">
                             <div class="club-title-row">
-                                <h3>${safeName}</h3>
-                                <span class="club-id-tag">${safeId}</span>
+                                <div class="club-title-main">
+                                    <h3>${safeName}</h3>
+                                    <span class="club-id-tag">${safeId}</span>
+                                </div>
                                 <div class="club-badges">
                                     <span class="meta-pill">🏸 ${club.courtCount}코트${club.activeCourts > 0 ? ` (${club.activeCourts}사용)` : ''}</span>
-                                    <span class="meta-pill">📶 Wi-Fi: <strong style="color: ${club.useWifi ? '#10b981' : '#f87171'};">${club.useWifi ? 'ON' : 'OFF'}</strong></span>
+                                    <span class="meta-pill">📶 <strong style="color: ${club.useWifi ? '#10b981' : '#f87171'};">${club.useWifi ? 'ON' : 'OFF'}</strong></span>
                                 </div>
                             </div>
                             <div class="stats-bar">
-                                <span class="stat-chip"><span>🌐 접속</span><strong id="total-online-${safeId}" style="color: #f8fafc;">${totalNum}</strong></span>
-                                <span class="stat-chip" style="color: #34d399;"><span>🏢 운동중</span><strong id="club-online-${safeId}">${inGymNum}</strong></span>
-                                <span class="stat-chip" style="color: #60a5fa;"><span>🏸 게임</span><strong id="game-online-${safeId}">${gameNum}</strong></span>
-                                <span class="stat-chip" style="color: #fbbf24;"><span>⏱️ 난타</span><strong id="nanta-online-${safeId}">${nantaNum}</strong></span>
+                                <span class="stat-chip"><span class="stat-label">접속</span><strong id="total-online-${safeId}" style="color: #f8fafc;">${totalNum}</strong></span>
+                                <span class="stat-chip" style="color: #34d399;"><span class="stat-label">운동중</span><strong id="club-online-${safeId}">${inGymNum}</strong></span>
+                                <span class="stat-chip" style="color: #60a5fa;"><span class="stat-label">게임</span><strong id="game-online-${safeId}">${gameNum}</strong></span>
+                                <span class="stat-chip" style="color: #fbbf24;"><span class="stat-label">난타</span><strong id="nanta-online-${safeId}">${nantaNum}</strong></span>
                             </div>
                         </div>
                         <div class="club-actions">
