@@ -1937,98 +1937,6 @@ app.post('/api/admin/process-status-request', (req, res) => {
     );
 });
 
-// 2-2. [슈퍼 관리자] 고객지원(문의함 + FAQ + 오픈채팅 URL) 전체 조회
-    socket.on('superAdmin:getSupportData', (password, callback) => {
-        if (password !== SUPER_ADMIN_KEY) {
-            return callback({ success: false, message: '권한이 없습니다.' });
-        }
-        db.all(
-            `SELECT * FROM user_inquiries ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC LIMIT 100`,
-            [],
-            (inqErr, inquiries) => {
-                db.all(`SELECT * FROM support_faqs ORDER BY id ASC`, [], (faqErr, faqs) => {
-                    db.get(`SELECT value FROM platform_settings WHERE key = 'kakao_open_chat_url'`, [], (setErr, setRow) => {
-                        callback({
-                            success: true,
-                            inquiries: inquiries || [],
-                            faqs: faqs || [],
-                            kakaoOpenChatUrl: (setRow && setRow.value) ? String(setRow.value).trim() : ''
-                        });
-                    });
-                });
-            }
-        );
-    });
-
-    // 2-3. [슈퍼 관리자] 문의 답변 저장
-    socket.on('superAdmin:replyInquiry', ({ password, id, reply }, callback) => {
-        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
-        const cleanReply = String(reply || '').trim().slice(0, 1000);
-        if (!id || !cleanReply) return callback({ success: false, message: '답변 내용을 입력해 주세요.' });
-        const repliedAt = getSupportKstDateTime();
-        db.run(
-            `UPDATE user_inquiries SET reply = ?, status = 'answered', replied_by = '앱 관리자', replied_at = ? WHERE id = ?`,
-            [cleanReply, repliedAt, id],
-            function(err) {
-                if (err) return callback({ success: false, message: '답변 저장 중 오류가 발생했습니다.' });
-                callback({ success: true, message: '답변이 등록되었습니다.' });
-            }
-        );
-    });
-
-    // 2-4. [슈퍼 관리자] 문의 삭제
-    socket.on('superAdmin:deleteInquiry', ({ password, id }, callback) => {
-        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
-        db.run(`DELETE FROM user_inquiries WHERE id = ?`, [id], (err) => {
-            if (err) return callback({ success: false, message: '삭제 실패' });
-            callback({ success: true, message: '문의 내역이 삭제되었습니다.' });
-        });
-    });
-
-    // 2-5. [슈퍼 관리자] FAQ 추가
-    socket.on('superAdmin:addFaq', ({ password, category, question, answer }, callback) => {
-        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
-        const cleanCat = String(category || '일반').trim().slice(0, 30);
-        const cleanQ = String(question || '').trim().slice(0, 200);
-        const cleanA = String(answer || '').trim().slice(0, 1000);
-        if (!cleanQ || !cleanA) return callback({ success: false, message: '질문과 답변을 모두 입력해 주세요.' });
-        const createdAt = getSupportKstDateTime().slice(0, 10);
-        db.run(
-            `INSERT INTO support_faqs (category, question, answer, created_at) VALUES (?, ?, ?, ?)`,
-            [cleanCat, cleanQ, cleanA, createdAt],
-            (err) => {
-                if (err) return callback({ success: false, message: 'FAQ 등록 실패' });
-                callback({ success: true, message: '새 FAQ가 등록되었습니다.' });
-            }
-        );
-    });
-
-    // 2-6. [슈퍼 관리자] FAQ 삭제
-    socket.on('superAdmin:deleteFaq', ({ password, id }, callback) => {
-        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
-        db.run(`DELETE FROM support_faqs WHERE id = ?`, [id], (err) => {
-            if (err) return callback({ success: false, message: 'FAQ 삭제 실패' });
-            callback({ success: true, message: 'FAQ가 삭제되었습니다.' });
-        });
-    });
-
-    // 2-7. [슈퍼 관리자] 카카오톡 오픈채팅 링크 저장
-    socket.on('superAdmin:saveKakaoUrl', ({ password, url }, callback) => {
-        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
-        const cleanUrl = String(url || '').trim().slice(0, 300);
-        if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
-            return callback({ success: false, message: 'https:// 로 시작하는 올바른 주소를 입력해 주세요.' });
-        }
-        db.run(
-            `INSERT OR REPLACE INTO platform_settings (key, value) VALUES ('kakao_open_chat_url', ?)`,
-            [cleanUrl],
-            (err) => {
-                if (err) return callback({ success: false, message: '저장 실패' });
-                callback({ success: true, message: cleanUrl ? '카카오톡 오픈채팅 링크가 저장되었습니다.' : '오픈채팅 링크가 해제되었습니다.' });
-            }
-        );
-    });
-
 // 회원 정보 수정 API (파라미터 누락 버그 수정 및 전화번호 정규화/멀티테넌트 적용)
 app.post('/api/member/update', (req, res) => {
     const { id, phone: rawPhone, grade, address: rawAddress, clubId: reqClubId, club } = req.body;
@@ -6289,6 +6197,98 @@ io.on('connection', (socket) => {
 
         console.log(`👑 [슈퍼 관리자] 클럽 정보 수정 완료: ${cleanName} (${cleanId}), 코트: ${updatedCourts.length}개`);
         callback({ success: true, message: `[${cleanName}] 클럽 정보가 수정되었습니다.` });
+    });
+
+    // 2-2. [슈퍼 관리자] 고객지원(문의함 + FAQ + 오픈채팅 URL) 전체 조회
+    socket.on('superAdmin:getSupportData', (password, callback) => {
+        if (password !== SUPER_ADMIN_KEY) {
+            return callback({ success: false, message: '권한이 없습니다.' });
+        }
+        db.all(
+            `SELECT * FROM user_inquiries ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, id DESC LIMIT 100`,
+            [],
+            (inqErr, inquiries) => {
+                db.all(`SELECT * FROM support_faqs ORDER BY id ASC`, [], (faqErr, faqs) => {
+                    db.get(`SELECT value FROM platform_settings WHERE key = 'kakao_open_chat_url'`, [], (setErr, setRow) => {
+                        callback({
+                            success: true,
+                            inquiries: inquiries || [],
+                            faqs: faqs || [],
+                            kakaoOpenChatUrl: (setRow && setRow.value) ? String(setRow.value).trim() : ''
+                        });
+                    });
+                });
+            }
+        );
+    });
+
+    // 2-3. [슈퍼 관리자] 문의 답변 저장
+    socket.on('superAdmin:replyInquiry', ({ password, id, reply }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        const cleanReply = String(reply || '').trim().slice(0, 1000);
+        if (!id || !cleanReply) return callback({ success: false, message: '답변 내용을 입력해 주세요.' });
+        const repliedAt = getSupportKstDateTime();
+        db.run(
+            `UPDATE user_inquiries SET reply = ?, status = 'answered', replied_by = '앱 관리자', replied_at = ? WHERE id = ?`,
+            [cleanReply, repliedAt, id],
+            function(err) {
+                if (err) return callback({ success: false, message: '답변 저장 중 오류가 발생했습니다.' });
+                callback({ success: true, message: '답변이 등록되었습니다.' });
+            }
+        );
+    });
+
+    // 2-4. [슈퍼 관리자] 문의 삭제
+    socket.on('superAdmin:deleteInquiry', ({ password, id }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        db.run(`DELETE FROM user_inquiries WHERE id = ?`, [id], (err) => {
+            if (err) return callback({ success: false, message: '삭제 실패' });
+            callback({ success: true, message: '문의 내역이 삭제되었습니다.' });
+        });
+    });
+
+    // 2-5. [슈퍼 관리자] FAQ 추가
+    socket.on('superAdmin:addFaq', ({ password, category, question, answer }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        const cleanCat = String(category || '일반').trim().slice(0, 30);
+        const cleanQ = String(question || '').trim().slice(0, 200);
+        const cleanA = String(answer || '').trim().slice(0, 1000);
+        if (!cleanQ || !cleanA) return callback({ success: false, message: '질문과 답변을 모두 입력해 주세요.' });
+        const createdAt = getSupportKstDateTime().slice(0, 10);
+        db.run(
+            `INSERT INTO support_faqs (category, question, answer, created_at) VALUES (?, ?, ?, ?)`,
+            [cleanCat, cleanQ, cleanA, createdAt],
+            (err) => {
+                if (err) return callback({ success: false, message: 'FAQ 등록 실패' });
+                callback({ success: true, message: '새 FAQ가 등록되었습니다.' });
+            }
+        );
+    });
+
+    // 2-6. [슈퍼 관리자] FAQ 삭제
+    socket.on('superAdmin:deleteFaq', ({ password, id }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        db.run(`DELETE FROM support_faqs WHERE id = ?`, [id], (err) => {
+            if (err) return callback({ success: false, message: 'FAQ 삭제 실패' });
+            callback({ success: true, message: 'FAQ가 삭제되었습니다.' });
+        });
+    });
+
+    // 2-7. [슈퍼 관리자] 카카오톡 오픈채팅 링크 저장
+    socket.on('superAdmin:saveKakaoUrl', ({ password, url }, callback) => {
+        if (password !== SUPER_ADMIN_KEY) return callback({ success: false, message: '권한이 없습니다.' });
+        const cleanUrl = String(url || '').trim().slice(0, 300);
+        if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+            return callback({ success: false, message: 'https:// 로 시작하는 올바른 주소를 입력해 주세요.' });
+        }
+        db.run(
+            `INSERT OR REPLACE INTO platform_settings (key, value) VALUES ('kakao_open_chat_url', ?)`,
+            [cleanUrl],
+            (err) => {
+                if (err) return callback({ success: false, message: '저장 실패' });
+                callback({ success: true, message: cleanUrl ? '카카오톡 오픈채팅 링크가 저장되었습니다.' : '오픈채팅 링크가 해제되었습니다.' });
+            }
+        );
     });
 
     // 3. 클럽 삭제
