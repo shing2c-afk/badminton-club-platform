@@ -717,6 +717,10 @@ input:checked + .slider:before {
                 <span style="font-size: 12px; color: #94a3b8;">회원이 보낸 클럽 운영·급수·회비 문의를 확인하고 답변합니다.</span>
                 <button type="button" onclick="loadClubInquiries()" style="background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; cursor: pointer;">🔄 새로고침</button>
             </div>
+            <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                <button type="button" id="club-inq-tab-pending" onclick="setClubInqFilter('pending')" style="background: rgba(56,189,248,0.18); color: #38bdf8; border: 1px solid #38bdf8; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">미답변 (<span id="club-inq-cnt-pending">0</span>)</button>
+                <button type="button" id="club-inq-tab-answered" onclick="setClubInqFilter('answered')" style="background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">답변 완료 (<span id="club-inq-cnt-answered">0</span>)</button>
+            </div>
             <div id="club-inquiry-list">
                 <div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 12px;">접수된 클럽 운영 문의가 없습니다.</div>
             </div>
@@ -1895,39 +1899,71 @@ if (document.readyState === 'loading') {
         } catch (error) { await alert('처리 중 오류가 발생했습니다.'); }
     }
 
+    let clubInquiriesCache = [];
+    let currentClubInqFilter = 'pending';
+
+    function setClubInqFilter(filter) {
+        currentClubInqFilter = filter;
+        ['pending', 'answered'].forEach(f => {
+            const btn = document.getElementById(`club-inq-tab-${f}`);
+            if (!btn) return;
+            const active = (f === filter);
+            btn.style.background = active ? 'rgba(56,189,248,0.18)' : '#1e293b';
+            btn.style.color = active ? '#38bdf8' : '#94a3b8';
+            btn.style.borderColor = active ? '#38bdf8' : '#334155';
+        });
+        renderClubInquiries();
+    }
+
     async function loadClubInquiries() {
         try {
             const res = await fetch(`/api/admin/inquiries?club=${encodeURIComponent(currentClubId)}`);
             const result = await res.json();
-            const container = document.getElementById('club-inquiry-list');
+            clubInquiriesCache = (result && result.success && Array.isArray(result.data)) ? result.data : [];
+
+            const pendingCnt = clubInquiriesCache.filter(i => i.status === 'pending').length;
+            const answeredCnt = clubInquiriesCache.filter(i => i.status === 'answered').length;
+
             const badge = document.getElementById('club-inquiry-badge');
-            if (!container) return;
+            if (badge) badge.textContent = pendingCnt > 0 ? `(미답변 ${pendingCnt})` : '';
+            const cntP = document.getElementById('club-inq-cnt-pending');
+            if (cntP) cntP.textContent = pendingCnt;
+            const cntA = document.getElementById('club-inq-cnt-answered');
+            if (cntA) cntA.textContent = answeredCnt;
 
-            const items = (result && result.success && Array.isArray(result.data)) ? result.data : [];
-            const pending = items.filter(i => i.status === 'pending').length;
-            if (badge) badge.textContent = pending > 0 ? `(미답변 ${pending})` : '';
-
-            if (items.length === 0) {
-                container.innerHTML = '<div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 12px;">접수된 클럽 운영 문의가 없습니다.</div>';
-                return;
-            }
-
-            container.innerHTML = items.map(item => `
-                <div style="background: #0f172a; padding: 10px; margin-bottom: 8px; border-radius: 8px; border: 1px solid ${item.status === 'answered' ? '#1e293b' : 'rgba(245,158,11,0.4)'};">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <span style="font-size: 12.5px; font-weight: 700; color: #f8fafc;">${escapeHtml(item.member_name)} <span style="font-weight: 400; color: #94a3b8; font-size: 11px;">${escapeHtml(item.member_phone || '')}</span></span>
-                        <span style="font-size: 11px; color: ${item.status === 'answered' ? '#34d399' : '#fbbf24'}; font-weight: 700;">${item.status === 'answered' ? '답변 완료' : '미답변'}</span>
-                    </div>
-                    <div style="font-size: 12.5px; color: #e2e8f0; line-height: 1.45; white-space: pre-line; margin-bottom: 5px;">${escapeHtml(item.content)}</div>
-                    <div style="font-size: 10.5px; color: #64748b; margin-bottom: 7px;">${escapeHtml(item.created_at)}</div>
-                    <textarea id="club-inq-reply-${item.id}" rows="2" placeholder="회원에게 전달할 답변을 입력하세요..." style="width: 100%; box-sizing: border-box; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 6px; padding: 7px 8px; font-size: 12px; margin-bottom: 6px;">${escapeHtml(item.reply || '')}</textarea>
-                    <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                        <button type="button" onclick="replyClubInquiry(${item.id})" style="background: #10b981; border: none; color: #fff; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">답변 저장</button>
-                        <button type="button" onclick="deleteClubInquiry(${item.id})" style="background: #ef4444; border: none; color: #fff; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">삭제</button>
-                    </div>
-                </div>
-            `).join('');
+            renderClubInquiries();
         } catch (err) { console.error(err); }
+    }
+
+    function renderClubInquiries() {
+        const container = document.getElementById('club-inquiry-list');
+        if (!container) return;
+
+        const items = clubInquiriesCache.filter(i => i.status === currentClubInqFilter);
+
+        if (items.length === 0) {
+            const emptyText = currentClubInqFilter === 'pending'
+                ? '대기 중인 클럽 운영 문의가 없습니다.'
+                : '답변 완료된 문의가 없습니다.';
+            container.innerHTML = `<div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 12px;">${emptyText}</div>`;
+            return;
+        }
+
+        container.innerHTML = items.map(item => `
+            <div style="background: #0f172a; padding: 10px; margin-bottom: 8px; border-radius: 8px; border: 1px solid ${item.status === 'answered' ? '#1e293b' : 'rgba(245,158,11,0.4)'};">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: #f8fafc;">${escapeHtml(item.member_name)} <span style="font-weight: 400; color: #94a3b8; font-size: 11px;">${escapeHtml(item.member_phone || '')}</span></span>
+                    <span style="font-size: 11px; color: ${item.status === 'answered' ? '#34d399' : '#fbbf24'}; font-weight: 700;">${item.status === 'answered' ? '답변 완료' : '미답변'}</span>
+                </div>
+                <div style="font-size: 12.5px; color: #e2e8f0; line-height: 1.45; white-space: pre-line; margin-bottom: 5px;">${escapeHtml(item.content)}</div>
+                <div style="font-size: 10.5px; color: #64748b; margin-bottom: 7px;">${escapeHtml(item.created_at)}</div>
+                <textarea id="club-inq-reply-${item.id}" rows="2" placeholder="회원에게 전달할 답변을 입력하세요..." style="width: 100%; box-sizing: border-box; background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 6px; padding: 7px 8px; font-size: 12px; margin-bottom: 6px;">${escapeHtml(item.reply || '')}</textarea>
+                <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                    <button type="button" onclick="replyClubInquiry(${item.id})" style="background: #10b981; border: none; color: #fff; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">답변 저장</button>
+                    <button type="button" onclick="deleteClubInquiry(${item.id})" style="background: #ef4444; border: none; color: #fff; padding: 5px 11px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer;">삭제</button>
+                </div>
+            </div>
+        `).join('');
     }
 
     async function replyClubInquiry(id) {
@@ -1939,8 +1975,12 @@ if (document.readyState === 'loading') {
             body: JSON.stringify({ id, reply, clubId: currentClubId })
         });
         const result = await res.json();
-        await alert(result.message);
-        if (result.success) loadClubInquiries();
+        if (result.success) {
+            await loadClubInquiries();
+            await alert('답변이 저장되었습니다. (답변 완료함으로 이동)');
+        } else {
+            await alert(result.message || '답변 저장에 실패했습니다.');
+        }
     }
 
     async function deleteClubInquiry(id) {
@@ -1952,7 +1992,7 @@ if (document.readyState === 'loading') {
             body: JSON.stringify({ id, clubId: currentClubId })
         });
         const result = await res.json();
-        if (result.success) loadClubInquiries();
+        if (result.success) await loadClubInquiries();
     }
 
     document.addEventListener('DOMContentLoaded', () => {

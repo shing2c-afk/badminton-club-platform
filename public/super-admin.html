@@ -861,9 +861,9 @@
             <!-- 서브탭 1: 문의 접수함 -->
             <div id="sa-panel-inq">
                 <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
-                    <button type="button" id="inq-filter-app" class="btn-icon" style="border-color:#3b82f6; color:#60a5fa;" onclick="setInqFilter('app')">앱 문의 (오류·건의·질문)</button>
-                    <button type="button" id="inq-filter-pending" class="btn-icon" onclick="setInqFilter('pending')">미답변만</button>
-                    <button type="button" id="inq-filter-all" class="btn-icon" onclick="setInqFilter('all')">전체 (클럽 문의 포함)</button>
+                    <button type="button" id="inq-filter-pending" class="btn-icon" style="border-color:#3b82f6; color:#60a5fa;" onclick="setInqFilter('pending')">미답변 (<span id="inq-cnt-pending">0</span>)</button>
+                    <button type="button" id="inq-filter-answered" class="btn-icon" onclick="setInqFilter('answered')">답변 완료 (<span id="inq-cnt-answered">0</span>)</button>
+                    <button type="button" id="inq-filter-all" class="btn-icon" onclick="setInqFilter('all')">전체 (클럽 포함)</button>
                 </div>
                 <div id="sa-inquiry-list" style="display: flex; flex-direction: column; gap: 10px;">
                     <div style="color: #64748b; text-align: center; padding: 26px;">불러오는 중...</div>
@@ -1233,7 +1233,7 @@
         // ==========================================
         let cachedInquiries = [];
         let cachedFaqs = [];
-        let currentInqFilter = 'app';
+        let currentInqFilter = 'pending';
 
         function loadSupportData() {
             if (!masterPassword) return;
@@ -1246,8 +1246,13 @@
                 if (kakaoInput) kakaoInput.value = res.kakaoOpenChatUrl || '';
 
                 const pendingCount = cachedInquiries.filter(i => i.status === 'pending' && i.category !== 'club').length;
+                const answeredCount = cachedInquiries.filter(i => i.status === 'answered' && i.category !== 'club').length;
                 const badgeEl = document.getElementById('support-pending-badge');
                 if (badgeEl) badgeEl.textContent = `미답변 ${pendingCount}`;
+                const cntP = document.getElementById('inq-cnt-pending');
+                if (cntP) cntP.textContent = pendingCount;
+                const cntA = document.getElementById('inq-cnt-answered');
+                if (cntA) cntA.textContent = answeredCount;
                 const faqCntEl = document.getElementById('sa-faq-count');
                 if (faqCntEl) faqCntEl.textContent = cachedFaqs.length;
 
@@ -1267,7 +1272,7 @@
 
         function setInqFilter(filter) {
             currentInqFilter = filter;
-            ['app', 'pending', 'all'].forEach(f => {
+            ['pending', 'answered', 'all'].forEach(f => {
                 const btn = document.getElementById(`inq-filter-${f}`);
                 if (!btn) return;
                 btn.style.borderColor = (f === filter) ? '#3b82f6' : 'rgba(255,255,255,0.09)';
@@ -1281,13 +1286,16 @@
             if (!el) return;
 
             const filtered = cachedInquiries.filter(i => {
-                if (currentInqFilter === 'app') return i.category !== 'club';
-                if (currentInqFilter === 'pending') return i.status === 'pending';
+                if (currentInqFilter === 'pending') return i.status === 'pending' && i.category !== 'club';
+                if (currentInqFilter === 'answered') return i.status === 'answered' && i.category !== 'club';
                 return true;
             });
 
             if (filtered.length === 0) {
-                el.innerHTML = '<div style="color: #64748b; text-align: center; padding: 28px;">표시할 문의 내역이 없습니다.</div>';
+                const emptyMsg = currentInqFilter === 'pending'
+                    ? '미답변 앱 문의가 없습니다.'
+                    : (currentInqFilter === 'answered' ? '답변 완료된 앱 문의가 없습니다.' : '표시할 문의 내역이 없습니다.');
+                el.innerHTML = `<div style="color: #64748b; text-align: center; padding: 28px;">${emptyMsg}</div>`;
                 return;
             }
 
